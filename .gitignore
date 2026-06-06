@@ -8,6 +8,11 @@ out-tsc
 # dependencies
 node_modules
 
+# env
+.env
+.env.local
+.env.*.local
+
 # IDEs and editors
 /.idea
 .project

@@ -1,0 +1,84 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: seo-platform-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-seo-platform}
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - seo-net
+
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: seo-platform-mongo-express
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    ports:
+      - "${MONGO_EXPRESS_PORT:-8081}:8081"
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongo:27017
+      ME_CONFIG_BASICAUTH: "false"
+    networks:
+      - seo-net
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      target: development
+    container_name: seo-platform-api
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    ports:
+      - "3000:3000"
+    # Load entire .env file verbatim (avoids $ interpolation issues with
+    # special characters in SMTP_PASS and the like).
+    env_file:
+      - .env
+    environment:
+      # Override the Mongo URI so the API talks to the docker network host.
+      MONGODB_URI: mongodb://mongo:27017/${MONGO_INITDB_DATABASE:-seo-platform}
+      API_PORT: 3000
+      API_GLOBAL_PREFIX: api
+    volumes:
+      - ./apps/api:/workspace/apps/api
+      - ./libs/shared:/workspace/libs/shared
+      - /workspace/node_modules
+    networks:
+      - seo-net
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      target: development
+    container_name: seo-platform-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "4200:4200"
+    env_file:
+      - .env
+    environment:
+      API_PROXY_TARGET: http://api:3000
+    volumes:
+      - ./apps/web:/workspace/apps/web
+      - ./libs/shared:/workspace/libs/shared
+      - /workspace/node_modules
+    networks:
+      - seo-net
+
+networks:
+  seo-net:
+    driver: bridge
+
+volumes:
+  mongo-data:
+    driver: local

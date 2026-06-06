@@ -1,0 +1,55 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
+import { ContentService } from './content.service';
+import { UpsertContentDto } from './dto/upsert-content.dto';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { AuthenticatedUser } from '../auth/roles.guard';
+import { ClientsService } from '../clients/clients.service';
+
+@Controller('content')
+export class ContentController {
+  constructor(
+    private readonly svc: ContentService,
+    private readonly clients: ClientsService,
+  ) {}
+
+  @Get()
+  list(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('clientId') clientId?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.svc.list({ clientId, status }, user);
+  }
+
+  @Post()
+  async create(
+    @Body() dto: UpsertContentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.clients.assertAccess(dto.clientId, user);
+    return this.svc.create(dto);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: Partial<UpsertContentDto>,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.svc.update(id, dto, user);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.svc.remove(id, user);
+  }
+}

@@ -1,0 +1,37 @@
+import {
+  IsMongoId,
+  IsNumber,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
+class KpisDto {
+  @IsOptional() @IsNumber() organicSessions?: number;
+  @IsOptional() @IsNumber() impressions?: number;
+  @IsOptional() @IsNumber() clicks?: number;
+  @IsOptional() @IsNumber() ctr?: number;
+  @IsOptional() @IsNumber() avgPosition?: number;
+  @IsOptional() @IsNumber() conversions?: number;
+  @IsOptional() @IsNumber() indexedPages?: number;
+  @IsOptional() @IsNumber() gbpSearches?: number;
+  @IsOptional() @IsNumber() gbpCalls?: number;
+  @IsOptional() @IsNumber() gbpDirections?: number;
+  @IsOptional() @IsNumber() gbpWebsiteClicks?: number;
+  @IsOptional() @IsNumber() gbpReviews?: number;
+}
+
+export class UpsertReportDto {
+  @IsMongoId() clientId!: string;
+  @IsMongoId() cycleId!: string;
+
+  @IsOptional() @ValidateNested() @Type(() => KpisDto) kpis?: KpisDto;
+  @IsOptional() @ValidateNested() @Type(() => KpisDto) kpisPrevious?: KpisDto;
+
+  @IsOptional() @IsString() executiveSummary?: string;
+  @IsOptional() @IsString() findings?: string;
+  @IsOptional() @IsString() nextPeriodPlan?: string;
+  @IsOptional() @IsString() clientBlockers?: string;
+  @IsOptional() @IsString() finalConsiderations?: string;
+}

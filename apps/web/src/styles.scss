@@ -1,0 +1,227 @@
+@import url('https://rsms.me/inter/inter.css');
+@import 'quill/dist/quill.snow.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------- Quill editor — match our Ahrefs-style design ---------- */
+quill-editor {
+  display: block;
+  width: 100%;
+}
+quill-editor .ql-container,
+quill-editor .ql-toolbar {
+  width: 100%;
+}
+.ql-toolbar.ql-snow {
+  border: 1px solid #E4E7EB;
+  border-bottom-color: #F0F2F5;
+  border-radius: 0.375rem 0.375rem 0 0;
+  background: #F7F8FA;
+  padding: 6px 8px;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.ql-container.ql-snow {
+  border: 1px solid #E4E7EB;
+  border-radius: 0 0 0.375rem 0.375rem;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+}
+.ql-editor {
+  min-height: 120px;
+  padding: 12px;
+  color: #0F172A;
+  line-height: 1.6;
+}
+.ql-editor.ql-blank::before {
+  color: #9AA3AD;
+  font-style: normal;
+  font-size: 14px;
+}
+.ql-snow .ql-stroke { stroke: #475569; }
+.ql-snow .ql-fill { fill: #475569; }
+.ql-snow .ql-picker { color: #475569; }
+.ql-snow .ql-toolbar button:hover .ql-stroke,
+.ql-snow .ql-toolbar button.ql-active .ql-stroke { stroke: #FF7A59; }
+.ql-snow .ql-toolbar button:hover .ql-fill,
+.ql-snow .ql-toolbar button.ql-active .ql-fill { fill: #FF7A59; }
+.ql-snow .ql-toolbar button:hover,
+.ql-snow .ql-toolbar button.ql-active { background: rgba(255, 122, 89, 0.08); border-radius: 4px; }
+
+/* Render rich content (read-only) safely */
+.rich-content {
+  color: #334155;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.rich-content * {
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+.rich-content p { margin-bottom: 0.6em; }
+.rich-content p:last-child { margin-bottom: 0; }
+.rich-content a {
+  color: #0EA5E9;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.rich-content a:hover { color: #0284C7; }
+.rich-content strong { font-weight: 700; color: #0F172A; }
+.rich-content em { font-style: italic; }
+.rich-content ul, .rich-content ol {
+  margin: 0.5em 0 0.5em 1.5em;
+}
+.rich-content ul { list-style: disc; }
+.rich-content ol { list-style: decimal; }
+.rich-content li { margin-bottom: 0.25em; }
+.rich-content h2 { font-size: 1.15em; font-weight: 700; color: #0F172A; margin: 0.8em 0 0.4em; }
+.rich-content h3 { font-size: 1.05em; font-weight: 700; color: #0F172A; margin: 0.7em 0 0.3em; }
+
+html {
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: #F7F8FA;
+  color: #0F172A;
+  font-size: 14px;
+}
+
+/* ---------- Pills ---------- */
+.tier-pill {
+  @apply inline-flex items-center justify-center rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white;
+  letter-spacing: 0.05em;
+}
+.tier-A { @apply tier-pill bg-ink-900; }
+.tier-B { @apply tier-pill bg-sky-500; }
+.tier-C { @apply tier-pill bg-brand-500; }
+
+.badge {
+  @apply inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium;
+}
+.badge-success { @apply badge bg-positive-100 text-positive-500; }
+.badge-warning { @apply badge bg-warning-100 text-warning-500; }
+.badge-danger { @apply badge bg-danger-100 text-danger-500; }
+.badge-neutral { @apply badge bg-ink-100 text-ink-700; }
+
+/* ---------- Buttons ---------- */
+.btn {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3.5 py-2 text-sm font-semibold transition-all duration-100;
+  @apply focus:outline-none focus:ring-2 focus:ring-offset-1;
+}
+.btn:disabled {
+  @apply opacity-50 cursor-not-allowed;
+}
+.btn-primary {
+  @apply btn bg-brand-500 text-white hover:bg-brand-600 focus:ring-brand-500/50 shadow-sm;
+}
+.btn-secondary {
+  @apply btn bg-white text-ink-800 border border-ink-200 hover:bg-ink-50 hover:border-ink-300 focus:ring-ink-300;
+}
+.btn-ghost {
+  @apply btn bg-transparent text-ink-700 hover:bg-ink-100;
+}
+.btn-danger {
+  @apply btn bg-danger-500 text-white hover:bg-red-700;
+}
+.btn-sm {
+  @apply px-2.5 py-1 text-xs;
+}
+
+/* ---------- Cards ---------- */
+.card {
+  @apply bg-white rounded-lg shadow-card border border-ink-200 p-5;
+}
+.card-flush {
+  @apply bg-white rounded-lg shadow-card border border-ink-200 overflow-hidden;
+}
+
+/* ---------- Inputs ---------- */
+.input {
+  @apply w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder-ink-400 transition-colors;
+  @apply focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20;
+}
+.input-sm {
+  @apply px-2 py-1 text-xs;
+}
+select.input {
+  @apply pr-8;
+}
+
+.label {
+  @apply block text-xs font-semibold text-ink-700 mb-1.5;
+}
+
+/* ---------- Tables ---------- */
+.table {
+  @apply w-full text-sm;
+}
+.table thead {
+  @apply bg-ink-50 border-b border-ink-200;
+}
+.table th {
+  @apply px-4 py-3 text-left text-xs font-semibold text-ink-600 uppercase tracking-wider;
+}
+.table tbody tr {
+  @apply border-b border-ink-100 transition-colors;
+}
+.table tbody tr:hover {
+  @apply bg-ink-50;
+}
+.table td {
+  @apply px-4 py-3 text-ink-800;
+}
+.table tbody tr:last-child {
+  @apply border-b-0;
+}
+
+/* ---------- Tabs ---------- */
+.tab-bar {
+  @apply flex border-b border-ink-200;
+}
+.tab {
+  @apply px-4 py-2.5 text-sm font-medium text-ink-500 border-b-2 border-transparent transition-colors hover:text-ink-900;
+}
+.tab-active {
+  @apply text-ink-900 border-brand-500;
+}
+
+/* ---------- Page chrome ---------- */
+.page-container {
+  @apply px-8 py-6 max-w-7xl mx-auto;
+}
+.page-header {
+  @apply mb-6 flex items-start justify-between gap-4;
+}
+.page-title {
+  @apply text-2xl font-bold text-ink-900 tracking-tight;
+}
+.page-subtitle {
+  @apply text-sm text-ink-500 mt-0.5;
+}
+
+/* ---------- Stat card (Ahrefs-style metric tile) ---------- */
+.stat-card {
+  @apply bg-white rounded-lg shadow-card border border-ink-200 p-4;
+}
+.stat-label {
+  @apply text-xs font-medium text-ink-500 uppercase tracking-wider;
+}
+.stat-value {
+  @apply text-2xl font-bold text-ink-900 mt-1;
+}
+.stat-delta-up { @apply text-positive-500 text-xs font-semibold; }
+.stat-delta-down { @apply text-danger-500 text-xs font-semibold; }
+.stat-delta-flat { @apply text-ink-400 text-xs font-semibold; }
