@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "pnpm exec nx build web --configuration=production",
   "installCommand": "pnpm install --frozen-lockfile",
-  "outputDirectory": "dist/apps/web/browser",
+  "outputDirectory": "dist/apps/web",
   "framework": null,
   "rewrites": [
     {

@@ -14,7 +14,7 @@
     "db:up": "docker compose up -d mongo mongo-express",
     "db:down": "docker compose stop mongo mongo-express",
     "db:logs": "docker compose logs -f mongo",
-    "start": "npm run db:up && npm run dev",
+    "dev:all": "npm run db:up && npm run dev",
     "build": "nx run-many -t build -p api,web --parallel=2",
     "build:api": "nx build api --configuration=production",
     "build:web": "nx build web --configuration=production",
