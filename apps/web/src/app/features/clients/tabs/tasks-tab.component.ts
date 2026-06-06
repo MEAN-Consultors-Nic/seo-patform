@@ -195,15 +195,15 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
           }
         </div>
       } @else {
-        <div class="space-y-3">
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           @for (t of filteredTasks(); track t._id) {
             <article
-              class="relative bg-white rounded-lg border border-ink-200 shadow-card hover:shadow-elevated transition-all overflow-hidden"
+              class="relative bg-white rounded-lg border border-ink-200 shadow-card hover:shadow-elevated transition-all overflow-hidden flex flex-col"
               [class.opacity-80]="t.status === 'completed'">
               <!-- Status side bar -->
               <div class="absolute top-0 left-0 bottom-0 w-1" [ngClass]="statusOf(t).bar"></div>
 
-              <div class="pl-5 pr-4 py-4">
+              <div class="pl-5 pr-4 py-4 flex-1 flex flex-col">
                 <!-- Top row -->
                 <div class="flex items-start justify-between gap-3">
                   <div class="flex flex-wrap items-center gap-1.5 min-w-0">
@@ -305,7 +305,7 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                   (changed)="onAttachmentsChanged(t, $event)" />
 
                 <!-- Footer: hours -->
-                <div class="mt-3 pt-3 border-t border-ink-100 flex items-center justify-between gap-4 text-xs">
+                <div class="mt-auto pt-3 border-t border-ink-100 flex items-center justify-between gap-4 text-xs">
                   <div class="flex items-center gap-4">
                     <div>
                       <span class="text-ink-400 uppercase tracking-wider text-[10px] font-semibold mr-1">Est.</span>
