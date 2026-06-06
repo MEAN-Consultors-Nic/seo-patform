@@ -721,16 +721,11 @@ export class PublicReportComponent implements OnInit {
     this.svc.publicMeta(token).subscribe({
       next: (m) => {
         this.meta.set({ client: m.client, cycle: m.cycle });
-        if (m.locked) {
-          this.locked.set(true);
-          this.loading.set(false);
-          setTimeout(() => this.focusFirstPin(), 50);
-        } else {
+        if (!m.locked) {
           // Legacy link without PIN — unlock with empty pin to get pdf token + payload.
           this.svc.publicUnlock(token, '').subscribe({
             next: (res) => {
-              this.unlockToken = res.pdfUnlockToken;
-              this.data.set(res.payload);
+              this.applyUnlocked(token, res);
               this.loading.set(false);
             },
             error: (err) => {
@@ -738,13 +733,90 @@ export class PublicReportComponent implements OnInit {
               this.loading.set(false);
             },
           });
+          return;
         }
+        // Locked report: try to resume from saved 24h session before showing the PIN gate.
+        const stored = this.readStoredSession(token);
+        if (stored) {
+          this.svc.publicResume(token, stored).subscribe({
+            next: (res) => {
+              this.applyUnlocked(token, res);
+              this.loading.set(false);
+            },
+            error: () => {
+              this.clearStoredSession(token);
+              this.locked.set(true);
+              this.loading.set(false);
+              setTimeout(() => this.focusFirstPin(), 50);
+            },
+          });
+          return;
+        }
+        this.locked.set(true);
+        this.loading.set(false);
+        setTimeout(() => this.focusFirstPin(), 50);
       },
       error: (err) => {
         this.error.set(err?.error?.message || "We couldn't load the report");
         this.loading.set(false);
       },
     });
+  }
+
+  private applyUnlocked(
+    token: string,
+    res: { pdfUnlockToken: string; sessionToken?: string; payload: PublicPayload },
+  ) {
+    this.unlockToken = res.pdfUnlockToken;
+    this.data.set(res.payload);
+    this.locked.set(false);
+    if (res.sessionToken) this.writeStoredSession(token, res.sessionToken);
+  }
+
+  private sessionStorageKey(token: string) {
+    return `report-session:${token}`;
+  }
+
+  private readStoredSession(token: string): string | null {
+    if (typeof localStorage === 'undefined') return null;
+    const jwt = localStorage.getItem(this.sessionStorageKey(token));
+    if (!jwt) return null;
+    const exp = this.readJwtExp(jwt);
+    if (exp && exp <= Date.now()) {
+      this.clearStoredSession(token);
+      return null;
+    }
+    return jwt;
+  }
+
+  private writeStoredSession(token: string, jwt: string) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(this.sessionStorageKey(token), jwt);
+    } catch {
+      /* storage full or disabled — ignore */
+    }
+  }
+
+  private clearStoredSession(token: string) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.removeItem(this.sessionStorageKey(token));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private readJwtExp(jwt: string): number | null {
+    try {
+      const part = jwt.split('.')[1];
+      if (!part) return null;
+      const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
+      const payload = JSON.parse(json) as { exp?: number };
+      return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+    } catch {
+      return null;
+    }
   }
 
   // --- PIN entry handlers ---------------------------------------------------
@@ -805,9 +877,7 @@ export class PublicReportComponent implements OnInit {
     this.pinError.set(null);
     this.svc.publicUnlock(token, pin).subscribe({
       next: (res) => {
-        this.unlockToken = res.pdfUnlockToken;
-        this.data.set(res.payload);
-        this.locked.set(false);
+        this.applyUnlocked(token, res);
         this.unlocking.set(false);
       },
       error: (err) => {
@@ -1056,16 +1126,50 @@ export class PublicReportComponent implements OnInit {
         this.downloading.set(false);
       },
       error: (err) => {
-        this.downloading.set(false);
         if (popup) popup.close();
-        // 401 typically means the 5-min PDF unlock expired.
-        if (err?.status === 401) {
-          alert('Your PDF download link expired. Please re-enter the PIN.');
+        // 401 means the 5-min PDF unlock expired.
+        if (err?.status !== 401) {
+          this.downloading.set(false);
+          return;
+        }
+        // If we still hold a valid 24h session, transparently refresh the PDF
+        // unlock token and retry the download without asking for the PIN again.
+        const session = this.readStoredSession(token);
+        if (!session) {
+          this.downloading.set(false);
           this.unlockToken = null;
           this.data.set(null);
           this.locked.set(true);
           setTimeout(() => this.focusFirstPin(), 50);
+          return;
         }
+        this.svc.publicResume(token, session).subscribe({
+          next: (res) => {
+            this.applyUnlocked(token, res);
+            const popup2 = window.open('about:blank', '_blank');
+            this.svc.publicPdfBlob(token, res.pdfUnlockToken).subscribe({
+              next: (blob) => {
+                const url = URL.createObjectURL(blob);
+                if (popup2) popup2.location.href = url;
+                else window.open(url, '_blank');
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+                this.downloading.set(false);
+              },
+              error: () => {
+                this.downloading.set(false);
+                if (popup2) popup2.close();
+              },
+            });
+          },
+          error: () => {
+            this.downloading.set(false);
+            this.clearStoredSession(token);
+            this.unlockToken = null;
+            this.data.set(null);
+            this.locked.set(true);
+            setTimeout(() => this.focusFirstPin(), 50);
+          },
+        });
       },
     });
   }

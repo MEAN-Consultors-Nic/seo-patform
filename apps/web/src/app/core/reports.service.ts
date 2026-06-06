@@ -75,9 +75,16 @@ export class ReportsService {
   }
 
   publicUnlock(token: string, pin: string) {
-    return this.http.post<{ pdfUnlockToken: string; payload: any }>(
+    return this.http.post<{ pdfUnlockToken: string; sessionToken: string; payload: any }>(
       `${this.base}/public/reports/${token}/unlock`,
       { pin },
+    );
+  }
+
+  publicResume(token: string, session: string) {
+    return this.http.post<{ pdfUnlockToken: string; sessionToken: string; payload: any }>(
+      `${this.base}/public/reports/${token}/resume`,
+      { session },
     );
   }
 

@@ -25,6 +25,7 @@ import { MailService } from '../mail/mail.service';
 const MAX_PIN_ATTEMPTS = 5;
 const PIN_LOCK_MINUTES = 15;
 const PDF_UNLOCK_TTL = '5m';
+const SESSION_TTL = '24h';
 
 @Injectable()
 export class ReportsService {
@@ -223,6 +224,7 @@ export class ReportsService {
       // No PIN configured — treat as legacy link, no unlock required.
       return {
         pdfUnlockToken: this.signPdfUnlock(token),
+        sessionToken: this.signSession(token),
         payload: await this.getPublicPayload(token),
       };
     }
@@ -258,7 +260,17 @@ export class ReportsService {
     const payload = await this.getPublicPayload(token);
     return {
       pdfUnlockToken: this.signPdfUnlock(token),
+      sessionToken: this.signSession(token),
       payload,
+    };
+  }
+
+  async resumeWithSession(token: string, session: string) {
+    this.verifySession(session, token);
+    return {
+      pdfUnlockToken: this.signPdfUnlock(token),
+      sessionToken: session,
+      payload: await this.getPublicPayload(token),
     };
   }
 
@@ -266,6 +278,13 @@ export class ReportsService {
     return this.jwt.sign(
       { shareToken: token, kind: 'pdf-unlock' },
       { expiresIn: PDF_UNLOCK_TTL },
+    );
+  }
+
+  private signSession(token: string): string {
+    return this.jwt.sign(
+      { shareToken: token, kind: 'report-session' },
+      { expiresIn: SESSION_TTL },
     );
   }
 
@@ -278,6 +297,19 @@ export class ReportsService {
     } catch {
       throw new UnauthorizedException(
         'PDF download link expired or invalid. Re-enter PIN.',
+      );
+    }
+  }
+
+  private verifySession(session: string, token: string): void {
+    try {
+      const decoded = this.jwt.verify<{ shareToken: string; kind: string }>(session);
+      if (decoded.kind !== 'report-session' || decoded.shareToken !== token) {
+        throw new Error('Mismatched session');
+      }
+    } catch {
+      throw new UnauthorizedException(
+        'Report session expired. Re-enter PIN.',
       );
     }
   }

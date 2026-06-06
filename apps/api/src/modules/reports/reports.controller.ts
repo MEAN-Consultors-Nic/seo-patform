@@ -7,6 +7,7 @@ import {
   Post,
   Query,
   Res,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { ReportsService } from './reports.service';
@@ -145,6 +146,16 @@ export class PublicReportsController {
   unlock(@Param('token') token: string, @Body() body: { pin: string }) {
     const pin = (body?.pin || '').trim();
     return this.reports.verifyPin(token, pin);
+  }
+
+  @Public()
+  @Post(':token/resume')
+  resume(@Param('token') token: string, @Body() body: { session: string }) {
+    const session = (body?.session || '').trim();
+    if (!session) {
+      throw new UnauthorizedException('Missing session token.');
+    }
+    return this.reports.resumeWithSession(token, session);
   }
 
   @Public()
