@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import {
   Component,
   EventEmitter,
+  HostListener,
   Input,
   Output,
   inject,
@@ -11,6 +12,8 @@ import { FormsModule } from '@angular/forms';
 import { TaskAttachment } from '@seo/shared';
 import { CloudinaryService } from '../../core/cloudinary.service';
 import { TasksService } from '../../core/tasks.service';
+
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 type LabelOption = 'before' | 'after' | 'other';
 
@@ -98,13 +101,41 @@ interface UploadDraft {
 
           <div class="p-6">
             @if (!draft()) {
-              <!-- File picker -->
-              <label class="block border-2 border-dashed border-ink-300 hover:border-brand-500 rounded-lg p-8 text-center cursor-pointer transition">
+              <!-- File picker + paste support -->
+              <label
+                class="block border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition"
+                [class.border-ink-300]="!dropActive()"
+                [class.hover:border-brand-500]="!dropActive()"
+                [class.border-brand-500]="dropActive()"
+                [class.bg-brand-50]="dropActive()"
+                (dragenter)="onDragEnter($event)"
+                (dragover)="onDragOver($event)"
+                (dragleave)="onDragLeave($event)"
+                (drop)="onDrop($event)">
                 <div class="text-5xl mb-3">📁</div>
                 <div class="font-semibold text-ink-900">Choose an image</div>
                 <div class="text-xs text-ink-500 mt-1">PNG, JPG, GIF, WebP — up to 10 MB</div>
+                <div class="text-[11px] text-ink-400 mt-3">
+                  or drop it here · paste with
+                  <kbd class="px-1.5 py-0.5 rounded border border-ink-300 bg-white text-[10px] font-mono text-ink-700">{{ pasteHint }}</kbd>
+                </div>
                 <input type="file" class="hidden" accept="image/*" (change)="onPick($event)" />
               </label>
+              <button type="button"
+                      (click)="pasteFromClipboard()"
+                      [disabled]="reading()"
+                      class="mt-3 w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-ink-200 bg-white text-sm font-semibold text-ink-700 hover:border-brand-500 hover:text-brand-600 disabled:opacity-50 transition">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <rect x="3.5" y="2.5" width="9" height="11" rx="1.5" />
+                  <path d="M6 2.5V1.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1" stroke-linecap="round" />
+                </svg>
+                {{ reading() ? 'Reading clipboard…' : 'Paste from clipboard' }}
+              </button>
+              @if (uploadError()) {
+                <div class="mt-3 rounded-md bg-danger-100 border border-danger-500/20 px-3 py-2 text-xs text-danger-500">
+                  {{ uploadError() }}
+                </div>
+              }
             } @else {
               <!-- Preview + label/caption -->
               <div class="space-y-4">
@@ -245,9 +276,13 @@ export class AttachmentsStripComponent {
   showSetupHelp = signal(false);
   uploadModalOpen = signal(false);
   draft = signal<UploadDraft | null>(null);
+  dropActive = signal(false);
+  reading = signal(false);
 
   captionDraft = '';
   labels: Array<LabelOption> = ['before', 'after', 'other'];
+
+  pasteHint = this.detectPasteHint();
 
   labelOptions: Array<{ value: LabelOption; label: string; activeClass: string }> = [
     { value: 'before', label: 'Before', activeClass: 'bg-warning-100 border-warning-500 text-warning-500' },
@@ -277,15 +312,131 @@ export class AttachmentsStripComponent {
   onPick(ev: Event) {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
-    if (!file) return;
-    const previewUrl = URL.createObjectURL(file);
-    this.draft.set({
-      file,
-      previewUrl,
-      label: 'other',
-      caption: '',
-    });
+    if (file) this.acceptFile(file);
     input.value = '';
+  }
+
+  // --- Paste & drag-drop --------------------------------------------------
+
+  @HostListener('window:paste', ['$event'])
+  onWindowPaste(ev: ClipboardEvent) {
+    if (!this.uploadModalOpen() || this.draft() || this.readOnly) return;
+    const items = ev.clipboardData?.items;
+    if (!items) return;
+    for (const item of Array.from(items)) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          ev.preventDefault();
+          this.acceptFile(this.renameClipboardFile(file));
+          return;
+        }
+      }
+    }
+  }
+
+  async pasteFromClipboard() {
+    this.uploadError.set(null);
+    if (this.reading()) return;
+    if (!('clipboard' in navigator) || !navigator.clipboard.read) {
+      this.uploadError.set(
+        `Your browser does not expose clipboard images. Press ${this.pasteHint} instead.`,
+      );
+      return;
+    }
+    this.reading.set(true);
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const imgType = item.types.find((t) => t.startsWith('image/'));
+        if (!imgType) continue;
+        const blob = await item.getType(imgType);
+        const file = new File(
+          [blob],
+          this.suggestedClipboardName(imgType),
+          { type: imgType },
+        );
+        this.acceptFile(file);
+        this.reading.set(false);
+        return;
+      }
+      this.uploadError.set('No image found in the clipboard. Copy a screenshot first.');
+    } catch (err) {
+      const msg = (err as Error).message || '';
+      if (/denied|permission/i.test(msg)) {
+        this.uploadError.set(
+          `Clipboard access was denied. Press ${this.pasteHint} to paste instead.`,
+        );
+      } else {
+        this.uploadError.set(
+          `Could not read clipboard. Press ${this.pasteHint} to paste instead.`,
+        );
+      }
+    } finally {
+      this.reading.set(false);
+    }
+  }
+
+  onDragEnter(ev: DragEvent) {
+    ev.preventDefault();
+    if (this.hasImageInTransfer(ev.dataTransfer)) this.dropActive.set(true);
+  }
+
+  onDragOver(ev: DragEvent) {
+    ev.preventDefault();
+    if (this.hasImageInTransfer(ev.dataTransfer)) this.dropActive.set(true);
+  }
+
+  onDragLeave(ev: DragEvent) {
+    ev.preventDefault();
+    this.dropActive.set(false);
+  }
+
+  onDrop(ev: DragEvent) {
+    ev.preventDefault();
+    this.dropActive.set(false);
+    const file = ev.dataTransfer?.files?.[0];
+    if (file) this.acceptFile(file);
+  }
+
+  private hasImageInTransfer(dt: DataTransfer | null): boolean {
+    if (!dt) return false;
+    return Array.from(dt.items || []).some(
+      (i) => i.kind === 'file' && i.type.startsWith('image/'),
+    );
+  }
+
+  private acceptFile(file: File) {
+    this.uploadError.set(null);
+    if (!file.type.startsWith('image/')) {
+      this.uploadError.set('That file is not an image.');
+      return;
+    }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      this.uploadError.set('Image is over 10 MB. Compress it and try again.');
+      return;
+    }
+    const previewUrl = URL.createObjectURL(file);
+    this.draft.set({ file, previewUrl, label: 'other', caption: '' });
+  }
+
+  private renameClipboardFile(file: File): File {
+    // Browsers default to "image.png" — give it a slightly more useful name.
+    if (file.name && file.name !== 'image.png') return file;
+    return new File([file], this.suggestedClipboardName(file.type), { type: file.type });
+  }
+
+  private suggestedClipboardName(mime: string): string {
+    const ext = (mime.split('/')[1] || 'png').replace('jpeg', 'jpg');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    return `screenshot-${stamp}.${ext}`;
+  }
+
+  private detectPasteHint(): string {
+    if (typeof navigator === 'undefined') return 'Ctrl+V';
+    const platform = navigator.platform || '';
+    const ua = navigator.userAgent || '';
+    return /Mac|iPhone|iPad/i.test(platform + ua) ? '⌘V' : 'Ctrl+V';
   }
 
   setDraftLabel(label: LabelOption) {
