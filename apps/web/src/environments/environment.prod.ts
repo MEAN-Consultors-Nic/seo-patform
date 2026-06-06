@@ -3,7 +3,7 @@ export const environment = {
   // Production API base. Set NX_API_BASE at build time on Vercel OR replace
   // this value with the deployed Heroku URL.
   // Example: 'https://seo-platform-api.herokuapp.com/api'
-  apiBase: 'https://seo-platform-api.herokuapp.com/api',
+  apiBase: 'https://bryss-47321d5bf944.herokuapp.com/api',
   cloudinary: {
     cloudName: 'dy4rncf4y',
     uploadPreset: 'seo_platform_tasks',
