@@ -34,6 +34,7 @@ export class UpsertReportDto {
   @IsOptional() @ValidateNested() @Type(() => KpisDto) kpis?: KpisDto;
   @IsOptional() @ValidateNested() @Type(() => KpisDto) kpisPrevious?: KpisDto;
 
+  @IsOptional() @IsString() coverImageUrl?: string;
   @IsOptional() @IsString() executiveSummary?: string;
   @IsOptional() @IsString() findings?: string;
   @IsOptional() @IsString() nextPeriodPlan?: string;

@@ -25,6 +25,7 @@ interface PublicPayload {
   report: {
     kpis: Record<string, number>;
     kpisPrevious?: Record<string, number>;
+    coverImageUrl?: string;
     executiveSummary: string | string[];
     findings: string;
     nextPeriodPlan: string;
@@ -230,6 +231,14 @@ interface PublicPayload {
             </div>
           </div>
         </header>
+
+        <!-- Cover image (full-width) -->
+        @if (d.report.coverImageUrl) {
+          <div class="max-w-6xl mx-auto px-8 -mt-10 mb-2 relative z-10">
+            <img [src]="d.report.coverImageUrl" alt="Report cover"
+                 class="w-full max-h-[420px] object-cover rounded-2xl shadow-elevated border border-white/20" />
+          </div>
+        }
 
         <main class="max-w-6xl mx-auto px-8 py-12 space-y-12">
           <!-- Executive Summary / Intro -->

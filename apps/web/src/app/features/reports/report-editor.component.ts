@@ -10,6 +10,7 @@ import { ReportsService } from '../../core/reports.service';
 import { TasksService } from '../../core/tasks.service';
 import { SanitizerService } from '../../core/sanitizer.service';
 import { GoogleIntegrationsService } from '../../core/google-integrations.service';
+import { CloudinaryService } from '../../core/cloudinary.service';
 
 interface KpiGroup {
   label: string;
@@ -200,6 +201,69 @@ interface KpiGroup {
                 </p>
               </div>
             </div>
+
+            <!-- Cover image -->
+            <div class="mb-4">
+              <label class="label mb-2">Cover picture</label>
+              <p class="text-[11px] text-ink-400 mb-2">
+                Displayed full-width above the Executive Summary in the public report.
+                Recommended: 1600 × 600 px, landscape, ≤ 2 MB.
+              </p>
+              @if (coverImageUrl()) {
+                <div class="rounded-lg overflow-hidden border border-ink-200 bg-ink-50 relative group">
+                  <img [src]="coverImageUrl()" alt="Cover"
+                       class="w-full max-h-64 object-cover" />
+                  <button type="button"
+                          (click)="removeCoverImage()"
+                          [disabled]="uploadingCover()"
+                          class="absolute top-2 right-2 px-2 py-1 rounded bg-ink-900/80 text-white text-xs font-semibold hover:bg-danger-500 transition opacity-0 group-hover:opacity-100">
+                    Remove
+                  </button>
+                </div>
+                <button type="button"
+                        (click)="coverInput.click()"
+                        [disabled]="uploadingCover()"
+                        class="mt-2 text-xs font-semibold text-brand-500 hover:text-brand-600 disabled:opacity-50">
+                  {{ uploadingCover() ? 'Uploading…' : 'Replace image' }}
+                </button>
+              } @else {
+                @if (cloudinary.isConfigured()) {
+                  <button type="button"
+                          (click)="coverInput.click()"
+                          [disabled]="uploadingCover()"
+                          class="w-full block border-2 border-dashed border-ink-300 hover:border-brand-500 rounded-lg p-6 text-center transition disabled:opacity-50">
+                    <div class="text-3xl mb-1">🖼</div>
+                    <div class="font-semibold text-ink-900 text-sm">
+                      {{ uploadingCover() ? 'Uploading…' : 'Add cover picture' }}
+                    </div>
+                    <div class="text-[11px] text-ink-500 mt-0.5">PNG · JPG · WebP — up to 10 MB</div>
+                  </button>
+                } @else {
+                  <div class="rounded-md border border-warning-500/30 bg-warning-100/40 px-3 py-2 text-xs text-warning-500">
+                    Cloudinary is not configured. Set <code>cloudName</code> and
+                    <code>uploadPreset</code> in <code>apps/web/src/environments/environment.ts</code>.
+                  </div>
+                }
+              }
+              <input #coverInput type="file" accept="image/*" class="hidden"
+                     (change)="onCoverPick($event)" />
+              @if (coverUploadProgress() !== null) {
+                <div class="mt-2">
+                  <div class="flex items-center justify-between text-[11px] text-ink-500 mb-1">
+                    <span>Uploading…</span>
+                    <span>{{ coverUploadProgress() }}%</span>
+                  </div>
+                  <div class="h-1 bg-ink-100 rounded-full overflow-hidden">
+                    <div class="h-full bg-brand-500 transition-all"
+                         [style.width.%]="coverUploadProgress()"></div>
+                  </div>
+                </div>
+              }
+              @if (coverError()) {
+                <div class="mt-2 text-xs text-danger-500">{{ coverError() }}</div>
+              }
+            </div>
+
             <quill-editor
               [(ngModel)]="summaryText"
               format="html"
@@ -540,6 +604,7 @@ export class ReportEditorComponent implements OnInit {
   private tasksSvc = inject(TasksService);
   private sanitizer = inject(SanitizerService);
   private googleSvc = inject(GoogleIntegrationsService);
+  protected cloudinary = inject(CloudinaryService);
 
   sanitize(html: string | undefined | null) {
     return this.sanitizer.trustRichHtml(html);
@@ -594,6 +659,10 @@ export class ReportEditorComponent implements OnInit {
   clientBlockers = '';
   finalConsiderations = '';
   kpis: Record<string, number | null> = {};
+  coverImageUrl = signal<string>('');
+  uploadingCover = signal(false);
+  coverUploadProgress = signal<number | null>(null);
+  coverError = signal<string | null>(null);
   pullingKpis = signal(false);
   pullResult = signal<import('../../core/google-integrations.service').GoogleKpisResult | null>(null);
   pullRangePreset = signal<'cycle' | 'last7' | 'last28' | 'lastCycle' | 'custom'>('cycle');
@@ -731,6 +800,7 @@ export class ReportEditorComponent implements OnInit {
     this.clientBlockers = r?.clientBlockers || '';
     this.finalConsiderations = r?.finalConsiderations || '';
     this.kpis = { ...(r?.kpis || {}) };
+    this.coverImageUrl.set(r?.coverImageUrl || '');
     this.shareToken.set(r?.shareToken || null);
     this.sharePin.set(null);
     this.pinCopied.set(false);
@@ -883,6 +953,79 @@ export class ReportEditorComponent implements OnInit {
       });
   }
 
+  async onCoverPick(ev: Event) {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    this.coverError.set(null);
+    if (!file.type.startsWith('image/')) {
+      this.coverError.set('That file is not an image.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      this.coverError.set('Image is over 10 MB. Compress it and try again.');
+      return;
+    }
+    this.uploadingCover.set(true);
+    this.coverUploadProgress.set(0);
+    try {
+      const res = await this.cloudinary.upload(file, (p) =>
+        this.coverUploadProgress.set(p),
+      );
+      this.coverImageUrl.set(res.url);
+      this.coverUploadProgress.set(null);
+      this.uploadingCover.set(false);
+      // Persist immediately so the change survives a refresh even before
+      // the user hits Save.
+      if (this.ready()) {
+        this.reportsSvc
+          .upsert({
+            clientId: this.clientId(),
+            cycleId: this.cycleId(),
+            coverImageUrl: this.coverImageUrl(),
+            executiveSummary: this.summaryText.trim(),
+            findings: this.findings,
+            nextPeriodPlan: this.nextPeriodPlan,
+            clientBlockers: this.clientBlockers,
+            finalConsiderations: this.finalConsiderations,
+            kpis: this.cleanKpis(),
+          })
+          .subscribe({
+            next: (r) => this.report.set(r),
+            error: () => null,
+          });
+      }
+    } catch (err) {
+      this.uploadingCover.set(false);
+      this.coverUploadProgress.set(null);
+      this.coverError.set((err as Error).message);
+    }
+  }
+
+  removeCoverImage() {
+    this.coverImageUrl.set('');
+    this.coverError.set(null);
+    if (this.ready()) {
+      this.reportsSvc
+        .upsert({
+          clientId: this.clientId(),
+          cycleId: this.cycleId(),
+          coverImageUrl: '',
+          executiveSummary: this.summaryText.trim(),
+          findings: this.findings,
+          nextPeriodPlan: this.nextPeriodPlan,
+          clientBlockers: this.clientBlockers,
+          finalConsiderations: this.finalConsiderations,
+          kpis: this.cleanKpis(),
+        })
+        .subscribe({
+          next: (r) => this.report.set(r),
+          error: () => null,
+        });
+    }
+  }
+
   private cleanKpis(): Report['kpis'] {
     const cleaned: Record<string, number> = {};
     for (const [k, v] of Object.entries(this.kpis)) {
@@ -1028,6 +1171,7 @@ export class ReportEditorComponent implements OnInit {
       .upsert({
         clientId: this.clientId(),
         cycleId: this.cycleId(),
+        coverImageUrl: this.coverImageUrl() || undefined,
         executiveSummary: this.summaryText.trim(),
         findings: this.findings,
         nextPeriodPlan: this.nextPeriodPlan,
@@ -1068,6 +1212,7 @@ export class ReportEditorComponent implements OnInit {
         .upsert({
           clientId: this.clientId(),
           cycleId: this.cycleId(),
+          coverImageUrl: this.coverImageUrl() || undefined,
           executiveSummary: this.summaryText.trim(),
           findings: this.findings,
           nextPeriodPlan: this.nextPeriodPlan,

@@ -346,6 +346,7 @@ export interface Report {
   cycleId: string;
   kpis: ReportKpis;
   kpisPrevious?: ReportKpis;
+  coverImageUrl?: string;
   executiveSummary: string;
   findings: string;
   nextPeriodPlan: string;

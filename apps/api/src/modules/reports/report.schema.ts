@@ -39,6 +39,9 @@ export class Report {
   @Prop({ type: KpisSubSchema })
   kpisPrevious?: ReportKpis;
 
+  @Prop()
+  coverImageUrl?: string;
+
   @Prop({ type: String, default: '' })
   executiveSummary!: string;
 
