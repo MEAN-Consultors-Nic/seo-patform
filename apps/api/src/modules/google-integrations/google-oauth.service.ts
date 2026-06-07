@@ -16,8 +16,9 @@ import {
 } from './google-auth-token.schema';
 
 const GSC_SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly';
-const PROFILE_SCOPE = 'openid email profile';
-const SCOPES = [GSC_SCOPE, ...PROFILE_SCOPE.split(' ')];
+const GA4_SCOPE = 'https://www.googleapis.com/auth/analytics.readonly';
+const PROFILE_SCOPES = ['openid', 'email', 'profile'];
+const SCOPES = [GSC_SCOPE, GA4_SCOPE, ...PROFILE_SCOPES];
 
 interface OAuthStatePayload {
   userId: string;
