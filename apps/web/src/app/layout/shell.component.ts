@@ -74,8 +74,10 @@ export class ShellComponent {
 
   private navItems: NavItem[] = [
     { route: '/dashboard', label: 'Dashboard', icon: '⌂', exact: true },
+    { route: '/schedule', label: 'My Schedule', icon: '◷' },
     { route: '/clients', label: 'Clients', icon: '◫' },
     { route: '/reports', label: 'Reports', icon: '◰' },
+    { route: '/settings/working-hours', label: 'Settings', icon: '⚙' },
     { route: '/users', label: 'Users', icon: '◔', roles: ['root'] },
   ];
 

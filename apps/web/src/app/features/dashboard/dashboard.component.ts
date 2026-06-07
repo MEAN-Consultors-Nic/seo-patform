@@ -1,11 +1,12 @@
 import { CommonModule, DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { Cycle, Task } from '@seo/shared';
+import { Cycle, Task, TimeBlock } from '@seo/shared';
 import { ClientsService, ClientWithStats } from '../../core/clients.service';
 import { CyclesService } from '../../core/cycles.service';
 import { TaskTemplatesService } from '../../core/task-templates.service';
 import { TasksService } from '../../core/tasks.service';
+import { TimeBlocksService } from '../../core/time-blocks.service';
 
 interface PendingByClient {
   clientId: string;
@@ -124,6 +125,77 @@ interface CapacityAlert {
             <span class="stat-label !text-ink-300">Total capacity</span>
             <div class="text-2xl font-bold text-white mt-1">{{ totalHours() }}h</div>
             <div class="text-xs text-ink-300 mt-1">billable / cycle</div>
+          </div>
+        }
+      </div>
+
+      <!-- Today's plan -->
+      <div class="card mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h3 class="text-sm font-semibold text-ink-900">Today's plan</h3>
+            <p class="text-[11px] text-ink-500">{{ todayDateLabel() }}</p>
+          </div>
+          <a routerLink="/schedule" class="text-xs text-brand-500 hover:text-brand-600 font-semibold">
+            Full schedule →
+          </a>
+        </div>
+
+        @if (loadingToday()) {
+          <div class="text-center py-8 text-ink-400 italic text-sm">Loading…</div>
+        } @else if (todayBlocks().length === 0) {
+          <div class="text-center py-8">
+            <div class="text-3xl mb-2">📅</div>
+            <div class="text-sm text-ink-500 mb-3">
+              No blocks scheduled for today.
+            </div>
+            <a routerLink="/schedule" class="btn-primary inline-flex items-center gap-1">
+              ⚡ Plan my cycle
+            </a>
+          </div>
+        } @else {
+          <div class="space-y-2">
+            @for (b of todayBlocks(); track b._id) {
+              <div [class]="'flex items-center gap-3 rounded-md border px-3 py-2.5 transition ' +
+                            (b.status === 'completed' ? 'border-positive-500/30 bg-positive-100/30' :
+                             b.status === 'in_progress' ? 'border-sky-500 bg-sky-50' :
+                             'border-ink-200 hover:bg-ink-50')">
+                <div class="text-center flex-shrink-0 w-14">
+                  <div class="text-xs font-bold text-ink-900">{{ b.startTime }}</div>
+                  <div class="text-[10px] text-ink-400">{{ formatDuration(b.durationMinutes) }}</div>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span [class]="'tier-' + clientTier(b)">{{ clientTier(b) }}</span>
+                    <span class="font-semibold text-ink-900 text-sm truncate">{{ clientName(b) }}</span>
+                  </div>
+                  @if (taskTitle(b)) {
+                    <div class="text-xs text-ink-500 truncate mt-0.5">{{ taskTitle(b) }}</div>
+                  } @else {
+                    <div class="text-xs text-ink-400 italic mt-0.5">Generic block</div>
+                  }
+                </div>
+                <div class="flex items-center gap-1 flex-shrink-0">
+                  @if (b.status === 'completed') {
+                    <span class="text-positive-500 text-xs font-bold">✓ Done</span>
+                  } @else {
+                    @if (b.status === 'planned') {
+                      <button class="text-[11px] font-semibold px-2 py-1 rounded border border-ink-200 hover:border-sky-500 hover:text-sky-600 transition"
+                              (click)="startBlock(b)">▶ Start</button>
+                    }
+                    <button class="text-[11px] font-semibold px-2 py-1 rounded border border-ink-200 hover:border-positive-500 hover:text-positive-500 transition"
+                            (click)="completeBlock(b)">✓ Done</button>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+          <div class="mt-3 pt-3 border-t border-ink-100 text-xs text-ink-500 flex items-center justify-between">
+            <span>
+              <strong class="text-ink-900">{{ todayPlannedMinutes() / 60 | number: '1.1-1' }}h</strong> planned
+              · <strong class="text-positive-500">{{ todayCompletedMinutes() / 60 | number: '1.1-1' }}h</strong> completed
+            </span>
+            <span class="text-ink-400">{{ todayBlocks().length }} block(s)</span>
           </div>
         }
       </div>
@@ -313,6 +385,7 @@ export class DashboardComponent implements OnInit {
   private cyclesSvc = inject(CyclesService);
   private templates = inject(TaskTemplatesService);
   private tasksSvc = inject(TasksService);
+  private blocksSvc = inject(TimeBlocksService);
 
   cycle = signal<Cycle | null>(null);
   stats = signal<Array<{ _id: string; count: number; totalHours: number }>>([]);
@@ -322,7 +395,9 @@ export class DashboardComponent implements OnInit {
 
   clientsWithStats = signal<ClientWithStats[]>([]);
   cycleTasks = signal<Task[]>([]);
+  todayBlocks = signal<TimeBlock[]>([]);
   loading = signal(true);
+  loadingToday = signal(true);
 
   Math = Math;
 
@@ -501,6 +576,7 @@ export class DashboardComponent implements OnInit {
   // --- Lifecycle ------------------------------------------------------------
 
   ngOnInit() {
+    this.loadTodayBlocks();
     this.cyclesSvc.current().subscribe({
       next: (c) => {
         this.cycle.set(c);
@@ -571,5 +647,90 @@ export class DashboardComponent implements OnInit {
     if (level === 'over') return 'text-danger-500';
     if (level === 'warning') return 'text-warning-500';
     return 'text-ink-500';
+  }
+
+  // --- Today widget --------------------------------------------------------
+
+  private loadTodayBlocks() {
+    const now = new Date();
+    const iso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    this.loadingToday.set(true);
+    this.blocksSvc.list({ date: iso }).subscribe({
+      next: (bs) => {
+        this.todayBlocks.set(bs.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+        this.loadingToday.set(false);
+      },
+      error: () => this.loadingToday.set(false),
+    });
+  }
+
+  todayDateLabel(): string {
+    return new Date().toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+    });
+  }
+
+  todayPlannedMinutes = computed(() =>
+    this.todayBlocks().reduce((acc, b) => acc + b.durationMinutes, 0),
+  );
+
+  todayCompletedMinutes = computed(() =>
+    this.todayBlocks()
+      .filter((b) => b.status === 'completed')
+      .reduce((acc, b) => acc + (b.actualMinutes ?? b.durationMinutes), 0),
+  );
+
+  clientName(b: TimeBlock): string {
+    const ref = b.clientId as unknown;
+    if (ref && typeof ref === 'object' && 'name' in ref) {
+      return (ref as { name: string }).name;
+    }
+    return '—';
+  }
+
+  clientTier(b: TimeBlock): string {
+    const ref = b.clientId as unknown;
+    if (ref && typeof ref === 'object' && 'tier' in ref) {
+      return (ref as { tier: string }).tier;
+    }
+    return 'C';
+  }
+
+  taskTitle(b: TimeBlock): string | null {
+    const ref = b.taskId as unknown;
+    if (ref && typeof ref === 'object' && 'title' in ref) {
+      return (ref as { title: string }).title;
+    }
+    return null;
+  }
+
+  formatDuration(minutes: number): string {
+    if (minutes < 60) return `${minutes}m`;
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return m ? `${h}h ${m}m` : `${h}h`;
+  }
+
+  startBlock(b: TimeBlock) {
+    if (!b._id) return;
+    this.blocksSvc.start(b._id).subscribe({
+      next: () => this.loadTodayBlocks(),
+    });
+  }
+
+  completeBlock(b: TimeBlock) {
+    if (!b._id) return;
+    this.blocksSvc.complete(b._id).subscribe({
+      next: () => {
+        this.loadTodayBlocks();
+        // Refresh cycle tasks so actualHours updates propagate
+        const c = this.cycle();
+        if (c?._id) {
+          this.tasksSvc.list({ cycleId: c._id }).subscribe((tasks) => this.cycleTasks.set(tasks));
+        }
+      },
+    });
   }
 }

@@ -293,6 +293,71 @@ export interface Report {
   sharedAt?: Date;
 }
 
+export interface WorkingHoursTimeRange {
+  start: string; // HH:mm
+  end: string; // HH:mm
+}
+
+export interface WorkingHoursConfig {
+  _id?: string;
+  userId: string;
+  workDays: number[]; // 0=Sun .. 6=Sat
+  timeBlocks: WorkingHoursTimeRange[];
+  dailyCapHours: number;
+  timezone?: string;
+  daysOff: string[]; // YYYY-MM-DD
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export const DEFAULT_WORKING_HOURS: Omit<WorkingHoursConfig, 'userId'> = {
+  workDays: [1, 2, 3, 4, 5],
+  timeBlocks: [
+    { start: '07:00', end: '12:00' },
+    { start: '13:00', end: '17:00' },
+  ],
+  dailyCapHours: 8,
+  timezone: 'America/Puerto_Rico',
+  daysOff: [],
+};
+
+export type TimeBlockStatus = 'planned' | 'in_progress' | 'completed' | 'skipped';
+
+export interface TimeBlock {
+  _id?: string;
+  userId: string;
+  cycleId: string;
+  date: string; // YYYY-MM-DD
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
+  durationMinutes: number;
+  clientId: string | { _id: string; name: string; tier: ClientTier; logoUrl?: string };
+  taskId?: string | { _id: string; title: string; category: TaskCategory; status: TaskStatus };
+  status: TimeBlockStatus;
+  startedAt?: Date;
+  completedAt?: Date;
+  actualMinutes?: number;
+  notes?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface AutoPlanSummary {
+  created: number;
+  removed: number;
+  totalMinutesScheduled: number;
+  totalMinutesAvailable: number;
+  perClient: Array<{
+    clientId: string;
+    name: string;
+    tier: ClientTier;
+    targetMinutes: number;
+    scheduledMinutes: number;
+    sessions: number;
+  }>;
+  warnings: string[];
+}
+
 export interface PublicReportPayload {
   report: Report;
   client: Pick<Client, 'name' | 'tier' | 'url' | 'logoUrl' | 'industry'>;
