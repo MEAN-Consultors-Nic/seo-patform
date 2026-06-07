@@ -298,6 +298,7 @@ export interface ReportKpis {
   avgPosition?: number;
   conversions?: number;
   indexedPages?: number;
+  nonIndexedPages?: number;
   gbpSearches?: number;
   gbpCalls?: number;
   gbpDirections?: number;

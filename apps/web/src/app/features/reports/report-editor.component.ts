@@ -664,6 +664,7 @@ export class ReportEditorComponent implements OnInit {
         { key: 'ctr', label: 'CTR', suffix: '%' },
         { key: 'avgPosition', label: 'Avg position' },
         { key: 'indexedPages', label: 'Indexed pages' },
+        { key: 'nonIndexedPages', label: 'Non-indexed pages' },
       ],
     },
     {

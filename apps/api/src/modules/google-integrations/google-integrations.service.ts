@@ -48,6 +48,24 @@ export class GoogleIntegrationsService {
       } catch (err) {
         warnings.push(`GSC: ${(err as Error).message}`);
       }
+      try {
+        const pages = await this.gsc.pageInsights(
+          user.userId,
+          client.gscSiteUrl,
+          startDate,
+          endDate,
+        );
+        out.indexedPages = pages.indexedPages;
+        if (typeof pages.nonIndexedPages === 'number') {
+          out.nonIndexedPages = pages.nonIndexedPages;
+        } else {
+          warnings.push(
+            'GSC: no sitemap registered — non-indexed pages could not be computed.',
+          );
+        }
+      } catch (err) {
+        warnings.push(`GSC pages: ${(err as Error).message}`);
+      }
     } else {
       warnings.push('GSC site URL is not set for this client.');
     }

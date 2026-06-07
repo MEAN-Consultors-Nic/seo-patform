@@ -80,6 +80,73 @@ export class GscService {
   }
 
   /**
+   * Approximates indexed vs non-indexed page counts for a site.
+   *
+   *  - `indexedPages`: distinct URLs that received at least one impression
+   *    in the date range (proxy for "pages currently surfaced in Search").
+   *  - `sitemapPages`: total URLs submitted through the registered sitemaps.
+   *  - `nonIndexedPages`: max(0, sitemapPages - indexedPages). Returned as
+   *    undefined when there are no submitted sitemaps so we don't display a
+   *    misleading zero.
+   */
+  async pageInsights(
+    userId: string,
+    siteUrl: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<{
+    indexedPages: number;
+    sitemapPages?: number;
+    nonIndexedPages?: number;
+  }> {
+    if (!siteUrl) throw new BadRequestException('Missing siteUrl');
+    const auth = await this.oauth.getAuthorizedClient(userId);
+    const sc = google.searchconsole({ version: 'v1', auth });
+
+    // 1. Pages that actually surfaced in search during the range
+    const analyticsRes = await sc.searchanalytics.query({
+      siteUrl,
+      requestBody: {
+        startDate,
+        endDate,
+        dimensions: ['page'],
+        rowLimit: 25000,
+      },
+    });
+    const indexedPages = analyticsRes.data.rows?.length ?? 0;
+
+    // 2. Sum of submitted URLs across all sitemaps. Best-effort: if the
+    //    sitemaps endpoint fails (404, no access, sitemap not registered)
+    //    we just skip the non-indexed calculation.
+    let sitemapPages: number | undefined;
+    try {
+      const sitemapsRes = await sc.sitemaps.list({ siteUrl });
+      const entries = sitemapsRes.data.sitemap || [];
+      let total = 0;
+      let found = false;
+      for (const sm of entries) {
+        for (const c of sm.contents || []) {
+          const submitted = Number(c.submitted ?? 0);
+          if (submitted > 0) {
+            total += submitted;
+            found = true;
+          }
+        }
+      }
+      if (found) sitemapPages = total;
+    } catch (err) {
+      this.logger.warn(`Could not read sitemaps for ${siteUrl}: ${(err as Error).message}`);
+    }
+
+    const nonIndexedPages =
+      typeof sitemapPages === 'number'
+        ? Math.max(0, sitemapPages - indexedPages)
+        : undefined;
+
+    return { indexedPages, sitemapPages, nonIndexedPages };
+  }
+
+  /**
    * Returns top queries for a site between two dates.
    */
   async topQueries(

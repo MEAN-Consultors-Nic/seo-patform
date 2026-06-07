@@ -261,6 +261,7 @@ export class ClientsListComponent implements OnInit {
     { key: 'avgPosition', label: 'Avg. position', hint: 'GSC', step: 0.1 },
     { key: 'conversions', label: 'Conversions', hint: 'GA4' },
     { key: 'indexedPages', label: 'Indexed pages' },
+    { key: 'nonIndexedPages', label: 'Non-indexed pages' },
     { key: 'gbpSearches', label: 'GBP searches' },
     { key: 'gbpCalls', label: 'GBP calls' },
     { key: 'gbpDirections', label: 'GBP direction requests' },

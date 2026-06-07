@@ -44,6 +44,7 @@ class BaselineKpisDto {
   @IsOptional() @IsNumber() avgPosition?: number;
   @IsOptional() @IsNumber() conversions?: number;
   @IsOptional() @IsNumber() indexedPages?: number;
+  @IsOptional() @IsNumber() nonIndexedPages?: number;
   @IsOptional() @IsNumber() gbpSearches?: number;
   @IsOptional() @IsNumber() gbpCalls?: number;
   @IsOptional() @IsNumber() gbpDirections?: number;

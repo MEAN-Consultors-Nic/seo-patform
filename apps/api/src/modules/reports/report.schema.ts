@@ -13,6 +13,7 @@ class KpisSubSchema implements ReportKpis {
   @Prop() avgPosition?: number;
   @Prop() conversions?: number;
   @Prop() indexedPages?: number;
+  @Prop() nonIndexedPages?: number;
   @Prop() gbpSearches?: number;
   @Prop() gbpCalls?: number;
   @Prop() gbpDirections?: number;

@@ -451,6 +451,7 @@ export class NewClientWizardComponent {
         { key: 'ctr', label: 'CTR (%)' },
         { key: 'avgPosition', label: 'Avg position' },
         { key: 'indexedPages', label: 'Indexed pages' },
+        { key: 'nonIndexedPages', label: 'Non-indexed pages' },
       ],
     },
     {

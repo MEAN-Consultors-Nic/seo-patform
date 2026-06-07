@@ -702,6 +702,7 @@ export class PublicReportComponent implements OnInit {
     { key: 'avgPosition', label: 'Avg position', inverse: true },
     { key: 'conversions', label: 'Conversions', inverse: false },
     { key: 'indexedPages', label: 'Indexed pages', inverse: false },
+    { key: 'nonIndexedPages', label: 'Non-indexed pages', inverse: true },
     { key: 'gbpSearches', label: 'GBP searches', inverse: false },
     { key: 'gbpCalls', label: 'GBP calls', inverse: false },
     { key: 'gbpDirections', label: 'GBP directions', inverse: false },
