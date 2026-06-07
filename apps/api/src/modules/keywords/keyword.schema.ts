@@ -53,6 +53,25 @@ export class Keyword {
 
   @Prop()
   lastCheckedAt?: Date;
+
+  // Provenance — manual entries vs auto-imported from Google Search Console
+  @Prop({ type: String, enum: ['manual', 'gsc'], default: 'manual' })
+  source?: 'manual' | 'gsc';
+
+  @Prop({ type: Date })
+  gscPulledAt?: Date;
+
+  @Prop()
+  gscClicks?: number;
+
+  @Prop()
+  gscImpressions?: number;
+
+  @Prop()
+  gscCtr?: number;
+
+  @Prop()
+  gscPosition?: number;
 }
 
 export const KeywordSchema = SchemaFactory.createForClass(Keyword);

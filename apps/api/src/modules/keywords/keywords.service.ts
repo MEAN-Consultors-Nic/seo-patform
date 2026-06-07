@@ -1,6 +1,13 @@
-import { forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  forwardRef,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { GscKeywordPullResult } from '@seo/shared';
 import { Keyword, KeywordDocument } from './keyword.schema';
 import {
   KeywordRanking,
@@ -9,6 +16,7 @@ import {
 import { RecordPositionDto, UpsertKeywordDto } from './dto/upsert-keyword.dto';
 import { ClientsService } from '../clients/clients.service';
 import { AuthenticatedUser } from '../auth/roles.guard';
+import { GscService } from '../google-integrations/gsc.service';
 
 @Injectable()
 export class KeywordsService {
@@ -18,6 +26,7 @@ export class KeywordsService {
     private readonly rankingModel: Model<KeywordRankingDocument>,
     @Inject(forwardRef(() => ClientsService))
     private readonly clients: ClientsService,
+    private readonly gsc: GscService,
   ) {}
 
   private async ensureAccessToKeyword(
@@ -246,5 +255,112 @@ export class KeywordsService {
     }
     result.sort((a, b) => b.changesIn90Days - a.changesIn90Days);
     return result;
+  }
+
+  // --- GSC import / revert ------------------------------------------------
+
+  async pullFromGsc(
+    clientId: string,
+    user: AuthenticatedUser,
+    opts: {
+      from: string;
+      to: string;
+      limit?: number;
+      minImpressions?: number;
+    },
+  ): Promise<GscKeywordPullResult> {
+    const client = await this.clients.findOne(clientId, user);
+    if (!client.gscSiteUrl) {
+      throw new BadRequestException(
+        'GSC site URL is not configured for this client. Set it in the Integrations tab first.',
+      );
+    }
+    const limit = Math.min(Math.max(opts.limit ?? 100, 1), 1000);
+    const minImpressions = Math.max(opts.minImpressions ?? 0, 0);
+
+    const rows = await this.gsc.topQueries(
+      user.userId,
+      client.gscSiteUrl,
+      opts.from,
+      opts.to,
+      limit,
+    );
+
+    const warnings: string[] = [];
+    const clientObjId = new Types.ObjectId(clientId);
+    const now = new Date();
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    for (const row of rows) {
+      const text = (row.key || '').trim();
+      if (!text) {
+        skipped++;
+        continue;
+      }
+      if (row.impressions < minImpressions) {
+        skipped++;
+        continue;
+      }
+      const existing = await this.keywordModel
+        .findOne({ clientId: clientObjId, text })
+        .exec();
+      const position = row.position ? Number(row.position.toFixed(1)) : undefined;
+      const gscPayload = {
+        gscPulledAt: now,
+        gscClicks: Math.round(row.clicks),
+        gscImpressions: Math.round(row.impressions),
+        gscCtr: Number(row.ctr.toFixed(2)),
+        gscPosition: position,
+      };
+      if (existing) {
+        // Capture previous position for delta tracking
+        if (typeof position === 'number' && existing.currentPosition !== position) {
+          existing.previousPosition = existing.currentPosition;
+        }
+        existing.set({
+          ...gscPayload,
+          currentPosition: position,
+          lastCheckedAt: now,
+        });
+        // Promote to gsc source if it was originally manual: keep source
+        // 'manual' so the clean operation never touches user-created rows.
+        await existing.save();
+        updated++;
+      } else {
+        await this.keywordModel.create({
+          clientId: clientObjId,
+          text,
+          source: 'gsc',
+          currentPosition: position,
+          lastCheckedAt: now,
+          ...gscPayload,
+        });
+        created++;
+      }
+    }
+
+    if (rows.length === 0) {
+      warnings.push(
+        'GSC returned no queries for this range. Try widening the date range.',
+      );
+    }
+    return {
+      created,
+      updated,
+      skipped,
+      totalReturned: rows.length,
+      range: { from: opts.from, to: opts.to },
+      warnings,
+    };
+  }
+
+  async cleanGscPulled(clientId: string, user: AuthenticatedUser) {
+    await this.clients.assertAccess(clientId, user);
+    const clientObjId = new Types.ObjectId(clientId);
+    const res = await this.keywordModel
+      .deleteMany({ clientId: clientObjId, source: 'gsc' })
+      .exec();
+    return { deleted: res.deletedCount || 0 };
   }
 }

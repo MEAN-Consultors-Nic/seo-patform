@@ -1,7 +1,12 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { Keyword, KeywordRanking, RankingDevice } from '@seo/shared';
+import {
+  GscKeywordPullResult,
+  Keyword,
+  KeywordRanking,
+  RankingDevice,
+} from '@seo/shared';
 import { API_BASE_URL } from './api.config';
 
 @Injectable({ providedIn: 'root' })
@@ -78,5 +83,21 @@ export class KeywordsService {
 
   remove(id: string) {
     return this.http.delete(`${this.base}/keywords/${id}`);
+  }
+
+  pullFromGsc(dto: {
+    clientId: string;
+    from: string;
+    to: string;
+    limit?: number;
+    minImpressions?: number;
+  }): Observable<GscKeywordPullResult> {
+    return this.http.post<GscKeywordPullResult>(`${this.base}/keywords/pull-gsc`, dto);
+  }
+
+  cleanGscPulled(clientId: string): Observable<{ deleted: number }> {
+    return this.http.delete<{ deleted: number }>(
+      `${this.base}/keywords/gsc-pulled/${clientId}`,
+    );
   }
 }

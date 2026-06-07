@@ -107,4 +107,28 @@ export class KeywordsController {
   remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.keywords.remove(id, user);
   }
+
+  @Post('pull-gsc')
+  async pullGsc(
+    @Body()
+    body: {
+      clientId: string;
+      from: string;
+      to: string;
+      limit?: number;
+      minImpressions?: number;
+    },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.clients.assertAccess(body.clientId, user);
+    return this.keywords.pullFromGsc(body.clientId, user, body);
+  }
+
+  @Delete('gsc-pulled/:clientId')
+  cleanGscPulled(
+    @Param('clientId') clientId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.keywords.cleanGscPulled(clientId, user);
+  }
 }

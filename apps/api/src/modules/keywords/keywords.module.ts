@@ -8,6 +8,7 @@ import {
 import { KeywordsService } from './keywords.service';
 import { KeywordsController } from './keywords.controller';
 import { ClientsModule } from '../clients/clients.module';
+import { GoogleIntegrationsModule } from '../google-integrations/google-integrations.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { ClientsModule } from '../clients/clients.module';
       { name: KeywordRanking.name, schema: KeywordRankingSchema },
     ]),
     forwardRef(() => ClientsModule),
+    GoogleIntegrationsModule,
   ],
   controllers: [KeywordsController],
   providers: [KeywordsService],

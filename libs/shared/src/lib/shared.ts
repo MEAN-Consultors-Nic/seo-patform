@@ -122,6 +122,8 @@ export type KeywordIntent =
 
 export type RankingDevice = 'desktop' | 'mobile';
 
+export type KeywordSource = 'manual' | 'gsc';
+
 export interface Keyword {
   _id?: string;
   clientId: string;
@@ -139,8 +141,23 @@ export interface Keyword {
   bestPosition?: number;
   bestPositionAt?: Date;
   lastCheckedAt?: Date;
+  source?: KeywordSource;
+  gscPulledAt?: Date;
+  gscClicks?: number;
+  gscImpressions?: number;
+  gscCtr?: number;
+  gscPosition?: number;
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+export interface GscKeywordPullResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  totalReturned: number;
+  range: { from: string; to: string };
+  warnings: string[];
 }
 
 export interface KeywordRanking {
