@@ -19,9 +19,6 @@ import { WorkingHoursService } from '../working-hours/working-hours.service';
 import { ClientsService } from '../clients/clients.service';
 import { AuthenticatedUser } from '../auth/roles.guard';
 
-const TIER_ORDER: Record<ClientTier, number> = { A: 0, B: 1, C: 2 };
-const TIER_BLOCK_MINUTES: Record<ClientTier, number> = { A: 120, B: 90, C: 75 };
-
 function minutesBetween(start: string, end: string): number {
   const [sh, sm] = start.split(':').map(Number);
   const [eh, em] = end.split(':').map(Number);
@@ -297,22 +294,91 @@ export class TimeBlocksService {
       used.set(b.date, day);
     }
 
-    // 5. Build daily capacity (total minutes available per day after subtracting used)
+    // 5. Build daily capacity
     const dailyCapMinutes = wh.dailyCapHours * 60;
-    const timeBlocksMinutes = (wh.timeBlocks || []).reduce(
-      (acc, tb) => acc + Math.max(0, minutesBetween(tb.start, tb.end)),
-      0,
-    );
-    const dailyAvailable = Math.min(dailyCapMinutes, timeBlocksMinutes);
 
-    // 6. Build "sessions" per client based on tier
-    type Session = {
-      clientId: string;
-      tier: ClientTier;
-      minutes: number;
+    // 6. Build all available slots in chronological order.
+    //    Each time block in the working hours is split into SLOTS_PER_BLOCK
+    //    equal sub-slots so the user gets predictable, similar-length sessions
+    //    (e.g. 07:00–12:00 -> two 2.5h slots; 13:00–17:00 -> two 2h slots).
+    //    The daily cap is honored by trimming/dropping the last slots if the
+    //    total exceeds it.
+    const SLOTS_PER_BLOCK = 2;
+    type Slot = {
+      date: string;
+      startTime: string;
+      endTime: string;
+      durationMinutes: number;
     };
-    const sessions: Session[] = [];
-    const perClient = new Map<string, { name: string; tier: ClientTier; targetMinutes: number; scheduledMinutes: number; sessions: number }>();
+    const allSlots: Slot[] = [];
+    for (const day of workingDays) {
+      const daySlots: Slot[] = [];
+      for (const tb of wh.timeBlocks) {
+        const totalMin = minutesBetween(tb.start, tb.end);
+        if (totalMin <= 0) continue;
+        const slotMin = Math.floor(totalMin / SLOTS_PER_BLOCK);
+        let cursor = tb.start;
+        for (let i = 0; i < SLOTS_PER_BLOCK; i++) {
+          const isLast = i === SLOTS_PER_BLOCK - 1;
+          const endT = isLast ? tb.end : addMinutes(cursor, slotMin);
+          const dur = minutesBetween(cursor, endT);
+          if (dur > 0) {
+            daySlots.push({
+              date: day,
+              startTime: cursor,
+              endTime: endT,
+              durationMinutes: dur,
+            });
+          }
+          cursor = endT;
+        }
+      }
+      // Enforce daily cap by trimming from the end
+      let dayTotal = daySlots.reduce((acc, s) => acc + s.durationMinutes, 0);
+      while (dayTotal > dailyCapMinutes && daySlots.length > 0) {
+        const last = daySlots[daySlots.length - 1];
+        const excess = dayTotal - dailyCapMinutes;
+        if (last.durationMinutes > excess) {
+          last.endTime = addMinutes(last.startTime, last.durationMinutes - excess);
+          last.durationMinutes -= excess;
+        } else {
+          daySlots.pop();
+        }
+        dayTotal = daySlots.reduce((acc, s) => acc + s.durationMinutes, 0);
+      }
+      // Drop slots that overlap a pre-existing (kept) block
+      const dayExisting = existing.filter((b) => b.date === day);
+      const filtered = daySlots.filter(
+        (s) =>
+          !dayExisting.some(
+            (b) => s.startTime < b.endTime && b.startTime < s.endTime,
+          ),
+      );
+      allSlots.push(...filtered);
+    }
+
+    const totalMinutesAvailable = allSlots.reduce((acc, s) => acc + s.durationMinutes, 0);
+
+    // 7. Compute per-client demand in slots based on tier and target hours.
+    type ClientPlan = {
+      clientId: string;
+      name: string;
+      tier: ClientTier;
+      targetMinutes: number;
+      slotsNeeded: number;
+      slotsAssigned: number;
+      lastDate: string | null;
+    };
+    const perClient = new Map<string, {
+      name: string;
+      tier: ClientTier;
+      targetMinutes: number;
+      scheduledMinutes: number;
+      sessions: number;
+    }>();
+    const plansByTier: Record<ClientTier, ClientPlan[]> = { A: [], B: [], C: [] };
+    const avgSlotMin =
+      allSlots.length > 0 ? totalMinutesAvailable / allSlots.length : 120;
     for (const c of clients) {
       const tier = c.tier as ClientTier;
       const targetMinutes = Math.round((c.hoursPerCycle ?? HOURS_PER_TIER[tier]) * 60);
@@ -323,52 +389,31 @@ export class TimeBlocksService {
         scheduledMinutes: 0,
         sessions: 0,
       });
-      const blockSize = TIER_BLOCK_MINUTES[tier];
-      let remaining = targetMinutes;
-      while (remaining > 0) {
-        const minutes = Math.min(remaining, blockSize);
-        sessions.push({ clientId: String(c._id), tier, minutes });
-        remaining -= minutes;
-      }
+      plansByTier[tier].push({
+        clientId: String(c._id),
+        name: c.name,
+        tier,
+        targetMinutes,
+        slotsNeeded: Math.max(1, Math.round(targetMinutes / avgSlotMin)),
+        slotsAssigned: 0,
+        lastDate: null,
+      });
     }
 
-    if (sessions.length === 0) {
+    if (allSlots.length === 0) {
       return {
         created: 0,
         removed,
         totalMinutesScheduled: 0,
-        totalMinutesAvailable: dailyAvailable * workingDays.length,
+        totalMinutesAvailable,
         perClient: [],
-        warnings: ['No active clients to schedule for this user.'],
+        warnings: ['No available slots in this cycle. Adjust working hours.'],
       };
     }
 
-    // 7. Sort sessions: Tier A first, then B, C. Within tier, interleave clients
-    //    so we don't fill one client back-to-back.
-    sessions.sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier]);
-    const interleaved: Session[] = [];
-    const tierBuckets: Record<ClientTier, Session[]> = { A: [], B: [], C: [] };
-    for (const s of sessions) tierBuckets[s.tier].push(s);
-    for (const tier of ['A', 'B', 'C'] as ClientTier[]) {
-      const bucket = tierBuckets[tier];
-      const byClient = new Map<string, Session[]>();
-      for (const s of bucket) {
-        const arr = byClient.get(s.clientId) || [];
-        arr.push(s);
-        byClient.set(s.clientId, arr);
-      }
-      const queues = Array.from(byClient.values());
-      let i = 0;
-      while (queues.some((q) => q.length > 0)) {
-        const q = queues[i % queues.length];
-        const next = q.shift();
-        if (next) interleaved.push(next);
-        i++;
-      }
-    }
-
-    // 8. Assign sessions to working days round-robin, keeping daily cap and
-    //    avoiding more than 2 sessions of the same client on the same day.
+    // 8. Walk slots chronologically. For each slot, pick the next client by
+    //    tier priority (A > B > C) and within tier prefer the client whose
+    //    last assignment is oldest, avoiding the same day if possible.
     const newBlocks: Array<{
       date: string;
       startTime: string;
@@ -380,80 +425,65 @@ export class TimeBlocksService {
       status: TimeBlockStatus;
     }> = [];
 
-    // Build cursors for each day's next available start time
-    const cursors = new Map<string, { tbIdx: number; cursor: string }>();
-    for (const day of workingDays) {
-      cursors.set(day, { tbIdx: 0, cursor: wh.timeBlocks[0]?.start ?? '09:00' });
-    }
-
-    // Honor pre-existing blocks: bump cursor past them
-    for (const b of existing) {
-      const cur = cursors.get(b.date);
-      if (!cur) continue;
-      if (b.endTime > cur.cursor) cur.cursor = b.endTime;
-    }
-
-    const placeSession = (s: Session): boolean => {
-      // Try each working day in order until we find one that fits
-      for (let attempt = 0; attempt < workingDays.length; attempt++) {
-        const day = workingDays[(dayCursor + attempt) % workingDays.length];
-        const day_used = used.get(day) || { byDay: 0, byClient: new Map<string, number>() };
-        if (day_used.byDay + s.minutes > dailyAvailable) continue;
-        if ((day_used.byClient.get(s.clientId) || 0) >= s.minutes * 2) continue;
-        const cur = cursors.get(day)!;
-        // Walk through timeBlocks until we find a slot
-        for (let bi = cur.tbIdx; bi < wh.timeBlocks.length; bi++) {
-          const tb = wh.timeBlocks[bi];
-          const start = cur.cursor < tb.start ? tb.start : cur.cursor;
-          if (minutesBetween(start, tb.end) >= s.minutes) {
-            const end = addMinutes(start, s.minutes);
-            newBlocks.push({
-              date: day,
-              startTime: start,
-              endTime: end,
-              durationMinutes: s.minutes,
-              clientId: new Types.ObjectId(s.clientId),
-              cycleId: cycleObjId,
-              userId: userObjId,
-              status: 'planned',
-            });
-            day_used.byDay += s.minutes;
-            day_used.byClient.set(
-              s.clientId,
-              (day_used.byClient.get(s.clientId) || 0) + s.minutes,
-            );
-            used.set(day, day_used);
-            cur.cursor = end;
-            cur.tbIdx = bi;
-            return true;
-          }
-          // No room in this sub-block, move to the next one
-          cur.tbIdx = bi + 1;
-          cur.cursor = wh.timeBlocks[bi + 1]?.start ?? tb.end;
-        }
+    const pickForSlot = (slot: Slot): ClientPlan | null => {
+      for (const tier of ['A', 'B', 'C'] as ClientTier[]) {
+        const tierPlans = plansByTier[tier];
+        const needing = tierPlans.filter((p) => p.slotsAssigned < p.slotsNeeded);
+        if (needing.length === 0) continue;
+        const notToday = needing.filter((p) => p.lastDate !== slot.date);
+        const pool = notToday.length > 0 ? notToday : needing;
+        pool.sort((a, b) => {
+          const aD = a.lastDate || '0000-00-00';
+          const bD = b.lastDate || '0000-00-00';
+          if (aD !== bD) return aD.localeCompare(bD);
+          if (a.slotsAssigned !== b.slotsAssigned)
+            return a.slotsAssigned - b.slotsAssigned;
+          return a.name.localeCompare(b.name);
+        });
+        return pool[0];
       }
-      return false;
+      return null;
     };
 
-    let dayCursor = 0;
-    let unplaced = 0;
-    for (const s of interleaved) {
-      const ok = placeSession(s);
-      if (!ok) {
-        unplaced++;
-      } else {
-        const stat = perClient.get(s.clientId);
-        if (stat) {
-          stat.scheduledMinutes += s.minutes;
-          stat.sessions += 1;
-        }
-        dayCursor = (dayCursor + 1) % workingDays.length;
+    for (const slot of allSlots) {
+      const picked = pickForSlot(slot);
+      if (!picked) break;
+      newBlocks.push({
+        date: slot.date,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        durationMinutes: slot.durationMinutes,
+        clientId: new Types.ObjectId(picked.clientId),
+        cycleId: cycleObjId,
+        userId: userObjId,
+        status: 'planned',
+      });
+      picked.slotsAssigned++;
+      picked.lastDate = slot.date;
+      const stat = perClient.get(picked.clientId);
+      if (stat) {
+        stat.scheduledMinutes += slot.durationMinutes;
+        stat.sessions += 1;
       }
     }
 
-    if (unplaced > 0) {
+    // Flag clients that ended up under/over the target by more than ~25%
+    for (const stat of perClient.values()) {
+      if (stat.targetMinutes === 0) continue;
+      const ratio = stat.scheduledMinutes / stat.targetMinutes;
+      if (ratio < 0.75) {
+        warnings.push(
+          `${stat.name} (Tier ${stat.tier}) only got ${(stat.scheduledMinutes / 60).toFixed(1)}h of ${(stat.targetMinutes / 60).toFixed(1)}h target — your weekly capacity may be tight.`,
+        );
+      }
+    }
+    if (newBlocks.length < allSlots.length) {
+      const leftover = allSlots.length - newBlocks.length;
+      const leftoverMin = allSlots
+        .slice(newBlocks.length)
+        .reduce((acc, s) => acc + s.durationMinutes, 0);
       warnings.push(
-        `${unplaced} session(s) could not be placed — your weekly capacity is below the assigned hours. Consider reducing client hours, adding capacity, or splitting the cycle.`,
+        `${leftover} slot(s) (${(leftoverMin / 60).toFixed(1)}h) left as buffer — no remaining client demand to fill them.`,
       );
     }
 
@@ -504,7 +534,7 @@ export class TimeBlocksService {
       created,
       removed,
       totalMinutesScheduled,
-      totalMinutesAvailable: dailyAvailable * workingDays.length,
+      totalMinutesAvailable,
       perClient: Array.from(perClient.entries()).map(([clientId, v]) => ({
         clientId,
         name: v.name,
