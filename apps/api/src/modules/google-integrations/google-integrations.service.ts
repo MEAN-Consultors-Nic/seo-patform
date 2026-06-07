@@ -55,6 +55,7 @@ export class GoogleIntegrationsService {
     if (client.ga4PropertyId) {
       try {
         const r = await this.ga4.aggregatedKpis(
+          user.userId,
           client.ga4PropertyId,
           startDate,
           endDate,
@@ -106,7 +107,7 @@ export class GoogleIntegrationsService {
       result.ga4.message = 'GA4 property ID is not set.';
     } else {
       try {
-        await this.ga4.metadata(client.ga4PropertyId);
+        await this.ga4.metadata(user.userId, client.ga4PropertyId);
         result.ga4.ok = true;
         result.ga4.message = 'GA4 connection OK.';
       } catch (err) {

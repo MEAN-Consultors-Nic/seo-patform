@@ -82,9 +82,12 @@ export class GoogleIntegrationsController {
   }
 
   @Get('ga4/test')
-  async ga4Test(@Query('propertyId') propertyId: string) {
+  async ga4Test(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('propertyId') propertyId: string,
+  ) {
     if (!propertyId) throw new BadRequestException('propertyId is required');
-    return this.ga4.metadata(propertyId);
+    return this.ga4.metadata(user.userId, propertyId);
   }
 
   @Get('clients/:clientId/kpis')

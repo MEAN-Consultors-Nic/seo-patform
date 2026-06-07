@@ -103,16 +103,15 @@ export interface Client {
   updatedAt?: Date;
 }
 
+export interface GoogleConnectionLink {
+  connected: boolean;
+  email?: string;
+  connectedAt?: Date;
+}
+
 export interface GoogleConnectionStatus {
-  gsc: {
-    connected: boolean;
-    email?: string;
-    connectedAt?: Date;
-  };
-  ga4: {
-    configured: boolean;
-    serviceAccountEmail?: string;
-  };
+  gsc: GoogleConnectionLink;
+  ga4: GoogleConnectionLink;
 }
 
 export type KeywordIntent =

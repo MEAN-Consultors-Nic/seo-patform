@@ -117,53 +117,50 @@ import { GoogleIntegrationsService } from '../../core/google-integrations.servic
               <div>
                 <h2 class="text-base font-semibold text-ink-900">Google Analytics 4</h2>
                 <p class="text-xs text-ink-500 mt-0.5 max-w-md">
-                  Pulls organic sessions and conversions for each client.
-                  Uses a service account — each client must grant <em>Viewer</em>
-                  access in GA4 Admin → Property Access Management.
+                  Pulls organic sessions and conversions for each client. Uses
+                  the same OAuth connection as Search Console — make sure your
+                  Google account has Viewer access on each client's GA4
+                  property.
                 </p>
               </div>
             </div>
-            @if (s.ga4.configured) {
+            @if (s.ga4.connected) {
               <span class="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-positive-100 text-positive-500">
-                ● Configured
+                ● Connected
               </span>
             } @else {
-              <span class="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-danger-100 text-danger-500">
-                ⚠ Not configured
+              <span class="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-ink-100 text-ink-500">
+                ○ Disconnected
               </span>
             }
           </div>
 
-          @if (s.ga4.serviceAccountEmail) {
-            <div class="mt-4 pt-4 border-t border-ink-100">
-              <div class="text-xs text-ink-500 mb-1">
-                Add this email as a <strong>Viewer</strong> in GA4 for every client:
+          <div class="mt-4 pt-4 border-t border-ink-100 text-xs">
+            @if (s.ga4.connected) {
+              <div class="text-ink-700">
+                Using <strong class="text-ink-900">{{ s.ga4.email || '(unknown)' }}</strong>
+                via the Google Search Console connection.
               </div>
-              <div class="flex items-center gap-2">
-                <code class="flex-1 bg-ink-100 rounded px-3 py-2 text-xs font-mono text-ink-900 truncate">
-                  {{ s.ga4.serviceAccountEmail }}
-                </code>
-                <button class="btn-secondary"
-                        (click)="copyEmail(s.ga4.serviceAccountEmail)">
-                  {{ copied() ? '✓ Copied' : 'Copy' }}
-                </button>
+              <div class="text-ink-500 mt-1">
+                For each client property, add this user as a <strong>Viewer</strong> in
+                GA4 Admin → Property access management.
               </div>
-            </div>
-          } @else {
-            <div class="mt-4 pt-4 border-t border-ink-100 text-xs text-warning-500">
-              GOOGLE_APPLICATION_CREDENTIALS_JSON is not set on the API.
-              Configure it in Heroku.
-            </div>
-          }
+            } @else {
+              <div class="text-ink-500">
+                Connect Google Search Console above. Both APIs share the same
+                OAuth credentials, so a single connect enables GA4 too.
+              </div>
+            }
+          </div>
         </div>
 
         <!-- Next steps -->
         <div class="card">
           <h2 class="text-sm font-semibold text-ink-900 mb-2">Next steps</h2>
           <ol class="text-xs text-ink-600 space-y-1.5 list-decimal pl-5">
-            <li>Connect Google Search Console above (one time).</li>
-            <li>Share the GA4 service account email with each client and ask them to grant Viewer access.</li>
-            <li>For each client, set the <strong>GA4 Property ID</strong> and <strong>GSC site URL</strong> in
+            <li>Connect Google above (one time — enables both GSC and GA4).</li>
+            <li>For each client, make sure your Google account has access to their GSC site and GA4 property as a Viewer.</li>
+            <li>Set the <strong>GA4 Property ID</strong> and <strong>GSC site URL</strong> per client in
               <a routerLink="/clients" class="text-brand-500 hover:underline">Clients → Integrations tab</a>.</li>
             <li>Open a report and use <strong>"Pull KPIs from Google"</strong> to fill the metrics automatically.</li>
           </ol>
@@ -181,7 +178,6 @@ export class IntegrationsSettingsComponent implements OnInit {
   status = signal<GoogleConnectionStatus | null>(null);
   loading = signal(true);
   working = signal(false);
-  copied = signal(false);
   justConnected = signal(false);
   errorMsg = signal<string | null>(null);
 
@@ -240,11 +236,4 @@ export class IntegrationsSettingsComponent implements OnInit {
     });
   }
 
-  copyEmail(email?: string) {
-    if (!email) return;
-    navigator.clipboard?.writeText(email).then(() => {
-      this.copied.set(true);
-      setTimeout(() => this.copied.set(false), 2000);
-    });
-  }
 }

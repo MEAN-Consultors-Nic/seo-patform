@@ -1,10 +1,5 @@
-import {
-  BadRequestException,
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-} from '@nestjs/common';
-import { google, Auth } from 'googleapis';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { google } from 'googleapis';
 import { GoogleOAuthService } from './google-oauth.service';
 
 export interface Ga4Kpis {
@@ -22,22 +17,9 @@ export class Ga4Service {
 
   constructor(private readonly oauth: GoogleOAuthService) {}
 
-  private buildAuth(): Auth.GoogleAuth {
-    const credentials = this.oauth.readServiceAccountJson();
-    if (!credentials) {
-      throw new InternalServerErrorException(
-        'GA4 service account is not configured. Set GOOGLE_APPLICATION_CREDENTIALS_JSON in the API env.',
-      );
-    }
-    return new google.auth.GoogleAuth({
-      credentials,
-      scopes: ['https://www.googleapis.com/auth/analytics.readonly'],
-    });
-  }
-
-  async metadata(propertyId: string) {
+  async metadata(userId: string, propertyId: string) {
     if (!propertyId) throw new BadRequestException('Missing GA4 propertyId');
-    const auth = this.buildAuth();
+    const auth = await this.oauth.getAuthorizedClient(userId);
     const data = google.analyticsdata({ version: 'v1beta', auth });
     const res = await data.properties.getMetadata({
       name: `properties/${propertyId}/metadata`,
@@ -52,14 +34,18 @@ export class Ga4Service {
   /**
    * Returns aggregated metrics for the property in the given date range.
    * `organicSessions` is filtered by the default-channel-group dimension.
+   * Authenticates with the user's OAuth refresh token (the same one used
+   * for Search Console) so we don't need a service account on each
+   * client's GA4 property.
    */
   async aggregatedKpis(
+    userId: string,
     propertyId: string,
     startDate: string,
     endDate: string,
   ): Promise<Ga4Kpis> {
     if (!propertyId) throw new BadRequestException('Missing GA4 propertyId');
-    const auth = this.buildAuth();
+    const auth = await this.oauth.getAuthorizedClient(userId);
     const data = google.analyticsdata({ version: 'v1beta', auth });
 
     // Run two reports in parallel: overall + organic-only

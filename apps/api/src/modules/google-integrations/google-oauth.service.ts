@@ -147,18 +147,18 @@ export class GoogleOAuthService {
 
   async getStatus(userId: string) {
     const doc = await this.model.findOne({ userId: new Types.ObjectId(userId) }).lean().exec();
+    const linked = doc
+      ? {
+          connected: true,
+          email: doc.googleEmail,
+          connectedAt: (doc as unknown as { createdAt?: Date }).createdAt,
+        }
+      : { connected: false };
     return {
-      gsc: doc
-        ? {
-            connected: true,
-            email: doc.googleEmail,
-            connectedAt: (doc as unknown as { createdAt?: Date }).createdAt,
-          }
-        : { connected: false },
-      ga4: {
-        configured: !!this.config.get<string>('GOOGLE_APPLICATION_CREDENTIALS_JSON'),
-        serviceAccountEmail: this.readServiceAccountEmail(),
-      },
+      // GSC and GA4 share the same OAuth credentials — connecting Google
+      // once gives the platform access to both APIs.
+      gsc: linked,
+      ga4: linked,
     };
   }
 
