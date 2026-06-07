@@ -304,8 +304,8 @@ function weekdayLabel(iso: string): { weekday: string; label: string } {
             <label class="flex items-start gap-2 text-sm text-ink-700 mb-4 cursor-pointer">
               <input type="checkbox" [(ngModel)]="autoPlanReplace" class="mt-0.5" />
               <span>
-                Replace existing planned blocks in this range (in-progress and
-                completed blocks are kept).
+                Wipe all planned blocks of this cycle before replanning
+                (in-progress and completed blocks are always kept).
               </span>
             </label>
 

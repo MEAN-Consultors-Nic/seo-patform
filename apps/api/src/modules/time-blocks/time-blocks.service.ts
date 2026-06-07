@@ -284,7 +284,10 @@ export class TimeBlocksService {
       );
     }
 
-    // 3. Wipe planned blocks for this user/cycle within the window if asked
+    // 3. Wipe ALL planned blocks for this user/cycle (regardless of the
+    //    planning window) when replace is requested. In-progress and
+    //    completed blocks are always kept since the user already started
+    //    working on them.
     const warnings: string[] = [];
     let removed = 0;
     if (options.replace) {
@@ -293,7 +296,6 @@ export class TimeBlocksService {
           userId: userObjId,
           cycleId: cycleObjId,
           status: 'planned',
-          date: { $gte: windowStartIso, $lte: windowEndIso },
         })
         .exec();
       removed = res.deletedCount || 0;
