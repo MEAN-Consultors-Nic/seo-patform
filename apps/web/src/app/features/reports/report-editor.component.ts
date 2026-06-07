@@ -218,18 +218,44 @@ interface KpiGroup {
                   KPIs with a previous period are compared automatically and show a green/red arrow.
                 </p>
               </div>
-              <button class="btn-secondary text-xs"
-                      type="button"
-                      (click)="pullKpisFromGoogle()"
-                      [disabled]="pullingKpis() || !clientId() || !cycleId()"
-                      title="Fetch KPIs from Google Search Console + Google Analytics for the cycle dates.">
-                @if (pullingKpis()) {
-                  <span class="inline-flex items-center gap-1.5"><span class="spinner" style="width:10px;height:10px;"></span> Pulling…</span>
-                } @else {
-                  ⚡ Pull KPIs from Google
-                }
-              </button>
+              <div class="flex items-center gap-2">
+                <select class="input input-sm text-xs"
+                        [ngModel]="pullRangePreset()"
+                        (ngModelChange)="setPullRangePreset($event)">
+                  @for (opt of pullRangeOptions; track opt.value) {
+                    <option [value]="opt.value">{{ opt.label }}</option>
+                  }
+                </select>
+                <button class="btn-secondary text-xs"
+                        type="button"
+                        (click)="pullKpisFromGoogle()"
+                        [disabled]="pullingKpis() || !clientId() || !cycleId()"
+                        title="Fetch KPIs from Google Search Console + Google Analytics for the selected range.">
+                  @if (pullingKpis()) {
+                    <span class="inline-flex items-center gap-1.5"><span class="spinner" style="width:10px;height:10px;"></span> Pulling…</span>
+                  } @else {
+                    ⚡ Pull KPIs from Google
+                  }
+                </button>
+              </div>
             </div>
+
+            @if (pullRangePreset() === 'custom') {
+              <div class="mb-4 grid grid-cols-2 gap-3 max-w-md">
+                <div>
+                  <label class="label">From</label>
+                  <input type="date" class="input"
+                         [ngModel]="pullFromDate()"
+                         (ngModelChange)="pullFromDate.set($event)" />
+                </div>
+                <div>
+                  <label class="label">To</label>
+                  <input type="date" class="input"
+                         [ngModel]="pullToDate()"
+                         (ngModelChange)="pullToDate.set($event)" />
+                </div>
+              </div>
+            }
 
             @if (pullResult(); as r) {
               <div [class]="'mb-4 rounded-md px-3 py-2 text-xs border ' +
@@ -246,6 +272,17 @@ interface KpiGroup {
                     Could not pull KPIs.
                   }
                 </div>
+                @if (pullRangeUsed(); as range) {
+                  <div class="mt-1 text-[11px] text-ink-600">
+                    Range: <strong>{{ range.from }}</strong> → <strong>{{ range.to }}</strong>
+                    ({{ range.days }} day{{ range.days === 1 ? '' : 's' }})
+                  </div>
+                }
+                @if (r.sources.gsc && pullHasRecentDates()) {
+                  <div class="mt-1 text-[11px] text-warning-500">
+                    ⚠ GSC data has a ~2-day lag — the last 2 days of the range may be empty.
+                  </div>
+                }
                 @if (r.sources.warnings.length) {
                   <ul class="mt-1 list-disc pl-4 text-[11px]">
                     @for (w of r.sources.warnings; track w) {
@@ -559,6 +596,19 @@ export class ReportEditorComponent implements OnInit {
   kpis: Record<string, number | null> = {};
   pullingKpis = signal(false);
   pullResult = signal<import('../../core/google-integrations.service').GoogleKpisResult | null>(null);
+  pullRangePreset = signal<'cycle' | 'last7' | 'last28' | 'lastCycle' | 'custom'>('cycle');
+  pullFromDate = signal<string>('');
+  pullToDate = signal<string>('');
+  pullRangeUsed = signal<{ from: string; to: string; days: number } | null>(null);
+  pullHasRecentDates = signal(false);
+
+  pullRangeOptions = [
+    { value: 'cycle', label: 'This cycle' },
+    { value: 'last7', label: 'Last 7 days' },
+    { value: 'last28', label: 'Last 28 days' },
+    { value: 'lastCycle', label: 'Previous cycle' },
+    { value: 'custom', label: 'Custom range' },
+  ] as const;
 
   cycleTasks = signal<Task[]>([]);
   completedTasks = computed(() =>
@@ -836,21 +886,100 @@ export class ReportEditorComponent implements OnInit {
     return cleaned as Report['kpis'];
   }
 
+  setPullRangePreset(preset: 'cycle' | 'last7' | 'last28' | 'lastCycle' | 'custom') {
+    this.pullRangePreset.set(preset);
+    if (preset === 'custom') {
+      // Seed custom inputs with whatever was last used (default to cycle).
+      if (!this.pullFromDate() || !this.pullToDate()) {
+        const range = this.resolvePullRange('cycle');
+        if (range) {
+          this.pullFromDate.set(range.from);
+          this.pullToDate.set(range.to);
+        }
+      }
+    }
+  }
+
+  private resolvePullRange(
+    preset: 'cycle' | 'last7' | 'last28' | 'lastCycle' | 'custom',
+  ): { from: string; to: string } | null {
+    if (preset === 'custom') {
+      if (!this.pullFromDate() || !this.pullToDate()) return null;
+      return { from: this.pullFromDate(), to: this.pullToDate() };
+    }
+    if (preset === 'last7' || preset === 'last28') {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - (preset === 'last7' ? 7 : 28));
+      return { from: this.formatIsoDate(start), to: this.formatIsoDate(end) };
+    }
+    const cycle = this.cycles().find((c) => c._id === this.cycleId());
+    if (!cycle) return null;
+    if (preset === 'cycle') {
+      return {
+        from: this.formatIsoDate(cycle.startDate),
+        to: this.formatIsoDate(cycle.endDate),
+      };
+    }
+    // lastCycle: previous cycle in chronological order
+    if (preset === 'lastCycle') {
+      const sorted = this.cycles()
+        .slice()
+        .sort(
+          (a, b) =>
+            new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
+        );
+      const idx = sorted.findIndex((c) => c._id === cycle._id);
+      const prev = idx > 0 ? sorted[idx - 1] : null;
+      if (!prev) return null;
+      return {
+        from: this.formatIsoDate(prev.startDate),
+        to: this.formatIsoDate(prev.endDate),
+      };
+    }
+    return null;
+  }
+
   pullKpisFromGoogle() {
     const clientId = this.clientId();
     const cycleId = this.cycleId();
     if (!clientId || !cycleId) return;
-    const cycle = this.cycles().find((c) => c._id === cycleId);
-    if (!cycle) return;
-    const from = this.formatIsoDate(cycle.startDate);
-    const to = this.formatIsoDate(cycle.endDate);
+    const range = this.resolvePullRange(this.pullRangePreset());
+    if (!range) {
+      this.pullResult.set({
+        kpis: {},
+        sources: {
+          gsc: false,
+          ga4: false,
+          warnings: [
+            this.pullRangePreset() === 'lastCycle'
+              ? 'No previous cycle found.'
+              : 'Please fill the From and To dates.',
+          ],
+        },
+      });
+      return;
+    }
+    if (range.from > range.to) {
+      this.pullResult.set({
+        kpis: {},
+        sources: {
+          gsc: false,
+          ga4: false,
+          warnings: ['From date must be on or before To date.'],
+        },
+      });
+      return;
+    }
     this.pullingKpis.set(true);
     this.pullResult.set(null);
-    this.googleSvc.kpisForClient(clientId, from, to).subscribe({
+    const days = this.daysBetween(range.from, range.to);
+    this.pullRangeUsed.set({ from: range.from, to: range.to, days });
+    this.pullHasRecentDates.set(this.isRecent(range.to));
+    this.googleSvc.kpisForClient(clientId, range.from, range.to).subscribe({
       next: (r) => {
         this.pullingKpis.set(false);
         this.pullResult.set(r);
-        // Merge: only overwrite KPIs that came back from Google.
         for (const [key, value] of Object.entries(r.kpis)) {
           if (typeof value === 'number' && !Number.isNaN(value)) {
             this.kpis[key] = value;
@@ -871,6 +1000,18 @@ export class ReportEditorComponent implements OnInit {
   private formatIsoDate(d: Date | string): string {
     const date = typeof d === 'string' ? new Date(d) : d;
     return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  private daysBetween(from: string, to: string): number {
+    const a = new Date(`${from}T00:00:00Z`).getTime();
+    const b = new Date(`${to}T00:00:00Z`).getTime();
+    return Math.max(1, Math.round((b - a) / 86_400_000) + 1);
+  }
+
+  private isRecent(iso: string): boolean {
+    const target = new Date(`${iso}T00:00:00Z`).getTime();
+    const twoDaysAgo = Date.now() - 2 * 86_400_000;
+    return target >= twoDaysAgo;
   }
 
   save() {
