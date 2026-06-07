@@ -97,8 +97,22 @@ export interface Client {
   baselineDate?: Date;
   hoursPerCycle: number;
   active: boolean;
+  ga4PropertyId?: string;
+  gscSiteUrl?: string;
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+export interface GoogleConnectionStatus {
+  gsc: {
+    connected: boolean;
+    email?: string;
+    connectedAt?: Date;
+  };
+  ga4: {
+    configured: boolean;
+    serviceAccountEmail?: string;
+  };
 }
 
 export type KeywordIntent =

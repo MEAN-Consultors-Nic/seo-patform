@@ -9,6 +9,7 @@ import { CyclesService } from '../../core/cycles.service';
 import { ReportsService } from '../../core/reports.service';
 import { TasksService } from '../../core/tasks.service';
 import { SanitizerService } from '../../core/sanitizer.service';
+import { GoogleIntegrationsService } from '../../core/google-integrations.service';
 
 interface KpiGroup {
   label: string;
@@ -207,15 +208,53 @@ interface KpiGroup {
 
           <!-- 2. KPIs grouped -->
           <section class="card">
-            <div class="mb-4">
-              <h2 class="text-base font-semibold text-ink-900 flex items-center gap-2">
-                <span class="text-[10px] uppercase tracking-wider bg-brand-50 text-brand-600 px-2 py-0.5 rounded">02</span>
-                Period metrics
-              </h2>
-              <p class="text-xs text-ink-500 mt-1">
-                KPIs with a previous period are compared automatically and show a green/red arrow.
-              </p>
+            <div class="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 class="text-base font-semibold text-ink-900 flex items-center gap-2">
+                  <span class="text-[10px] uppercase tracking-wider bg-brand-50 text-brand-600 px-2 py-0.5 rounded">02</span>
+                  Period metrics
+                </h2>
+                <p class="text-xs text-ink-500 mt-1">
+                  KPIs with a previous period are compared automatically and show a green/red arrow.
+                </p>
+              </div>
+              <button class="btn-secondary text-xs"
+                      type="button"
+                      (click)="pullKpisFromGoogle()"
+                      [disabled]="pullingKpis() || !clientId() || !cycleId()"
+                      title="Fetch KPIs from Google Search Console + Google Analytics for the cycle dates.">
+                @if (pullingKpis()) {
+                  <span class="inline-flex items-center gap-1.5"><span class="spinner" style="width:10px;height:10px;"></span> Pulling…</span>
+                } @else {
+                  ⚡ Pull KPIs from Google
+                }
+              </button>
             </div>
+
+            @if (pullResult(); as r) {
+              <div [class]="'mb-4 rounded-md px-3 py-2 text-xs border ' +
+                (r.sources.gsc || r.sources.ga4
+                  ? 'border-positive-500/30 bg-positive-100/40 text-ink-700'
+                  : 'border-danger-500/30 bg-danger-100/40 text-danger-500')">
+                <div class="font-semibold">
+                  @if (r.sources.gsc || r.sources.ga4) {
+                    ✓ Pulled from
+                    @if (r.sources.gsc) { <span>Search Console</span> }
+                    @if (r.sources.gsc && r.sources.ga4) { <span> + </span> }
+                    @if (r.sources.ga4) { <span>Analytics</span> }
+                  } @else {
+                    Could not pull KPIs.
+                  }
+                </div>
+                @if (r.sources.warnings.length) {
+                  <ul class="mt-1 list-disc pl-4 text-[11px]">
+                    @for (w of r.sources.warnings; track w) {
+                      <li>{{ w }}</li>
+                    }
+                  </ul>
+                }
+              </div>
+            }
 
             @for (group of kpiGroups; track group.label) {
               <div class="mb-5">
@@ -463,6 +502,7 @@ export class ReportEditorComponent implements OnInit {
   private reportsSvc = inject(ReportsService);
   private tasksSvc = inject(TasksService);
   private sanitizer = inject(SanitizerService);
+  private googleSvc = inject(GoogleIntegrationsService);
 
   sanitize(html: string | undefined | null) {
     return this.sanitizer.trustRichHtml(html);
@@ -517,6 +557,8 @@ export class ReportEditorComponent implements OnInit {
   clientBlockers = '';
   finalConsiderations = '';
   kpis: Record<string, number | null> = {};
+  pullingKpis = signal(false);
+  pullResult = signal<import('../../core/google-integrations.service').GoogleKpisResult | null>(null);
 
   cycleTasks = signal<Task[]>([]);
   completedTasks = computed(() =>
@@ -792,6 +834,43 @@ export class ReportEditorComponent implements OnInit {
       if (typeof v === 'number' && !Number.isNaN(v)) cleaned[k] = v;
     }
     return cleaned as Report['kpis'];
+  }
+
+  pullKpisFromGoogle() {
+    const clientId = this.clientId();
+    const cycleId = this.cycleId();
+    if (!clientId || !cycleId) return;
+    const cycle = this.cycles().find((c) => c._id === cycleId);
+    if (!cycle) return;
+    const from = this.formatIsoDate(cycle.startDate);
+    const to = this.formatIsoDate(cycle.endDate);
+    this.pullingKpis.set(true);
+    this.pullResult.set(null);
+    this.googleSvc.kpisForClient(clientId, from, to).subscribe({
+      next: (r) => {
+        this.pullingKpis.set(false);
+        this.pullResult.set(r);
+        // Merge: only overwrite KPIs that came back from Google.
+        for (const [key, value] of Object.entries(r.kpis)) {
+          if (typeof value === 'number' && !Number.isNaN(value)) {
+            this.kpis[key] = value;
+          }
+        }
+      },
+      error: (err) => {
+        this.pullingKpis.set(false);
+        const msg = err?.error?.message || 'Could not pull KPIs from Google.';
+        this.pullResult.set({
+          kpis: {},
+          sources: { gsc: false, ga4: false, warnings: [msg] },
+        });
+      },
+    });
+  }
+
+  private formatIsoDate(d: Date | string): string {
+    const date = typeof d === 'string' ? new Date(d) : d;
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
   }
 
   save() {

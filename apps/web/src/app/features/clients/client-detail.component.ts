@@ -13,6 +13,7 @@ import { ClientBacklinksTab } from './tabs/backlinks-tab.component';
 import { ClientTasksTab } from './tabs/tasks-tab.component';
 import { ClientContentTab } from './tabs/content-tab.component';
 import { ClientPositionTrackerTab } from './tabs/position-tracker-tab.component';
+import { ClientIntegrationsTab } from './tabs/integrations-tab.component';
 
 type TabKey =
   | 'data'
@@ -25,7 +26,8 @@ type TabKey =
   | 'positions'
   | 'competitors'
   | 'backlinks'
-  | 'kpis';
+  | 'kpis'
+  | 'integrations';
 
 @Component({
   selector: 'app-client-detail',
@@ -43,6 +45,7 @@ type TabKey =
     ClientTasksTab,
     ClientContentTab,
     ClientPositionTrackerTab,
+    ClientIntegrationsTab,
   ],
   template: `
     @if (client(); as c) {
@@ -162,6 +165,9 @@ type TabKey =
           @case ('kpis') {
             <app-client-kpi-history-tab [clientId]="c._id!" />
           }
+          @case ('integrations') {
+            <app-client-integrations-tab [client]="c" />
+          }
         }
       </div>
     }
@@ -186,6 +192,7 @@ export class ClientDetailComponent implements OnInit {
     { key: 'knowledge', label: 'Knowledge' },
     { key: 'contacts', label: 'Contacts' },
     { key: 'access', label: 'Access' },
+    { key: 'integrations', label: 'Integrations' },
     { key: 'data', label: 'Details' },
   ];
 

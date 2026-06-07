@@ -94,6 +94,12 @@ export class Client {
 
   @Prop({ default: true })
   active!: boolean;
+
+  @Prop()
+  ga4PropertyId?: string;
+
+  @Prop()
+  gscSiteUrl?: string;
 }
 
 export const ClientSchema = SchemaFactory.createForClass(Client);

@@ -57,6 +57,13 @@ export const appRoutes: Route[] = [
           ),
       },
       {
+        path: 'settings/integrations',
+        loadComponent: () =>
+          import('./features/settings/integrations.component').then(
+            (m) => m.IntegrationsSettingsComponent,
+          ),
+      },
+      {
         path: 'users',
         canActivate: [roleGuard('root')],
         loadComponent: () =>

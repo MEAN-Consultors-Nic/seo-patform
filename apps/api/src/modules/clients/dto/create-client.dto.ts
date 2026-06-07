@@ -69,4 +69,6 @@ export class CreateClientDto {
   @IsOptional() baselineDate?: Date;
   @IsOptional() @IsNumber() hoursPerCycle?: number;
   @IsOptional() @IsBoolean() active?: boolean;
+  @IsOptional() @IsString() ga4PropertyId?: string;
+  @IsOptional() @IsString() gscSiteUrl?: string;
 }
