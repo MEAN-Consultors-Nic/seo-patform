@@ -1,27 +1,36 @@
 import { CommonModule, DatePipe } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink, RouterLinkActive } from '@angular/router';
 import { GoogleConnectionStatus } from '@seo/shared';
 import { GoogleIntegrationsService } from '../../core/google-integrations.service';
 
 @Component({
   selector: 'app-integrations-settings',
   standalone: true,
-  imports: [CommonModule, RouterLink, DatePipe],
+  imports: [CommonModule, RouterLink, RouterLinkActive, DatePipe],
   template: `
     <div class="page-container max-w-3xl">
-      <a routerLink="/settings/working-hours" class="text-xs text-ink-500 hover:text-ink-900 inline-flex items-center gap-1">
-        ← Back to working hours
-      </a>
-
-      <header class="page-header mt-3">
+      <header class="page-header">
         <div>
-          <h1 class="page-title">Integrations</h1>
-          <p class="page-subtitle">
-            Connect Google Search Console and Google Analytics to auto-fill report KPIs.
-          </p>
+          <h1 class="page-title">Settings</h1>
         </div>
       </header>
+
+      <nav class="tab-bar mb-6">
+        <a routerLink="/settings/working-hours" routerLinkActive="tab-active" class="tab">
+          Working hours
+        </a>
+        <a routerLink="/settings/integrations" routerLinkActive="tab-active" class="tab">
+          Integrations
+        </a>
+      </nav>
+
+      <div class="mb-4">
+        <h2 class="text-xl font-bold text-ink-900">Integrations</h2>
+        <p class="text-sm text-ink-500">
+          Connect Google Search Console and Google Analytics to auto-fill report KPIs.
+        </p>
+      </div>
 
       @if (justConnected()) {
         <div class="card mb-4 border-l-4 border-positive-500 bg-positive-100/30">

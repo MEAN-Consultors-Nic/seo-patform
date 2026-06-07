@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { RouterLink, RouterLinkActive } from '@angular/router';
 import { WorkingHoursConfig, WorkingHoursTimeRange } from '@seo/shared';
 import { WorkingHoursService } from '../../core/working-hours.service';
 
@@ -18,21 +18,30 @@ const WEEKDAYS = [
 @Component({
   selector: 'app-working-hours-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, RouterLinkActive],
   template: `
     <div class="page-container max-w-2xl">
-      <a routerLink="/schedule" class="text-xs text-ink-500 hover:text-ink-900 inline-flex items-center gap-1">
-        ← Back to schedule
-      </a>
-
-      <header class="page-header mt-3">
+      <header class="page-header">
         <div>
-          <h1 class="page-title">Working hours</h1>
-          <p class="page-subtitle">
-            Auto-plan uses this configuration to figure out when to schedule client work.
-          </p>
+          <h1 class="page-title">Settings</h1>
         </div>
       </header>
+
+      <nav class="tab-bar mb-6">
+        <a routerLink="/settings/working-hours" routerLinkActive="tab-active" class="tab">
+          Working hours
+        </a>
+        <a routerLink="/settings/integrations" routerLinkActive="tab-active" class="tab">
+          Integrations
+        </a>
+      </nav>
+
+      <div class="mb-4">
+        <h2 class="text-xl font-bold text-ink-900">Working hours</h2>
+        <p class="text-sm text-ink-500">
+          Auto-plan uses this configuration to figure out when to schedule client work.
+        </p>
+      </div>
 
       @if (config(); as cfg) {
         <div class="card mb-4">
