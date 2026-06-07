@@ -452,6 +452,7 @@ export class ReportsService {
       $set.kpis = cleaned;
     }
     if (dto.kpisPrevious !== undefined) $set.kpisPrevious = dto.kpisPrevious;
+    if (dto.coverImageUrl !== undefined) $set.coverImageUrl = dto.coverImageUrl;
     if (dto.executiveSummary !== undefined) $set.executiveSummary = dto.executiveSummary;
     if (dto.findings !== undefined) $set.findings = dto.findings;
     if (dto.nextPeriodPlan !== undefined) $set.nextPeriodPlan = dto.nextPeriodPlan;

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { QuillEditorComponent } from 'ngx-quill';
@@ -228,15 +228,37 @@ interface KpiGroup {
                 </button>
               } @else {
                 @if (cloudinary.isConfigured()) {
-                  <button type="button"
-                          (click)="coverInput.click()"
-                          [disabled]="uploadingCover()"
-                          class="w-full block border-2 border-dashed border-ink-300 hover:border-brand-500 rounded-lg p-6 text-center transition disabled:opacity-50">
+                  <div
+                    class="w-full block border-2 border-dashed rounded-lg p-6 text-center transition cursor-pointer"
+                    [class.border-ink-300]="!coverDropActive()"
+                    [class.hover:border-brand-500]="!coverDropActive()"
+                    [class.border-brand-500]="coverDropActive()"
+                    [class.bg-brand-50]="coverDropActive()"
+                    [class.opacity-50]="uploadingCover()"
+                    (click)="coverInput.click()"
+                    (dragenter)="onCoverDragEnter($event)"
+                    (dragover)="onCoverDragOver($event)"
+                    (dragleave)="onCoverDragLeave($event)"
+                    (drop)="onCoverDrop($event)">
                     <div class="text-3xl mb-1">🖼</div>
                     <div class="font-semibold text-ink-900 text-sm">
                       {{ uploadingCover() ? 'Uploading…' : 'Add cover picture' }}
                     </div>
                     <div class="text-[11px] text-ink-500 mt-0.5">PNG · JPG · WebP — up to 10 MB</div>
+                    <div class="text-[11px] text-ink-400 mt-2">
+                      or drop it here · paste with
+                      <kbd class="px-1.5 py-0.5 rounded border border-ink-300 bg-white text-[10px] font-mono text-ink-700">{{ coverPasteHint }}</kbd>
+                    </div>
+                  </div>
+                  <button type="button"
+                          (click)="pasteCoverFromClipboard(); $event.stopPropagation()"
+                          [disabled]="uploadingCover() || readingCoverClipboard()"
+                          class="mt-3 w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-ink-200 bg-white text-sm font-semibold text-ink-700 hover:border-brand-500 hover:text-brand-600 disabled:opacity-50 transition">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <rect x="3.5" y="2.5" width="9" height="11" rx="1.5" />
+                      <path d="M6 2.5V1.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1" stroke-linecap="round" />
+                    </svg>
+                    {{ readingCoverClipboard() ? 'Reading clipboard…' : 'Paste from clipboard' }}
                   </button>
                 } @else {
                   <div class="rounded-md border border-warning-500/30 bg-warning-100/40 px-3 py-2 text-xs text-warning-500">
@@ -663,6 +685,9 @@ export class ReportEditorComponent implements OnInit {
   uploadingCover = signal(false);
   coverUploadProgress = signal<number | null>(null);
   coverError = signal<string | null>(null);
+  coverDropActive = signal(false);
+  readingCoverClipboard = signal(false);
+  coverPasteHint = this.detectPasteHint();
   pullingKpis = signal(false);
   pullResult = signal<import('../../core/google-integrations.service').GoogleKpisResult | null>(null);
   pullRangePreset = signal<'cycle' | 'last7' | 'last28' | 'lastCycle' | 'custom'>('cycle');
@@ -957,7 +982,131 @@ export class ReportEditorComponent implements OnInit {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
     input.value = '';
-    if (!file) return;
+    if (file) await this.acceptCoverFile(file);
+  }
+
+  removeCoverImage() {
+    this.coverImageUrl.set('');
+    this.coverError.set(null);
+    if (this.ready()) {
+      this.reportsSvc
+        .upsert({
+          clientId: this.clientId(),
+          cycleId: this.cycleId(),
+          coverImageUrl: '',
+          executiveSummary: this.summaryText.trim(),
+          findings: this.findings,
+          nextPeriodPlan: this.nextPeriodPlan,
+          clientBlockers: this.clientBlockers,
+          finalConsiderations: this.finalConsiderations,
+          kpis: this.cleanKpis(),
+        })
+        .subscribe({
+          next: (r) => this.report.set(r),
+          error: () => null,
+        });
+    }
+  }
+
+  // --- Paste / drag-drop for cover image ----------------------------------
+
+  @HostListener('window:paste', ['$event'])
+  async onWindowPaste(ev: ClipboardEvent) {
+    // Only catch clipboard pastes when the report editor is the active
+    // surface and the user is NOT currently typing in an input/contenteditable.
+    if (this.coverImageUrl()) return;
+    if (this.uploadingCover()) return;
+    const target = ev.target as HTMLElement | null;
+    if (target) {
+      const tag = target.tagName.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || target.isContentEditable) {
+        return;
+      }
+    }
+    const items = ev.clipboardData?.items;
+    if (!items) return;
+    for (const item of Array.from(items)) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          ev.preventDefault();
+          await this.acceptCoverFile(this.renameClipboardFile(file));
+          return;
+        }
+      }
+    }
+  }
+
+  async pasteCoverFromClipboard() {
+    this.coverError.set(null);
+    if (this.readingCoverClipboard()) return;
+    if (!('clipboard' in navigator) || !navigator.clipboard.read) {
+      this.coverError.set(
+        `Your browser does not expose clipboard images. Press ${this.coverPasteHint} instead.`,
+      );
+      return;
+    }
+    this.readingCoverClipboard.set(true);
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const imgType = item.types.find((t) => t.startsWith('image/'));
+        if (!imgType) continue;
+        const blob = await item.getType(imgType);
+        const file = new File([blob], this.suggestedClipboardName(imgType), {
+          type: imgType,
+        });
+        await this.acceptCoverFile(file);
+        this.readingCoverClipboard.set(false);
+        return;
+      }
+      this.coverError.set('No image found in the clipboard. Copy a screenshot first.');
+    } catch (err) {
+      const msg = (err as Error).message || '';
+      if (/denied|permission/i.test(msg)) {
+        this.coverError.set(
+          `Clipboard access was denied. Press ${this.coverPasteHint} to paste instead.`,
+        );
+      } else {
+        this.coverError.set(
+          `Could not read clipboard. Press ${this.coverPasteHint} to paste instead.`,
+        );
+      }
+    } finally {
+      this.readingCoverClipboard.set(false);
+    }
+  }
+
+  onCoverDragEnter(ev: DragEvent) {
+    ev.preventDefault();
+    if (this.hasImageInTransfer(ev.dataTransfer)) this.coverDropActive.set(true);
+  }
+
+  onCoverDragOver(ev: DragEvent) {
+    ev.preventDefault();
+    if (this.hasImageInTransfer(ev.dataTransfer)) this.coverDropActive.set(true);
+  }
+
+  onCoverDragLeave(ev: DragEvent) {
+    ev.preventDefault();
+    this.coverDropActive.set(false);
+  }
+
+  async onCoverDrop(ev: DragEvent) {
+    ev.preventDefault();
+    this.coverDropActive.set(false);
+    const file = ev.dataTransfer?.files?.[0];
+    if (file) await this.acceptCoverFile(file);
+  }
+
+  private hasImageInTransfer(dt: DataTransfer | null): boolean {
+    if (!dt) return false;
+    return Array.from(dt.items || []).some(
+      (i) => i.kind === 'file' && i.type.startsWith('image/'),
+    );
+  }
+
+  private async acceptCoverFile(file: File) {
     this.coverError.set(null);
     if (!file.type.startsWith('image/')) {
       this.coverError.set('That file is not an image.');
@@ -976,8 +1125,6 @@ export class ReportEditorComponent implements OnInit {
       this.coverImageUrl.set(res.url);
       this.coverUploadProgress.set(null);
       this.uploadingCover.set(false);
-      // Persist immediately so the change survives a refresh even before
-      // the user hits Save.
       if (this.ready()) {
         this.reportsSvc
           .upsert({
@@ -1003,27 +1150,24 @@ export class ReportEditorComponent implements OnInit {
     }
   }
 
-  removeCoverImage() {
-    this.coverImageUrl.set('');
-    this.coverError.set(null);
-    if (this.ready()) {
-      this.reportsSvc
-        .upsert({
-          clientId: this.clientId(),
-          cycleId: this.cycleId(),
-          coverImageUrl: '',
-          executiveSummary: this.summaryText.trim(),
-          findings: this.findings,
-          nextPeriodPlan: this.nextPeriodPlan,
-          clientBlockers: this.clientBlockers,
-          finalConsiderations: this.finalConsiderations,
-          kpis: this.cleanKpis(),
-        })
-        .subscribe({
-          next: (r) => this.report.set(r),
-          error: () => null,
-        });
-    }
+  private renameClipboardFile(file: File): File {
+    if (file.name && file.name !== 'image.png') return file;
+    return new File([file], this.suggestedClipboardName(file.type), {
+      type: file.type,
+    });
+  }
+
+  private suggestedClipboardName(mime: string): string {
+    const ext = (mime.split('/')[1] || 'png').replace('jpeg', 'jpg');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    return `cover-${stamp}.${ext}`;
+  }
+
+  private detectPasteHint(): string {
+    if (typeof navigator === 'undefined') return 'Ctrl+V';
+    const platform = navigator.platform || '';
+    const ua = navigator.userAgent || '';
+    return /Mac|iPhone|iPad/i.test(platform + ua) ? '⌘V' : 'Ctrl+V';
   }
 
   private cleanKpis(): Report['kpis'] {
