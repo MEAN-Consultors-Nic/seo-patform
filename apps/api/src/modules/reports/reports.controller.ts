@@ -128,6 +128,16 @@ export class ReportsController {
     await this.clients.assertAccess(body.clientId, user);
     return this.reports.revokeShareToken(body.clientId, body.cycleId);
   }
+
+  // Authenticated preview — root, seo-manager, or the client's owner can
+  // open a shared report without entering the PIN.
+  @Get('preview/:token')
+  preview(
+    @Param('token') token: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.reports.previewByShareToken(token, user);
+  }
 }
 
 // --- Public controller (no auth) -------------------------------------------

@@ -88,6 +88,17 @@ export class ReportsService {
     );
   }
 
+  /**
+   * Authenticated preview for an internal user (root, manager, or the
+   * client's owner). The HTTP interceptor attaches the JWT — the backend
+   * verifies access and returns the same payload shape as a PIN unlock.
+   */
+  previewByShareToken(token: string) {
+    return this.http.get<{ pdfUnlockToken: string; sessionToken: string; payload: any }>(
+      `${this.base}/reports/preview/${token}`,
+    );
+  }
+
   publicPdfBlob(token: string, unlock: string) {
     return this.http.get(
       `${this.base}/public/reports/${token}/pdf?unlock=${encodeURIComponent(unlock)}`,

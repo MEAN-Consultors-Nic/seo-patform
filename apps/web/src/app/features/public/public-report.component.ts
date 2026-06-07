@@ -735,26 +735,22 @@ export class PublicReportComponent implements OnInit {
           });
           return;
         }
-        // Locked report: try to resume from saved 24h session before showing the PIN gate.
-        const stored = this.readStoredSession(token);
-        if (stored) {
-          this.svc.publicResume(token, stored).subscribe({
+        // Locked report. We try, in order:
+        //   1. Authenticated preview — internal users (root, manager, owner)
+        //      get straight through with no PIN
+        //   2. Saved 24h session — recently unlocked externally
+        //   3. Otherwise: show the PIN gate
+        if (this.isInternalUserLoggedIn()) {
+          this.svc.previewByShareToken(token).subscribe({
             next: (res) => {
               this.applyUnlocked(token, res);
               this.loading.set(false);
             },
-            error: () => {
-              this.clearStoredSession(token);
-              this.locked.set(true);
-              this.loading.set(false);
-              setTimeout(() => this.focusFirstPin(), 50);
-            },
+            error: () => this.fallbackAfterPreview(token),
           });
           return;
         }
-        this.locked.set(true);
-        this.loading.set(false);
-        setTimeout(() => this.focusFirstPin(), 50);
+        this.fallbackAfterPreview(token);
       },
       error: (err) => {
         this.error.set(err?.error?.message || "We couldn't load the report");
@@ -771,6 +767,33 @@ export class PublicReportComponent implements OnInit {
     this.data.set(res.payload);
     this.locked.set(false);
     if (res.sessionToken) this.writeStoredSession(token, res.sessionToken);
+  }
+
+  private isInternalUserLoggedIn(): boolean {
+    if (typeof localStorage === 'undefined') return false;
+    return !!localStorage.getItem('seo_token');
+  }
+
+  private fallbackAfterPreview(token: string) {
+    const stored = this.readStoredSession(token);
+    if (stored) {
+      this.svc.publicResume(token, stored).subscribe({
+        next: (res) => {
+          this.applyUnlocked(token, res);
+          this.loading.set(false);
+        },
+        error: () => {
+          this.clearStoredSession(token);
+          this.locked.set(true);
+          this.loading.set(false);
+          setTimeout(() => this.focusFirstPin(), 50);
+        },
+      });
+      return;
+    }
+    this.locked.set(true);
+    this.loading.set(false);
+    setTimeout(() => this.focusFirstPin(), 50);
   }
 
   private sessionStorageKey(token: string) {

@@ -274,6 +274,25 @@ export class ReportsService {
     };
   }
 
+  async previewByShareToken(
+    token: string,
+    user: { userId: string; role: 'root' | 'seo-manager' | 'seo-strategist' },
+  ) {
+    const report = await this.model
+      .findOne({ shareToken: token })
+      .lean()
+      .exec();
+    if (!report)
+      throw new NotFoundException('Share link not found or has been revoked');
+    // Verifies role-based / owner-based access (throws Forbidden otherwise).
+    await this.clients.assertAccess(report.clientId.toString(), user as never);
+    return {
+      pdfUnlockToken: this.signPdfUnlock(token),
+      sessionToken: this.signSession(token),
+      payload: await this.getPublicPayload(token),
+    };
+  }
+
   private signPdfUnlock(token: string): string {
     return this.jwt.sign(
       { shareToken: token, kind: 'pdf-unlock' },

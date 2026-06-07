@@ -133,8 +133,9 @@ interface KpiGroup {
             <button class="btn-primary" (click)="copyShareUrl(shareInput)">
               {{ copied() ? '✓ Copied' : 'Copy' }}
             </button>
-            <a [href]="shareUrl()" target="_blank" class="btn-secondary">
-              Open ↗
+            <a [href]="shareUrl()" target="_blank" class="btn-secondary"
+               title="Open the public report. Logged-in owners and managers skip the PIN gate.">
+              👁 Preview ↗
             </a>
             <button class="btn-primary" (click)="openSendModal()">
               ✉ Send to client
