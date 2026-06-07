@@ -264,24 +264,63 @@ function weekdayLabel(iso: string): { weekday: string; label: string } {
       @if (autoPlanModal()) {
         <div class="fixed inset-0 bg-ink-900/60 z-50 flex items-center justify-center p-4"
              (click)="autoPlanModal.set(false)">
-          <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6"
+          <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6"
                (click)="$event.stopPropagation()">
-            <h2 class="text-lg font-bold text-ink-900 mb-2">Auto-plan this cycle?</h2>
+            <h2 class="text-lg font-bold text-ink-900 mb-1">Auto-plan this cycle</h2>
             <p class="text-sm text-ink-600 mb-4">
               We will distribute your assigned client hours across the working days of
-              <strong>{{ cycle()?.label }}</strong>, respecting your working hours.
+              <strong>{{ cycle()?.label }}</strong>.
             </p>
+
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label class="label">From</label>
+                <input type="date" class="input"
+                       [min]="cycleStartIso()" [max]="cycleEndIso()"
+                       [(ngModel)]="autoPlanFromDate" />
+              </div>
+              <div>
+                <label class="label">To</label>
+                <input type="date" class="input"
+                       [min]="cycleStartIso()" [max]="cycleEndIso()"
+                       [(ngModel)]="autoPlanToDate" />
+              </div>
+            </div>
+
+            @if (autoPlanCompressed()) {
+              <div class="rounded-md bg-warning-100/60 border border-warning-500/30 text-xs text-warning-500 px-3 py-2 mb-4">
+                <strong>Compressed window.</strong> The planner will use variable-size
+                sessions (Tier A: 2h, B: 1.5h, C: 1.25h) to fit your client hours
+                into the remaining {{ autoPlanWorkingDays() }} working day(s).
+              </div>
+            } @else {
+              <div class="rounded-md bg-ink-50 border border-ink-200 text-xs text-ink-600 px-3 py-2 mb-4">
+                <strong>Full cycle.</strong> The planner will use equal-size slots
+                (2 morning + 2 afternoon sessions per day) with Tier A clients
+                always in the earliest slots.
+              </div>
+            }
+
             <label class="flex items-start gap-2 text-sm text-ink-700 mb-4 cursor-pointer">
               <input type="checkbox" [(ngModel)]="autoPlanReplace" class="mt-0.5" />
               <span>
-                Replace existing planned blocks (in-progress and completed blocks are kept).
+                Replace existing planned blocks in this range (in-progress and
+                completed blocks are kept).
               </span>
             </label>
-            <div class="flex justify-end gap-2">
-              <button class="btn-secondary" (click)="autoPlanModal.set(false)">Cancel</button>
-              <button class="btn-primary" (click)="runAutoPlan()" [disabled]="autoPlanning()">
-                {{ autoPlanning() ? 'Planning…' : 'Run auto-plan' }}
+
+            <div class="flex items-center justify-between">
+              <button type="button"
+                      class="text-xs text-ink-500 hover:text-ink-900"
+                      (click)="resetAutoPlanDates()">
+                Reset dates
               </button>
+              <div class="flex gap-2">
+                <button class="btn-secondary" (click)="autoPlanModal.set(false)">Cancel</button>
+                <button class="btn-primary" (click)="runAutoPlan()" [disabled]="autoPlanning()">
+                  {{ autoPlanning() ? 'Planning…' : 'Run auto-plan' }}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -389,6 +428,8 @@ export class ScheduleComponent implements OnInit {
 
   autoPlanModal = signal(false);
   autoPlanReplace = true;
+  autoPlanFromDate = '';
+  autoPlanToDate = '';
   autoPlanning = signal(false);
   autoPlanResult = signal<AutoPlanSummary | null>(null);
 
@@ -607,15 +648,79 @@ export class ScheduleComponent implements OnInit {
 
   // --- Auto-plan ------------------------------------------------------------
 
+  cycleStartIso(): string {
+    const c = this.cycle();
+    if (!c) return '';
+    const d = new Date(c.startDate);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  cycleEndIso(): string {
+    const c = this.cycle();
+    if (!c) return '';
+    const d = new Date(c.endDate);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  autoPlanCompressed(): boolean {
+    return (
+      (!!this.autoPlanFromDate && this.autoPlanFromDate !== this.cycleStartIso()) ||
+      (!!this.autoPlanToDate && this.autoPlanToDate !== this.cycleEndIso())
+    );
+  }
+
+  autoPlanWorkingDays(): number {
+    const wh = this.workingHours();
+    if (!wh) return 0;
+    const startIso = this.autoPlanFromDate || this.cycleStartIso();
+    const endIso = this.autoPlanToDate || this.cycleEndIso();
+    if (!startIso || !endIso || startIso > endIso) return 0;
+    const workDays = new Set(wh.workDays || []);
+    const daysOff = new Set(wh.daysOff || []);
+    const [sy, sm, sd] = startIso.split('-').map(Number);
+    const [ey, em, ed] = endIso.split('-').map(Number);
+    const start = new Date(Date.UTC(sy, sm - 1, sd));
+    const end = new Date(Date.UTC(ey, em - 1, ed));
+    let count = 0;
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const iso = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+      if (!workDays.has(d.getUTCDay())) continue;
+      if (daysOff.has(iso)) continue;
+      count++;
+    }
+    return count;
+  }
+
   openAutoPlan() {
+    // Default the window to today→cycle end so the user sees a sensible range
+    // without losing the option to cover the full cycle.
+    const today = todayIso();
+    const start = this.cycleStartIso();
+    const end = this.cycleEndIso();
+    this.autoPlanFromDate = today > start && today <= end ? today : start;
+    this.autoPlanToDate = end;
     this.autoPlanModal.set(true);
+  }
+
+  resetAutoPlanDates() {
+    this.autoPlanFromDate = this.cycleStartIso();
+    this.autoPlanToDate = this.cycleEndIso();
   }
 
   runAutoPlan() {
     const c = this.cycle();
     if (!c?._id) return;
+    const opts: { replace: boolean; fromDate?: string; toDate?: string } = {
+      replace: this.autoPlanReplace,
+    };
+    if (this.autoPlanFromDate && this.autoPlanFromDate !== this.cycleStartIso()) {
+      opts.fromDate = this.autoPlanFromDate;
+    }
+    if (this.autoPlanToDate && this.autoPlanToDate !== this.cycleEndIso()) {
+      opts.toDate = this.autoPlanToDate;
+    }
     this.autoPlanning.set(true);
-    this.blocksSvc.autoPlan(c._id, this.autoPlanReplace).subscribe({
+    this.blocksSvc.autoPlan(c._id, opts).subscribe({
       next: (res) => {
         this.autoPlanResult.set(res);
         this.autoPlanning.set(false);

@@ -60,7 +60,15 @@ export class TimeBlocksService {
     return this.http.post<TimeBlock>(`${this.base}/time-blocks/${id}/skip`, {});
   }
 
-  autoPlan(cycleId: string, replace = true): Observable<AutoPlanSummary> {
-    return this.http.post<AutoPlanSummary>(`${this.base}/time-blocks/auto-plan`, { cycleId, replace });
+  autoPlan(
+    cycleId: string,
+    options: { replace?: boolean; fromDate?: string; toDate?: string } = {},
+  ): Observable<AutoPlanSummary> {
+    return this.http.post<AutoPlanSummary>(`${this.base}/time-blocks/auto-plan`, {
+      cycleId,
+      replace: options.replace ?? true,
+      fromDate: options.fromDate,
+      toDate: options.toDate,
+    });
   }
 }

@@ -51,6 +51,8 @@ class UpdateBlockDto {
 class AutoPlanDto {
   @IsString() cycleId!: string;
   @IsOptional() @IsBoolean() replace?: boolean;
+  @IsOptional() @Matches(DATE) fromDate?: string;
+  @IsOptional() @Matches(DATE) toDate?: string;
 }
 
 class CompleteDto {
@@ -112,6 +114,10 @@ export class TimeBlocksController {
 
   @Post('auto-plan')
   autoPlan(@Body() dto: AutoPlanDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.svc.autoPlan(user.userId, dto.cycleId, { replace: dto.replace });
+    return this.svc.autoPlan(user.userId, dto.cycleId, {
+      replace: dto.replace,
+      fromDate: dto.fromDate,
+      toDate: dto.toDate,
+    });
   }
 }
