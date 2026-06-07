@@ -123,4 +123,16 @@ export class GoogleIntegrationsController {
     if (!clientId) throw new BadRequestException('clientId is required');
     return this.svc.testClientConnections(clientId, user);
   }
+
+  @Get('gsc/breakdown')
+  async gscBreakdown(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('clientId') clientId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+  ) {
+    if (!clientId || !from || !to)
+      throw new BadRequestException('clientId, from, to are required');
+    return this.svc.gscBreakdown(clientId, user, from, to);
+  }
 }

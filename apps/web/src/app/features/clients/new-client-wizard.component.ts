@@ -440,7 +440,11 @@ export class NewClientWizardComponent {
       label: 'Organic traffic',
       fields: [
         { key: 'organicSessions', label: 'Organic sessions' },
+        { key: 'newUsers', label: 'New users' },
+        { key: 'engagementRate', label: 'Engagement rate (%)' },
+        { key: 'avgEngagementTime', label: 'Avg engagement time (s)' },
         { key: 'conversions', label: 'Conversions' },
+        { key: 'conversionRate', label: 'Conversion rate (%)' },
       ],
     },
     {

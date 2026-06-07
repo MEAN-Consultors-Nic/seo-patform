@@ -6,7 +6,10 @@ export interface Ga4Kpis {
   sessions: number;
   organicSessions: number;
   conversions: number;
+  newUsers: number;
   engagedSessions: number;
+  engagementRate: number; // percentage
+  averageEngagementTime: number; // seconds (per session)
   averageSessionDuration: number; // seconds
   bounceRate: number; // percentage
 }
@@ -56,7 +59,10 @@ export class Ga4Service {
           dateRanges: [{ startDate, endDate }],
           metrics: [
             { name: 'sessions' },
+            { name: 'newUsers' },
             { name: 'engagedSessions' },
+            { name: 'engagementRate' },
+            { name: 'userEngagementDuration' },
             { name: 'conversions' },
             { name: 'averageSessionDuration' },
             { name: 'bounceRate' },
@@ -83,13 +89,20 @@ export class Ga4Service {
     const num = (i: number) => Number(r?.metricValues?.[i]?.value ?? 0);
     const organicRow = organic.data.rows?.[0];
     const organicSessions = Number(organicRow?.metricValues?.[0]?.value ?? 0);
+    const sessions = num(0);
+    const engagedSessions = num(2);
+    const userEngagementDuration = num(4); // total seconds across all sessions
+    const averageEngagementTime = sessions > 0 ? userEngagementDuration / sessions : 0;
 
     return {
-      sessions: num(0),
-      engagedSessions: num(1),
-      conversions: num(2),
-      averageSessionDuration: num(3),
-      bounceRate: num(4) * 100,
+      sessions,
+      newUsers: num(1),
+      engagedSessions,
+      engagementRate: num(3) * 100,
+      averageEngagementTime,
+      conversions: num(5),
+      averageSessionDuration: num(6),
+      bounceRate: num(7) * 100,
       organicSessions,
     };
   }

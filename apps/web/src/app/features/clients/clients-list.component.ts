@@ -255,6 +255,10 @@ export class ClientsListComponent implements OnInit {
 
   kpiFields: KpiField[] = [
     { key: 'organicSessions', label: 'Organic sessions', hint: 'GA4' },
+    { key: 'newUsers', label: 'New users', hint: 'GA4' },
+    { key: 'engagementRate', label: 'Engagement rate (%)', hint: 'GA4', step: 0.01 },
+    { key: 'avgEngagementTime', label: 'Avg engagement time (s)', hint: 'GA4', step: 0.1 },
+    { key: 'conversionRate', label: 'Conversion rate (%)', hint: 'GA4', step: 0.01 },
     { key: 'impressions', label: 'Impressions', hint: 'GSC' },
     { key: 'clicks', label: 'Clicks', hint: 'GSC' },
     { key: 'ctr', label: 'CTR (%)', hint: 'GSC', step: 0.01 },

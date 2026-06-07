@@ -292,6 +292,10 @@ export interface Task {
 
 export interface ReportKpis {
   organicSessions?: number;
+  newUsers?: number;
+  engagementRate?: number; // percentage 0-100
+  avgEngagementTime?: number; // seconds
+  conversionRate?: number; // percentage
   impressions?: number;
   clicks?: number;
   ctr?: number;
@@ -304,6 +308,36 @@ export interface ReportKpis {
   gbpDirections?: number;
   gbpWebsiteClicks?: number;
   gbpReviews?: number;
+}
+
+export interface GscBreakdownRow {
+  key: string;
+  clicks: number;
+  impressions: number;
+  ctr: number; // percentage 0-100
+  position: number;
+}
+
+export interface GscSitemapHealth {
+  totalSitemaps: number;
+  totalSubmittedUrls: number;
+  totalErrors: number;
+  totalWarnings: number;
+  sitemaps: Array<{
+    path: string;
+    submitted: number;
+    errors: number;
+    warnings: number;
+    lastSubmitted?: string;
+  }>;
+}
+
+export interface GscBreakdown {
+  topPages: GscBreakdownRow[];
+  byDevice: GscBreakdownRow[];
+  byCountry: GscBreakdownRow[];
+  sitemapHealth: GscSitemapHealth;
+  range: { from: string; to: string };
 }
 
 export interface Report {

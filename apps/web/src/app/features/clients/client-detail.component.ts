@@ -14,6 +14,7 @@ import { ClientTasksTab } from './tabs/tasks-tab.component';
 import { ClientContentTab } from './tabs/content-tab.component';
 import { ClientPositionTrackerTab } from './tabs/position-tracker-tab.component';
 import { ClientIntegrationsTab } from './tabs/integrations-tab.component';
+import { ClientGscInsightsTab } from './tabs/gsc-insights-tab.component';
 
 type TabKey =
   | 'data'
@@ -27,7 +28,8 @@ type TabKey =
   | 'competitors'
   | 'backlinks'
   | 'kpis'
-  | 'integrations';
+  | 'integrations'
+  | 'gsc-insights';
 
 @Component({
   selector: 'app-client-detail',
@@ -46,6 +48,7 @@ type TabKey =
     ClientContentTab,
     ClientPositionTrackerTab,
     ClientIntegrationsTab,
+    ClientGscInsightsTab,
   ],
   template: `
     @if (client(); as c) {
@@ -168,6 +171,9 @@ type TabKey =
           @case ('integrations') {
             <app-client-integrations-tab [client]="c" />
           }
+          @case ('gsc-insights') {
+            <app-client-gsc-insights-tab [clientId]="c._id!" />
+          }
         }
       </div>
     }
@@ -189,6 +195,7 @@ export class ClientDetailComponent implements OnInit {
     { key: 'competitors', label: 'Competitors' },
     { key: 'backlinks', label: 'Backlinks' },
     { key: 'kpis', label: 'KPI History' },
+    { key: 'gsc-insights', label: 'GSC Insights' },
     { key: 'knowledge', label: 'Knowledge' },
     { key: 'contacts', label: 'Contacts' },
     { key: 'access', label: 'Access' },

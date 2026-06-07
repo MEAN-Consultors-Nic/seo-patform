@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { ReportKpis } from '@seo/shared';
+import { GscBreakdown, ReportKpis } from '@seo/shared';
 import { ClientsService } from '../clients/clients.service';
 import { AuthenticatedUser } from '../auth/roles.guard';
 import { Ga4Service } from './ga4.service';
@@ -79,7 +79,13 @@ export class GoogleIntegrationsService {
           endDate,
         );
         out.organicSessions = Math.round(r.organicSessions);
+        out.newUsers = Math.round(r.newUsers);
+        out.engagementRate = Number(r.engagementRate.toFixed(2));
+        out.avgEngagementTime = Number(r.averageEngagementTime.toFixed(1));
         out.conversions = Math.round(r.conversions);
+        out.conversionRate = r.sessions > 0
+          ? Number(((r.conversions / r.sessions) * 100).toFixed(2))
+          : 0;
         ga4Ok = true;
       } catch (err) {
         warnings.push(`GA4: ${(err as Error).message}`);
@@ -89,6 +95,27 @@ export class GoogleIntegrationsService {
     }
 
     return { kpis: out, sources: { gsc: gscOk, ga4: ga4Ok, warnings } };
+  }
+
+  async gscBreakdown(
+    clientId: string,
+    user: AuthenticatedUser,
+    from: string,
+    to: string,
+  ): Promise<GscBreakdown> {
+    const client = await this.clients.findOne(clientId, user);
+    if (!client.gscSiteUrl) {
+      throw new BadRequestException(
+        'GSC site URL is not configured for this client.',
+      );
+    }
+    const [topPages, byDevice, byCountry, sitemapHealth] = await Promise.all([
+      this.gsc.topPages(user.userId, client.gscSiteUrl, from, to, 25),
+      this.gsc.byDevice(user.userId, client.gscSiteUrl, from, to),
+      this.gsc.byCountry(user.userId, client.gscSiteUrl, from, to, 15),
+      this.gsc.sitemapHealth(user.userId, client.gscSiteUrl),
+    ]);
+    return { topPages, byDevice, byCountry, sitemapHealth, range: { from, to } };
   }
 
   async testClientConnections(clientId: string, user: AuthenticatedUser) {

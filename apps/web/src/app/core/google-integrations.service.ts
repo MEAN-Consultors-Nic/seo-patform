@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { GoogleConnectionStatus, ReportKpis } from '@seo/shared';
+import { GoogleConnectionStatus, GscBreakdown, ReportKpis } from '@seo/shared';
 import { API_BASE_URL } from './api.config';
 
 export interface GoogleKpisResult {
@@ -47,6 +47,13 @@ export class GoogleIntegrationsService {
     const qs = new URLSearchParams({ clientId });
     return this.http.get<GoogleConnectionTest>(
       `${this.base}/google/test-connections?${qs.toString()}`,
+    );
+  }
+
+  gscBreakdown(clientId: string, from: string, to: string): Observable<GscBreakdown> {
+    const qs = new URLSearchParams({ clientId, from, to });
+    return this.http.get<GscBreakdown>(
+      `${this.base}/google/gsc/breakdown?${qs.toString()}`,
     );
   }
 }

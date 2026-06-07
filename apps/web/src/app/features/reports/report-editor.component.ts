@@ -652,7 +652,11 @@ export class ReportEditorComponent implements OnInit {
       description: 'Google Analytics 4',
       fields: [
         { key: 'organicSessions', label: 'Organic sessions' },
+        { key: 'newUsers', label: 'New users' },
+        { key: 'engagementRate', label: 'Engagement rate', suffix: '%' },
+        { key: 'avgEngagementTime', label: 'Avg engagement time', suffix: 's' },
         { key: 'conversions', label: 'Conversions' },
+        { key: 'conversionRate', label: 'Conversion rate', suffix: '%' },
       ],
     },
     {

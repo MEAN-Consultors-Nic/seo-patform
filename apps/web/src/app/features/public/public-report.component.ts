@@ -696,6 +696,10 @@ export class PublicReportComponent implements OnInit {
 
   kpiFields = [
     { key: 'organicSessions', label: 'Organic sessions', inverse: false },
+    { key: 'newUsers', label: 'New users', inverse: false },
+    { key: 'engagementRate', label: 'Engagement rate (%)', inverse: false },
+    { key: 'avgEngagementTime', label: 'Avg engagement (s)', inverse: false },
+    { key: 'conversionRate', label: 'Conversion rate (%)', inverse: false },
     { key: 'impressions', label: 'Impressions', inverse: false },
     { key: 'clicks', label: 'Clicks', inverse: false },
     { key: 'ctr', label: 'CTR (%)', inverse: false },

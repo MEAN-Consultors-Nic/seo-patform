@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { google } from 'googleapis';
+import { GscBreakdownRow, GscSitemapHealth } from '@seo/shared';
 import { GoogleOAuthService } from './google-oauth.service';
 
 export interface GscDataPoint {
@@ -144,6 +145,96 @@ export class GscService {
         : undefined;
 
     return { indexedPages, sitemapPages, nonIndexedPages };
+  }
+
+  /** Generic breakdown by a single dimension. */
+  private async breakdown(
+    userId: string,
+    siteUrl: string,
+    dimension: 'page' | 'device' | 'country',
+    startDate: string,
+    endDate: string,
+    limit = 25,
+  ): Promise<GscBreakdownRow[]> {
+    if (!siteUrl) throw new BadRequestException('Missing siteUrl');
+    const auth = await this.oauth.getAuthorizedClient(userId);
+    const sc = google.searchconsole({ version: 'v1', auth });
+    const res = await sc.searchanalytics.query({
+      siteUrl,
+      requestBody: {
+        startDate,
+        endDate,
+        dimensions: [dimension],
+        rowLimit: limit,
+      },
+    });
+    return (res.data.rows || []).map((r) => ({
+      key: r.keys?.[0] ?? '',
+      clicks: r.clicks ?? 0,
+      impressions: r.impressions ?? 0,
+      ctr: (r.ctr ?? 0) * 100,
+      position: r.position ?? 0,
+    }));
+  }
+
+  topPages(userId: string, siteUrl: string, from: string, to: string, limit = 25) {
+    return this.breakdown(userId, siteUrl, 'page', from, to, limit);
+  }
+
+  byDevice(userId: string, siteUrl: string, from: string, to: string) {
+    return this.breakdown(userId, siteUrl, 'device', from, to, 10);
+  }
+
+  byCountry(userId: string, siteUrl: string, from: string, to: string, limit = 15) {
+    return this.breakdown(userId, siteUrl, 'country', from, to, limit);
+  }
+
+  /** Sitemap health: counts of sitemaps, submitted URLs, errors, warnings. */
+  async sitemapHealth(userId: string, siteUrl: string): Promise<GscSitemapHealth> {
+    if (!siteUrl) throw new BadRequestException('Missing siteUrl');
+    const auth = await this.oauth.getAuthorizedClient(userId);
+    const sc = google.searchconsole({ version: 'v1', auth });
+    try {
+      const res = await sc.sitemaps.list({ siteUrl });
+      const entries = res.data.sitemap || [];
+      let totalSubmitted = 0;
+      let totalErrors = 0;
+      let totalWarnings = 0;
+      const sitemaps = entries.map((sm) => {
+        const submitted = (sm.contents || []).reduce(
+          (acc, c) => acc + Number(c.submitted ?? 0),
+          0,
+        );
+        const errors = Number(sm.errors ?? 0);
+        const warnings = Number(sm.warnings ?? 0);
+        totalSubmitted += submitted;
+        totalErrors += errors;
+        totalWarnings += warnings;
+        return {
+          path: sm.path ?? '',
+          submitted,
+          errors,
+          warnings,
+          lastSubmitted: sm.lastSubmitted ?? undefined,
+        };
+      });
+      return {
+        totalSitemaps: entries.length,
+        totalSubmittedUrls: totalSubmitted,
+        totalErrors,
+        totalWarnings,
+        sitemaps,
+      };
+    } catch (err) {
+      this.logger.warn(`Could not read sitemap health for ${siteUrl}: ${(err as Error).message}`);
+      return {
+        totalSitemaps: 0,
+        totalSubmittedUrls: 0,
+        totalErrors: 0,
+        totalWarnings: 0,
+        sitemaps: [],
+      };
+    }
   }
 
   /**

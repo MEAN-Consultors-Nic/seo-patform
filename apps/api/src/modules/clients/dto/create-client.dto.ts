@@ -38,6 +38,10 @@ class KnowledgeDto {
 
 class BaselineKpisDto {
   @IsOptional() @IsNumber() organicSessions?: number;
+  @IsOptional() @IsNumber() newUsers?: number;
+  @IsOptional() @IsNumber() engagementRate?: number;
+  @IsOptional() @IsNumber() avgEngagementTime?: number;
+  @IsOptional() @IsNumber() conversionRate?: number;
   @IsOptional() @IsNumber() impressions?: number;
   @IsOptional() @IsNumber() clicks?: number;
   @IsOptional() @IsNumber() ctr?: number;

@@ -7,6 +7,10 @@ export type ReportDocument = HydratedDocument<Report>;
 @Schema({ _id: false })
 class KpisSubSchema implements ReportKpis {
   @Prop() organicSessions?: number;
+  @Prop() newUsers?: number;
+  @Prop() engagementRate?: number;
+  @Prop() avgEngagementTime?: number;
+  @Prop() conversionRate?: number;
   @Prop() impressions?: number;
   @Prop() clicks?: number;
   @Prop() ctr?: number;
