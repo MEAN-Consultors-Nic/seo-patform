@@ -53,6 +53,13 @@ Thumbs.db
 .playwright-mcp
 .vercel
 
+# Google service-account credentials — must never be committed
+gscraper-*.json
+*-service-account*.json
+*service-account-key*.json
+*-credentials.json
+google-credentials.json
+
 vite.config.*.timestamp*
 vitest.config.*.timestamp*
 
