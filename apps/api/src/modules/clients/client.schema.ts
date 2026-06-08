@@ -7,6 +7,8 @@ import {
   ClientTier,
   HOURS_PER_TIER,
   ReportKpis,
+  ServiceArea,
+  ServiceAreaMetrics,
 } from '@seo/shared';
 
 export type ClientDocument = HydratedDocument<Client>;
@@ -37,6 +39,37 @@ class KnowledgeSubSchema implements ClientKnowledge {
   @Prop() internalLinkingStrategy?: string;
   @Prop() internalNotes?: string;
 }
+
+@Schema({ _id: false })
+class ServiceAreaMetricsSubSchema implements ServiceAreaMetrics {
+  @Prop({ default: 0 }) clicks!: number;
+  @Prop({ default: 0 }) impressions!: number;
+  @Prop({ default: 0 }) ctr!: number;
+  @Prop({ default: 0 }) position!: number;
+  @Prop({ required: true }) rangeFrom!: string;
+  @Prop({ required: true }) rangeTo!: string;
+  @Prop({ required: true, type: Date }) refreshedAt!: Date;
+}
+
+const ServiceAreaMetricsSchemaDef = SchemaFactory.createForClass(
+  ServiceAreaMetricsSubSchema,
+);
+
+@Schema({ _id: false })
+class ServiceAreaSubSchema implements ServiceArea {
+  @Prop({ required: true }) name!: string;
+  @Prop() city?: string;
+  @Prop() region?: string;
+  @Prop() country?: string;
+  @Prop() postalCode?: string;
+  @Prop() landingPageUrl?: string;
+  @Prop() primaryKeyword?: string;
+  @Prop() notes?: string;
+  @Prop({ type: ServiceAreaMetricsSchemaDef })
+  metrics?: ServiceAreaMetrics;
+}
+
+const ServiceAreaSchemaDef = SchemaFactory.createForClass(ServiceAreaSubSchema);
 
 @Schema({ _id: false })
 class BaselineKpisSubSchema implements ReportKpis {
@@ -105,6 +138,9 @@ export class Client {
 
   @Prop()
   gscSiteUrl?: string;
+
+  @Prop({ type: [ServiceAreaSchemaDef], default: [] })
+  serviceAreas?: ServiceArea[];
 }
 
 export const ClientSchema = SchemaFactory.createForClass(Client);

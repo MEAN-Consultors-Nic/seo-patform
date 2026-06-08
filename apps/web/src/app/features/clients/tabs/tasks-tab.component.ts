@@ -198,11 +198,11 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           @for (t of filteredTasks(); track t._id) {
             <article
-              class="relative rounded-lg border border-ink-200 shadow-card hover:shadow-elevated transition-all overflow-hidden flex flex-col"
+              class="relative rounded-lg border border-ink-200 shadow-card hover:shadow-elevated transition-all flex flex-col"
               [class.bg-white]="t.status !== 'completed'"
               [class.bg-ink-50]="t.status === 'completed'">
               <!-- Status side bar -->
-              <div class="absolute top-0 left-0 bottom-0 w-1" [ngClass]="statusOf(t).bar"></div>
+              <div class="absolute top-0 left-0 bottom-0 w-1 rounded-l-lg" [ngClass]="statusOf(t).bar"></div>
 
               <div class="pl-5 pr-4 py-4 flex-1 flex flex-col">
                 <!-- Top row -->
@@ -231,7 +231,7 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                     </button>
                     @if (menuOpenId() === t._id) {
                       <div (click)="$event.stopPropagation()"
-                           class="absolute right-0 top-8 z-20 w-56 bg-white border border-ink-200 rounded-md shadow-elevated py-1 text-sm">
+                           class="absolute right-0 top-8 z-50 w-56 bg-white border border-ink-200 rounded-md shadow-elevated py-1 text-sm">
                         <div class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-400">Change status</div>
                         @for (opt of statusOptions; track opt.value) {
                           <button type="button"

@@ -15,6 +15,7 @@ import { ClientContentTab } from './tabs/content-tab.component';
 import { ClientPositionTrackerTab } from './tabs/position-tracker-tab.component';
 import { ClientIntegrationsTab } from './tabs/integrations-tab.component';
 import { ClientGscInsightsTab } from './tabs/gsc-insights-tab.component';
+import { ClientServiceAreasTab } from './tabs/service-areas-tab.component';
 
 type TabKey =
   | 'data'
@@ -29,7 +30,8 @@ type TabKey =
   | 'backlinks'
   | 'kpis'
   | 'integrations'
-  | 'gsc-insights';
+  | 'gsc-insights'
+  | 'service-areas';
 
 @Component({
   selector: 'app-client-detail',
@@ -49,6 +51,7 @@ type TabKey =
     ClientPositionTrackerTab,
     ClientIntegrationsTab,
     ClientGscInsightsTab,
+    ClientServiceAreasTab,
   ],
   template: `
     @if (client(); as c) {
@@ -95,11 +98,37 @@ type TabKey =
         @switch (activeTab()) {
           @case ('data') {
             <div class="card max-w-2xl">
-              <h2 class="text-base font-semibold text-ink-900 mb-4">Client details</h2>
+              <h2 class="text-base font-semibold text-ink-900 mb-1">Client details</h2>
+              <p class="text-xs text-ink-500 mb-4">Edit the core information for this client.</p>
               <div class="space-y-3 text-sm">
                 <div>
+                  <label class="label">Client name</label>
+                  <input class="input" [(ngModel)]="form.name" placeholder="Company name" />
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label class="label">Tier</label>
+                    <select class="input" [(ngModel)]="form.tier">
+                      <option value="A">Tier A</option>
+                      <option value="B">Tier B</option>
+                      <option value="C">Tier C</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="label">Hours / cycle</label>
+                    <input type="number" class="input" min="0" step="0.5" [(ngModel)]="form.hoursPerCycle" />
+                  </div>
+                  <div>
+                    <label class="label">Status</label>
+                    <select class="input" [ngModel]="form.active" (ngModelChange)="form.active = $event === 'true' || $event === true">
+                      <option [ngValue]="true">Active</option>
+                      <option [ngValue]="false">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
                   <label class="label">URL</label>
-                  <input class="input" [(ngModel)]="form.url" />
+                  <input class="input" [(ngModel)]="form.url" placeholder="https://example.com" />
                 </div>
                 <div>
                   <label class="label">Logo (URL)</label>
@@ -117,9 +146,17 @@ type TabKey =
                 </div>
                 <div>
                   <label class="label">Industry</label>
-                  <input class="input" [(ngModel)]="form.industry" />
+                  <input class="input" [(ngModel)]="form.industry" placeholder="e.g. Storage, Logistics" />
                 </div>
-                <button class="btn-primary mt-3" (click)="saveData()">Save</button>
+                @if (dataError()) {
+                  <div class="text-xs text-danger-500">{{ dataError() }}</div>
+                }
+                @if (dataSaved()) {
+                  <div class="text-xs text-positive-500">✓ Saved</div>
+                }
+                <button class="btn-primary mt-3" (click)="saveData()" [disabled]="savingData()">
+                  {{ savingData() ? 'Saving…' : 'Save changes' }}
+                </button>
               </div>
             </div>
           }
@@ -174,6 +211,9 @@ type TabKey =
           @case ('gsc-insights') {
             <app-client-gsc-insights-tab [clientId]="c._id!" />
           }
+          @case ('service-areas') {
+            <app-client-service-areas-tab [client]="c" />
+          }
         }
       </div>
     }
@@ -196,6 +236,7 @@ export class ClientDetailComponent implements OnInit {
     { key: 'backlinks', label: 'Backlinks' },
     { key: 'kpis', label: 'KPI History' },
     { key: 'gsc-insights', label: 'GSC Insights' },
+    { key: 'service-areas', label: 'Service Areas' },
     { key: 'knowledge', label: 'Knowledge' },
     { key: 'contacts', label: 'Contacts' },
     { key: 'access', label: 'Access' },
@@ -203,14 +244,29 @@ export class ClientDetailComponent implements OnInit {
     { key: 'data', label: 'Details' },
   ];
 
-  form: { url: string; logoUrl: string; industry: string } = {
+  form: {
+    name: string;
+    tier: 'A' | 'B' | 'C';
+    url: string;
+    logoUrl: string;
+    industry: string;
+    hoursPerCycle: number;
+    active: boolean;
+  } = {
+    name: '',
+    tier: 'C',
     url: '',
     logoUrl: '',
     industry: '',
+    hoursPerCycle: 0,
+    active: true,
   };
   accessKeys = ['gsc', 'ga4', 'gbp', 'cms', 'ahrefs', 'semrush'] as const;
   accessState: Record<string, boolean> = {};
   accessNotes = '';
+  savingData = signal(false);
+  dataError = signal<string | null>(null);
+  dataSaved = signal(false);
 
   ngOnInit() {
     this.reload();
@@ -220,9 +276,13 @@ export class ClientDetailComponent implements OnInit {
     const id = this.route.snapshot.paramMap.get('id')!;
     this.svc.get(id).subscribe((c) => {
       this.client.set(c);
+      this.form.name = c.name;
+      this.form.tier = c.tier;
       this.form.url = c.url;
       this.form.logoUrl = c.logoUrl || '';
       this.form.industry = c.industry || '';
+      this.form.hoursPerCycle = c.hoursPerCycle ?? 0;
+      this.form.active = c.active ?? true;
       this.accessKeys.forEach((k) => (this.accessState[k] = !!c.access?.[k]));
       this.accessNotes = c.access?.notes || '';
     });
@@ -231,16 +291,40 @@ export class ClientDetailComponent implements OnInit {
   saveData() {
     const c = this.client();
     if (!c?._id) return;
+    const name = this.form.name?.trim();
+    if (!name) {
+      this.dataError.set('Client name is required.');
+      return;
+    }
+    this.dataError.set(null);
+    this.dataSaved.set(false);
+    this.savingData.set(true);
     const trimmedLogo = this.form.logoUrl?.trim();
     this.svc
       .update(c._id, {
+        name,
+        tier: this.form.tier,
         url: this.form.url?.trim(),
         logoUrl: trimmedLogo || undefined,
-        industry: this.form.industry?.trim(),
+        industry: this.form.industry?.trim() || undefined,
+        hoursPerCycle: Number(this.form.hoursPerCycle) || 0,
+        active: !!this.form.active,
       })
-      .subscribe((u) => {
-        this.client.set(u);
-        this.form.logoUrl = u.logoUrl || '';
+      .subscribe({
+        next: (u) => {
+          this.client.set(u);
+          this.form.logoUrl = u.logoUrl || '';
+          this.savingData.set(false);
+          this.dataSaved.set(true);
+          setTimeout(() => this.dataSaved.set(false), 3000);
+        },
+        error: (err) => {
+          this.savingData.set(false);
+          const msg = err?.error?.message;
+          this.dataError.set(
+            Array.isArray(msg) ? msg.join(', ') : msg || 'Could not save the client.',
+          );
+        },
       });
   }
 

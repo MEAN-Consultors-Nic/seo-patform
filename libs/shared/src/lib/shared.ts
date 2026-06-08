@@ -81,6 +81,28 @@ export interface ClientKnowledge {
   internalNotes?: string;
 }
 
+export interface ServiceAreaMetrics {
+  clicks: number;
+  impressions: number;
+  ctr: number; // percentage
+  position: number;
+  rangeFrom: string;
+  rangeTo: string;
+  refreshedAt: Date;
+}
+
+export interface ServiceArea {
+  name: string;
+  city?: string;
+  region?: string; // state / province
+  country?: string; // US, MX, PR, DO, etc.
+  postalCode?: string;
+  landingPageUrl?: string;
+  primaryKeyword?: string;
+  notes?: string;
+  metrics?: ServiceAreaMetrics;
+}
+
 export interface Client {
   _id?: string;
   name: string;
@@ -99,6 +121,7 @@ export interface Client {
   active: boolean;
   ga4PropertyId?: string;
   gscSiteUrl?: string;
+  serviceAreas?: ServiceArea[];
   createdAt?: Date;
   updatedAt?: Date;
 }

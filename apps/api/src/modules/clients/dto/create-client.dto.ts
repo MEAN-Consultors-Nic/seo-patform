@@ -36,6 +36,28 @@ class KnowledgeDto {
   @IsOptional() @IsString() internalNotes?: string;
 }
 
+class ServiceAreaMetricsDto {
+  @IsOptional() @IsNumber() clicks?: number;
+  @IsOptional() @IsNumber() impressions?: number;
+  @IsOptional() @IsNumber() ctr?: number;
+  @IsOptional() @IsNumber() position?: number;
+  @IsOptional() @IsString() rangeFrom?: string;
+  @IsOptional() @IsString() rangeTo?: string;
+  @IsOptional() refreshedAt?: Date;
+}
+
+class ServiceAreaDto {
+  @IsString() name!: string;
+  @IsOptional() @IsString() city?: string;
+  @IsOptional() @IsString() region?: string;
+  @IsOptional() @IsString() country?: string;
+  @IsOptional() @IsString() postalCode?: string;
+  @IsOptional() @IsString() landingPageUrl?: string;
+  @IsOptional() @IsString() primaryKeyword?: string;
+  @IsOptional() @IsString() notes?: string;
+  @IsOptional() @ValidateNested() @Type(() => ServiceAreaMetricsDto) metrics?: ServiceAreaMetricsDto;
+}
+
 class BaselineKpisDto {
   @IsOptional() @IsNumber() organicSessions?: number;
   @IsOptional() @IsNumber() newUsers?: number;
@@ -76,4 +98,9 @@ export class CreateClientDto {
   @IsOptional() @IsBoolean() active?: boolean;
   @IsOptional() @IsString() ga4PropertyId?: string;
   @IsOptional() @IsString() gscSiteUrl?: string;
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ServiceAreaDto)
+  serviceAreas?: ServiceAreaDto[];
 }
