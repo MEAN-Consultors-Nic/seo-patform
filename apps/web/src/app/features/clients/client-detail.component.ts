@@ -18,7 +18,6 @@ import { ClientGscInsightsTab } from './tabs/gsc-insights-tab.component';
 import { ClientServiceAreasTab } from './tabs/service-areas-tab.component';
 
 type TabKey =
-  | 'data'
   | 'access'
   | 'contacts'
   | 'knowledge'
@@ -80,9 +79,14 @@ type TabKey =
               </div>
             </div>
           </div>
-          <a [routerLink]="['/reports']" [queryParams]="{ clientId: c._id }" class="btn-primary">
-            Generate report
-          </a>
+          <div class="flex items-center gap-2">
+            <button class="btn-secondary" (click)="openEdit()">
+              ✏ Edit client
+            </button>
+            <a [routerLink]="['/reports']" [queryParams]="{ clientId: c._id }" class="btn-primary">
+              Generate report
+            </a>
+          </div>
         </header>
 
         <nav class="tab-bar mb-6 overflow-x-auto">
@@ -96,70 +100,6 @@ type TabKey =
         </nav>
 
         @switch (activeTab()) {
-          @case ('data') {
-            <div class="card max-w-2xl">
-              <h2 class="text-base font-semibold text-ink-900 mb-1">Client details</h2>
-              <p class="text-xs text-ink-500 mb-4">Edit the core information for this client.</p>
-              <div class="space-y-3 text-sm">
-                <div>
-                  <label class="label">Client name</label>
-                  <input class="input" [(ngModel)]="form.name" placeholder="Company name" />
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div>
-                    <label class="label">Tier</label>
-                    <select class="input" [(ngModel)]="form.tier">
-                      <option value="A">Tier A</option>
-                      <option value="B">Tier B</option>
-                      <option value="C">Tier C</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label class="label">Hours / cycle</label>
-                    <input type="number" class="input" min="0" step="0.5" [(ngModel)]="form.hoursPerCycle" />
-                  </div>
-                  <div>
-                    <label class="label">Status</label>
-                    <select class="input" [ngModel]="form.active" (ngModelChange)="form.active = $event === 'true' || $event === true">
-                      <option [ngValue]="true">Active</option>
-                      <option [ngValue]="false">Inactive</option>
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label class="label">URL</label>
-                  <input class="input" [(ngModel)]="form.url" placeholder="https://example.com" />
-                </div>
-                <div>
-                  <label class="label">Logo (URL)</label>
-                  <input class="input" [(ngModel)]="form.logoUrl" placeholder="https://..." />
-                  @if (form.logoUrl) {
-                    <div class="mt-2 flex items-center gap-2">
-                      <img [src]="form.logoUrl" class="max-h-16 max-w-[160px] object-contain border border-ink-200 rounded p-1 bg-white" alt="preview"
-                           (load)="logoPreviewOk.set(true)"
-                           (error)="logoPreviewOk.set(false)" />
-                      @if (logoPreviewOk() === false) {
-                        <span class="text-xs text-warning-500">⚠ The URL did not load as an image (it will still be saved)</span>
-                      }
-                    </div>
-                  }
-                </div>
-                <div>
-                  <label class="label">Industry</label>
-                  <input class="input" [(ngModel)]="form.industry" placeholder="e.g. Storage, Logistics" />
-                </div>
-                @if (dataError()) {
-                  <div class="text-xs text-danger-500">{{ dataError() }}</div>
-                }
-                @if (dataSaved()) {
-                  <div class="text-xs text-positive-500">✓ Saved</div>
-                }
-                <button class="btn-primary mt-3" (click)="saveData()" [disabled]="savingData()">
-                  {{ savingData() ? 'Saving…' : 'Save changes' }}
-                </button>
-              </div>
-            </div>
-          }
           @case ('access') {
             <div class="card max-w-2xl">
               <h2 class="text-base font-semibold text-ink-900 mb-3">Confirmed access</h2>
@@ -216,6 +156,88 @@ type TabKey =
           }
         }
       </div>
+
+      <!-- Edit client modal -->
+      @if (editOpen()) {
+        <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+             (click)="closeEdit()">
+          <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto"
+               (click)="$event.stopPropagation()">
+            <div class="flex items-start justify-between mb-4">
+              <div>
+                <h2 class="text-lg font-bold text-ink-900">Edit client</h2>
+                <p class="text-xs text-ink-500 mt-0.5">{{ c.name }}</p>
+              </div>
+              <button type="button" (click)="closeEdit()"
+                      class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
+            </div>
+
+            <div class="space-y-3 text-sm">
+              <div>
+                <label class="label">Client name</label>
+                <input class="input" [(ngModel)]="form.name" placeholder="Company name" />
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label class="label">Tier</label>
+                  <select class="input" [(ngModel)]="form.tier">
+                    <option value="A">Tier A</option>
+                    <option value="B">Tier B</option>
+                    <option value="C">Tier C</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="label">Hours / cycle</label>
+                  <input type="number" class="input" min="0" step="0.5" [(ngModel)]="form.hoursPerCycle" />
+                </div>
+                <div>
+                  <label class="label">Status</label>
+                  <select class="input" [(ngModel)]="form.active">
+                    <option [ngValue]="true">Active</option>
+                    <option [ngValue]="false">Inactive</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label class="label">URL</label>
+                <input class="input" [(ngModel)]="form.url" placeholder="https://example.com" />
+              </div>
+              <div>
+                <label class="label">Logo (URL)</label>
+                <input class="input" [(ngModel)]="form.logoUrl" placeholder="https://..." />
+                @if (form.logoUrl) {
+                  <div class="mt-2 flex items-center gap-2">
+                    <img [src]="form.logoUrl" class="max-h-16 max-w-[160px] object-contain border border-ink-200 rounded p-1 bg-white" alt="preview"
+                         (load)="logoPreviewOk.set(true)"
+                         (error)="logoPreviewOk.set(false)" />
+                    @if (logoPreviewOk() === false) {
+                      <span class="text-xs text-warning-500">⚠ The URL did not load as an image (it will still be saved)</span>
+                    }
+                  </div>
+                }
+              </div>
+              <div>
+                <label class="label">Industry</label>
+                <input class="input" [(ngModel)]="form.industry" placeholder="e.g. Storage, Logistics" />
+              </div>
+
+              @if (dataError()) {
+                <div class="text-xs text-danger-500">{{ dataError() }}</div>
+              }
+              @if (dataSaved()) {
+                <div class="text-xs text-positive-500">✓ Saved</div>
+              }
+            </div>
+
+            <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-ink-100">
+              <button class="btn-secondary" (click)="closeEdit()">Cancel</button>
+              <button class="btn-primary" (click)="saveData()" [disabled]="savingData()">
+                {{ savingData() ? 'Saving…' : 'Save changes' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      }
     }
   `,
 })
@@ -241,7 +263,6 @@ export class ClientDetailComponent implements OnInit {
     { key: 'contacts', label: 'Contacts' },
     { key: 'access', label: 'Access' },
     { key: 'integrations', label: 'Integrations' },
-    { key: 'data', label: 'Details' },
   ];
 
   form: {
@@ -261,6 +282,7 @@ export class ClientDetailComponent implements OnInit {
     hoursPerCycle: 0,
     active: true,
   };
+  editOpen = signal(false);
   accessKeys = ['gsc', 'ga4', 'gbp', 'cms', 'ahrefs', 'semrush'] as const;
   accessState: Record<string, boolean> = {};
   accessNotes = '';
@@ -270,6 +292,29 @@ export class ClientDetailComponent implements OnInit {
 
   ngOnInit() {
     this.reload();
+  }
+
+  openEdit() {
+    const c = this.client();
+    if (!c) return;
+    // Re-hydrate the form from the latest client doc so any external edits
+    // (e.g. through Integrations or Service Areas) are reflected.
+    this.form.name = c.name;
+    this.form.tier = c.tier;
+    this.form.url = c.url;
+    this.form.logoUrl = c.logoUrl || '';
+    this.form.industry = c.industry || '';
+    this.form.hoursPerCycle = c.hoursPerCycle ?? 0;
+    this.form.active = c.active ?? true;
+    this.dataError.set(null);
+    this.dataSaved.set(false);
+    this.editOpen.set(true);
+  }
+
+  closeEdit() {
+    if (this.savingData()) return;
+    this.editOpen.set(false);
+    this.dataError.set(null);
   }
 
   reload() {
@@ -316,7 +361,11 @@ export class ClientDetailComponent implements OnInit {
           this.form.logoUrl = u.logoUrl || '';
           this.savingData.set(false);
           this.dataSaved.set(true);
-          setTimeout(() => this.dataSaved.set(false), 3000);
+          // Close the modal shortly after the user sees the confirmation
+          setTimeout(() => {
+            this.dataSaved.set(false);
+            this.editOpen.set(false);
+          }, 1000);
         },
         error: (err) => {
           this.savingData.set(false);
