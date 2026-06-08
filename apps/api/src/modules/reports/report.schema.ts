@@ -54,6 +54,9 @@ export class Report {
   @Prop({ default: '' })
   clientBlockers!: string;
 
+  @Prop({ default: false })
+  includeServiceAreas?: boolean;
+
   @Prop({ default: '' })
   finalConsiderations!: string;
 

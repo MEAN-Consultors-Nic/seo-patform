@@ -376,6 +376,7 @@ export interface Report {
   nextPeriodPlan: string;
   clientBlockers: string;
   finalConsiderations?: string;
+  includeServiceAreas?: boolean;
   generatedAt: Date;
   sentAt?: Date;
   pdfPath?: string;
@@ -479,4 +480,5 @@ export interface PublicReportPayload {
     perStatus: Array<{ _id: string; count: number; avgDr: number }>;
   };
   kpiHistory: Array<{ cycleLabel?: string; generatedAt: Date; kpis: ReportKpis }>;
+  serviceAreas?: ServiceArea[];
 }

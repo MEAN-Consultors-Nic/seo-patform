@@ -74,6 +74,23 @@ interface PublicPayload {
     generatedAt: string;
     kpis: Record<string, number>;
   }>;
+  serviceAreas?: Array<{
+    name: string;
+    city?: string;
+    region?: string;
+    country?: string;
+    landingPageUrl?: string;
+    googleMapsUrl?: string;
+    primaryKeyword?: string;
+    metrics?: {
+      clicks: number;
+      impressions: number;
+      ctr: number;
+      position: number;
+      rangeFrom: string;
+      rangeTo: string;
+    };
+  }>;
 }
 
 @Component({
@@ -585,11 +602,86 @@ interface PublicPayload {
             </section>
           }
 
+          <!-- Locations performance -->
+          @if (d.serviceAreas && d.serviceAreas.length > 0) {
+            <section>
+              <div class="flex items-center gap-3 mb-5">
+                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">07</span>
+                <h2 class="text-3xl font-bold text-ink-900">Locations Performance</h2>
+              </div>
+              <p class="text-sm text-ink-500 mb-5">
+                How each of <strong class="text-ink-900">{{ d.client.name }}</strong>'s
+                service locations performed during this period.
+              </p>
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                @for (a of d.serviceAreas; track a.name) {
+                  <div class="bg-white rounded-xl border border-ink-200 shadow-card p-5">
+                    <div class="flex items-start justify-between gap-2 mb-3">
+                      <div class="min-w-0">
+                        <h3 class="font-bold text-ink-900 leading-tight">{{ a.name }}</h3>
+                        @if (a.city || a.region) {
+                          <div class="text-[11px] text-ink-500 mt-0.5">
+                            {{ a.city }}@if (a.city && a.region) { · }{{ a.region }}
+                          </div>
+                        }
+                      </div>
+                      @if (a.country) {
+                        <span class="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-ink-100 text-ink-700 flex-shrink-0">
+                          {{ a.country }}
+                        </span>
+                      }
+                    </div>
+                    @if (a.metrics) {
+                      <div class="grid grid-cols-2 gap-3 mt-2">
+                        <div>
+                          <div class="text-[10px] uppercase tracking-wider text-ink-500 font-bold">Clicks</div>
+                          <div class="text-xl font-black text-ink-900">{{ a.metrics.clicks | number }}</div>
+                        </div>
+                        <div>
+                          <div class="text-[10px] uppercase tracking-wider text-ink-500 font-bold">Impressions</div>
+                          <div class="text-xl font-black text-ink-900">{{ a.metrics.impressions | number }}</div>
+                        </div>
+                        <div>
+                          <div class="text-[10px] uppercase tracking-wider text-ink-500 font-bold">CTR</div>
+                          <div class="text-xl font-black text-ink-900">{{ a.metrics.ctr | number: '1.1-2' }}%</div>
+                        </div>
+                        <div>
+                          <div class="text-[10px] uppercase tracking-wider text-ink-500 font-bold">Avg position</div>
+                          <div class="text-xl font-black"
+                               [class.text-positive-500]="a.metrics.position <= 3"
+                               [class.text-sky-600]="a.metrics.position > 3 && a.metrics.position <= 10"
+                               [class.text-warning-500]="a.metrics.position > 10 && a.metrics.position <= 20"
+                               [class.text-ink-900]="a.metrics.position > 20">
+                            {{ a.metrics.position | number: '1.1-1' }}
+                          </div>
+                        </div>
+                      </div>
+                    }
+                    @if (a.landingPageUrl || a.googleMapsUrl) {
+                      <div class="mt-4 pt-3 border-t border-ink-100 flex items-center gap-3 text-xs">
+                        @if (a.landingPageUrl) {
+                          <a [href]="a.landingPageUrl" target="_blank" class="text-brand-500 hover:underline inline-flex items-center gap-1">
+                            🔗 Landing page
+                          </a>
+                        }
+                        @if (a.googleMapsUrl) {
+                          <a [href]="a.googleMapsUrl" target="_blank" class="text-sky-600 hover:underline inline-flex items-center gap-1">
+                            📍 Google Maps
+                          </a>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            </section>
+          }
+
           <!-- Pending from client -->
           @if (sanitizer.hasVisibleContent(d.report.clientBlockers)) {
             <section>
               <div class="flex items-center gap-3 mb-5">
-                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">07</span>
+                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">08</span>
                 <h2 class="text-3xl font-bold text-ink-900">Pending from your side</h2>
               </div>
               <div class="bg-warning-100 border-l-4 border-warning-500 rounded-xl p-6">
@@ -602,7 +694,7 @@ interface PublicPayload {
           @if (sanitizer.hasVisibleContent(d.report.finalConsiderations)) {
             <section>
               <div class="flex items-center gap-3 mb-5">
-                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">08</span>
+                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">09</span>
                 <h2 class="text-3xl font-bold text-ink-900">Final considerations</h2>
               </div>
               <div class="bg-white rounded-xl border border-ink-200 shadow-card p-7 md:p-8">

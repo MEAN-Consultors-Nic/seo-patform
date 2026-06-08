@@ -405,6 +405,12 @@ export class ReportsService {
       },
       backlinks: backlinksSummary,
       kpiHistory: history,
+      serviceAreas:
+        report.includeServiceAreas && Array.isArray((client as { serviceAreas?: unknown }).serviceAreas)
+          ? ((client as { serviceAreas?: Array<{ metrics?: unknown }> }).serviceAreas || []).filter(
+              (a) => !!a.metrics,
+            )
+          : undefined,
     };
   }
 
@@ -458,6 +464,7 @@ export class ReportsService {
     if (dto.nextPeriodPlan !== undefined) $set.nextPeriodPlan = dto.nextPeriodPlan;
     if (dto.clientBlockers !== undefined) $set.clientBlockers = dto.clientBlockers;
     if (dto.finalConsiderations !== undefined) $set.finalConsiderations = dto.finalConsiderations;
+    if (dto.includeServiceAreas !== undefined) $set.includeServiceAreas = dto.includeServiceAreas;
 
     // Determine kpisPrevious for $setOnInsert (only used when creating new doc):
     // - First try: KPIs from the previous cycle's report

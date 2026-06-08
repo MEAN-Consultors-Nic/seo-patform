@@ -532,11 +532,65 @@ interface KpiGroup {
                           placeholder="Example: Waiting for approval of the new home copy…"></quill-editor>
           </section>
 
-          <!-- 6. Final Considerations -->
+          <!-- 6. Service Areas / Locations -->
+          <section class="card">
+            <div class="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h2 class="text-base font-semibold text-ink-900 flex items-center gap-2">
+                  <span class="text-[10px] uppercase tracking-wider bg-brand-50 text-brand-600 px-2 py-0.5 rounded">06</span>
+                  Locations performance
+                </h2>
+                <p class="text-xs text-ink-500 mt-1">
+                  Show a per-city performance breakdown in the client-facing
+                  report. Uses each service area's saved GSC metrics.
+                </p>
+              </div>
+              <label class="inline-flex items-center gap-2 cursor-pointer flex-shrink-0">
+                <input type="checkbox" [(ngModel)]="includeServiceAreas" class="rounded" />
+                <span class="text-sm text-ink-700">Include in report</span>
+              </label>
+            </div>
+
+            @if (includeServiceAreas) {
+              @if (clientServiceAreas().length === 0) {
+                <div class="rounded-md border border-warning-500/30 bg-warning-100/40 px-3 py-2 text-xs text-warning-500">
+                  This client has no service areas configured. Add some in
+                  <a [routerLink]="['/clients', clientId()]" class="font-semibold underline">Service Areas</a>.
+                </div>
+              } @else {
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  @for (a of clientServiceAreas(); track a.name) {
+                    <div class="rounded-md border border-ink-200 px-3 py-2">
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="font-semibold text-ink-900 text-sm">{{ a.name }}</span>
+                        @if (a.metrics) {
+                          <span class="text-[10px] uppercase tracking-wider text-positive-500 font-bold">✓ ready</span>
+                        } @else {
+                          <span class="text-[10px] uppercase tracking-wider text-warning-500 font-bold">no metrics</span>
+                        }
+                      </div>
+                      @if (a.metrics) {
+                        <div class="text-[11px] text-ink-500 mt-1">
+                          {{ a.metrics.clicks }} clicks · {{ a.metrics.impressions }} impr ·
+                          pos {{ a.metrics.position }}
+                        </div>
+                      } @else {
+                        <div class="text-[11px] text-ink-400 mt-1 italic">
+                          Won't appear — refresh metrics in Service Areas first
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            }
+          </section>
+
+          <!-- 7. Final Considerations -->
           <section class="card">
             <div class="mb-3">
               <h2 class="text-base font-semibold text-ink-900 flex items-center gap-2">
-                <span class="text-[10px] uppercase tracking-wider bg-brand-50 text-brand-600 px-2 py-0.5 rounded">06</span>
+                <span class="text-[10px] uppercase tracking-wider bg-brand-50 text-brand-600 px-2 py-0.5 rounded">07</span>
                 Final considerations
               </h2>
               <p class="text-xs text-ink-500 mt-1">
@@ -745,6 +799,7 @@ export class ReportEditorComponent implements OnInit {
   nextPeriodPlan = '';
   clientBlockers = '';
   finalConsiderations = '';
+  includeServiceAreas = false;
   kpis: Record<string, number | null> = {};
   coverImageUrl = signal<string>('');
   uploadingCover = signal(false);
@@ -779,6 +834,11 @@ export class ReportEditorComponent implements OnInit {
     return this.cycleTasks()
       .filter((t) => t.status !== 'completed')
       .sort((a, b) => (order[a.priority] ?? 9) - (order[b.priority] ?? 9));
+  });
+
+  clientServiceAreas = computed(() => {
+    const c = this.clients().find((x) => x._id === this.clientId());
+    return (c?.serviceAreas || []).slice();
   });
 
   priorityShort(p: string): string {
@@ -890,6 +950,7 @@ export class ReportEditorComponent implements OnInit {
     this.nextPeriodPlan = r?.nextPeriodPlan || '';
     this.clientBlockers = r?.clientBlockers || '';
     this.finalConsiderations = r?.finalConsiderations || '';
+    this.includeServiceAreas = !!r?.includeServiceAreas;
     this.kpis = { ...(r?.kpis || {}) };
     this.coverImageUrl.set(r?.coverImageUrl || '');
     this.shareToken.set(r?.shareToken || null);
@@ -1065,6 +1126,7 @@ export class ReportEditorComponent implements OnInit {
           nextPeriodPlan: this.nextPeriodPlan,
           clientBlockers: this.clientBlockers,
           finalConsiderations: this.finalConsiderations,
+          includeServiceAreas: this.includeServiceAreas,
           kpis: this.cleanKpis(),
         })
         .subscribe({
@@ -1202,6 +1264,7 @@ export class ReportEditorComponent implements OnInit {
             nextPeriodPlan: this.nextPeriodPlan,
             clientBlockers: this.clientBlockers,
             finalConsiderations: this.finalConsiderations,
+          includeServiceAreas: this.includeServiceAreas,
             kpis: this.cleanKpis(),
           })
           .subscribe({
@@ -1387,6 +1450,7 @@ export class ReportEditorComponent implements OnInit {
         nextPeriodPlan: this.nextPeriodPlan,
         clientBlockers: this.clientBlockers,
         finalConsiderations: this.finalConsiderations,
+          includeServiceAreas: this.includeServiceAreas,
         kpis: this.cleanKpis(),
       })
       .subscribe({

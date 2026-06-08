@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsMongoId,
   IsNumber,
   IsOptional,
@@ -40,4 +41,5 @@ export class UpsertReportDto {
   @IsOptional() @IsString() nextPeriodPlan?: string;
   @IsOptional() @IsString() clientBlockers?: string;
   @IsOptional() @IsString() finalConsiderations?: string;
+  @IsOptional() @IsBoolean() includeServiceAreas?: boolean;
 }
