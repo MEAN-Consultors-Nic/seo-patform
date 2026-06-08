@@ -104,6 +104,21 @@ export interface ServiceArea {
   metrics?: ServiceAreaMetrics;
 }
 
+export interface ServiceAreaSnapshot {
+  name: string;
+  city?: string;
+  region?: string;
+  country?: string;
+  landingPageUrl?: string;
+  googleMapsUrl?: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+  rangeFrom: string;
+  rangeTo: string;
+}
+
 export interface Client {
   _id?: string;
   name: string;
@@ -377,6 +392,7 @@ export interface Report {
   clientBlockers: string;
   finalConsiderations?: string;
   includeServiceAreas?: boolean;
+  serviceAreasSnapshot?: ServiceAreaSnapshot[];
   generatedAt: Date;
   sentAt?: Date;
   pdfPath?: string;
@@ -480,5 +496,12 @@ export interface PublicReportPayload {
     perStatus: Array<{ _id: string; count: number; avgDr: number }>;
   };
   kpiHistory: Array<{ cycleLabel?: string; generatedAt: Date; kpis: ReportKpis }>;
-  serviceAreas?: ServiceArea[];
+  serviceAreas?: Array<
+    ServiceAreaSnapshot & {
+      previous?: Pick<
+        ServiceAreaSnapshot,
+        'clicks' | 'impressions' | 'ctr' | 'position' | 'rangeFrom' | 'rangeTo'
+      >;
+    }
+  >;
 }

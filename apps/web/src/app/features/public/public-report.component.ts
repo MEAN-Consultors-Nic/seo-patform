@@ -81,8 +81,13 @@ interface PublicPayload {
     country?: string;
     landingPageUrl?: string;
     googleMapsUrl?: string;
-    primaryKeyword?: string;
-    metrics?: {
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    position: number;
+    rangeFrom: string;
+    rangeTo: string;
+    previous?: {
       clicks: number;
       impressions: number;
       ctr: number;
@@ -386,30 +391,65 @@ interface PublicPayload {
                         </span>
                       }
                     </div>
-                    @if (a.metrics) {
-                      <div class="grid grid-cols-2 gap-3 mt-2">
-                        <div>
-                          <div class="text-[10px] uppercase tracking-wider text-ink-500 font-bold">Clicks</div>
-                          <div class="text-xl font-black text-ink-900">{{ a.metrics.clicks | number }}</div>
-                        </div>
-                        <div>
-                          <div class="text-[10px] uppercase tracking-wider text-ink-500 font-bold">Impressions</div>
-                          <div class="text-xl font-black text-ink-900">{{ a.metrics.impressions | number }}</div>
-                        </div>
-                        <div>
-                          <div class="text-[10px] uppercase tracking-wider text-ink-500 font-bold">CTR</div>
-                          <div class="text-xl font-black text-ink-900">{{ a.metrics.ctr | number: '1.1-2' }}%</div>
-                        </div>
-                        <div>
-                          <div class="text-[10px] uppercase tracking-wider text-ink-500 font-bold">Avg position</div>
-                          <div class="text-xl font-black"
-                               [class.text-positive-500]="a.metrics.position <= 3"
-                               [class.text-sky-600]="a.metrics.position > 3 && a.metrics.position <= 10"
-                               [class.text-warning-500]="a.metrics.position > 10 && a.metrics.position <= 20"
-                               [class.text-ink-900]="a.metrics.position > 20">
-                            {{ a.metrics.position | number: '1.1-1' }}
+                    <div class="grid grid-cols-2 gap-3 mt-2">
+                      <div>
+                        <div class="text-[10px] uppercase tracking-wider text-ink-500 font-bold">Clicks</div>
+                        <div class="text-xl font-black text-ink-900">{{ a.clicks | number }}</div>
+                        @if (a.previous) {
+                          <div class="text-[10px] mt-0.5 inline-flex items-center gap-1 font-semibold"
+                               [ngClass]="deltaClass(a.clicks - a.previous.clicks, false)">
+                            {{ deltaSymbol(a.clicks - a.previous.clicks) }}
+                            {{ deltaPct(a.clicks, a.previous.clicks) }}
                           </div>
+                        }
+                      </div>
+                      <div>
+                        <div class="text-[10px] uppercase tracking-wider text-ink-500 font-bold">Impressions</div>
+                        <div class="text-xl font-black text-ink-900">{{ a.impressions | number }}</div>
+                        @if (a.previous) {
+                          <div class="text-[10px] mt-0.5 inline-flex items-center gap-1 font-semibold"
+                               [ngClass]="deltaClass(a.impressions - a.previous.impressions, false)">
+                            {{ deltaSymbol(a.impressions - a.previous.impressions) }}
+                            {{ deltaPct(a.impressions, a.previous.impressions) }}
+                          </div>
+                        }
+                      </div>
+                      <div>
+                        <div class="text-[10px] uppercase tracking-wider text-ink-500 font-bold">CTR</div>
+                        <div class="text-xl font-black text-ink-900">{{ a.ctr | number: '1.1-2' }}%</div>
+                        @if (a.previous) {
+                          <div class="text-[10px] mt-0.5 inline-flex items-center gap-1 font-semibold"
+                               [ngClass]="deltaClass(a.ctr - a.previous.ctr, false)">
+                            {{ deltaSymbol(a.ctr - a.previous.ctr) }}
+                            {{ deltaPct(a.ctr, a.previous.ctr) }}
+                          </div>
+                        }
+                      </div>
+                      <div>
+                        <div class="text-[10px] uppercase tracking-wider text-ink-500 font-bold">Avg position</div>
+                        <div class="text-xl font-black"
+                             [class.text-positive-500]="a.position <= 3"
+                             [class.text-sky-600]="a.position > 3 && a.position <= 10"
+                             [class.text-warning-500]="a.position > 10 && a.position <= 20"
+                             [class.text-ink-900]="a.position > 20">
+                          {{ a.position | number: '1.1-1' }}
                         </div>
+                        @if (a.previous) {
+                          <div class="text-[10px] mt-0.5 inline-flex items-center gap-1 font-semibold"
+                               [ngClass]="deltaClass(a.previous.position - a.position, false)">
+                            {{ deltaSymbol(a.previous.position - a.position) }}
+                            {{ (a.previous.position - a.position) | number: '1.1-1' }} pos
+                          </div>
+                        }
+                      </div>
+                    </div>
+                    @if (!a.previous) {
+                      <div class="mt-3 text-[10px] text-ink-400 italic">
+                        No previous period to compare — deltas will appear from the next report onwards.
+                      </div>
+                    } @else {
+                      <div class="mt-3 text-[10px] text-ink-400">
+                        vs {{ a.previous.rangeFrom }} → {{ a.previous.rangeTo }}
                       </div>
                     }
                     @if (a.landingPageUrl || a.googleMapsUrl) {
@@ -1223,6 +1263,25 @@ export class PublicReportComponent implements OnInit {
     return (this.data()?.tasks || [])
       .filter((t) => t.status !== 'completed')
       .sort((a, b) => (order[a.priority] || 9) - (order[b.priority] || 9));
+  }
+
+  deltaClass(delta: number, _inverse: boolean): string {
+    if (delta > 0) return 'text-positive-500';
+    if (delta < 0) return 'text-danger-500';
+    return 'text-ink-400';
+  }
+
+  deltaSymbol(delta: number): string {
+    if (delta > 0) return '▲';
+    if (delta < 0) return '▼';
+    return '·';
+  }
+
+  deltaPct(current: number, previous: number): string {
+    if (!previous || !Number.isFinite(previous)) return '—';
+    const pct = ((current - previous) / Math.abs(previous)) * 100;
+    const sign = pct > 0 ? '+' : '';
+    return `${sign}${pct.toFixed(1)}%`;
   }
 
   formatNum(n: number | undefined): string {

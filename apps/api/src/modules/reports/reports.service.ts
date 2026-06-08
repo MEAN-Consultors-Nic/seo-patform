@@ -405,13 +405,45 @@ export class ReportsService {
       },
       backlinks: backlinksSummary,
       kpiHistory: history,
-      serviceAreas:
-        report.includeServiceAreas && Array.isArray((client as { serviceAreas?: unknown }).serviceAreas)
-          ? ((client as { serviceAreas?: Array<{ metrics?: unknown }> }).serviceAreas || []).filter(
-              (a) => !!a.metrics,
-            )
-          : undefined,
+      serviceAreas: await this.buildPublicServiceAreas(report),
     };
+  }
+
+  private async buildPublicServiceAreas(report: {
+    clientId: Types.ObjectId | string;
+    cycleId: Types.ObjectId | string;
+    includeServiceAreas?: boolean;
+    serviceAreasSnapshot?: unknown;
+  }) {
+    if (!report.includeServiceAreas) return undefined;
+    const current = Array.isArray(report.serviceAreasSnapshot)
+      ? (report.serviceAreasSnapshot as Array<Record<string, unknown>>)
+      : [];
+    if (current.length === 0) return [];
+    const prev = await this.findPreviousServiceAreasSnapshot(
+      report.clientId.toString(),
+      report.cycleId.toString(),
+    );
+    const prevByName = new Map<string, Record<string, unknown>>();
+    for (const p of prev) {
+      prevByName.set(String(p.name || '').toLowerCase(), p);
+    }
+    return current.map((a) => {
+      const p = prevByName.get(String(a.name || '').toLowerCase());
+      return {
+        ...a,
+        previous: p
+          ? {
+              clicks: Number(p.clicks ?? 0),
+              impressions: Number(p.impressions ?? 0),
+              ctr: Number(p.ctr ?? 0),
+              position: Number(p.position ?? 0),
+              rangeFrom: String(p.rangeFrom ?? ''),
+              rangeTo: String(p.rangeTo ?? ''),
+            }
+          : undefined,
+      };
+    });
   }
 
   async generatePdfByToken(token: string): Promise<Buffer> {
@@ -465,6 +497,16 @@ export class ReportsService {
     if (dto.clientBlockers !== undefined) $set.clientBlockers = dto.clientBlockers;
     if (dto.finalConsiderations !== undefined) $set.finalConsiderations = dto.finalConsiderations;
     if (dto.includeServiceAreas !== undefined) $set.includeServiceAreas = dto.includeServiceAreas;
+
+    // Freeze the current Service Area metrics onto the report so future
+    // edits to client.serviceAreas don't retroactively change historical
+    // reports. The next report's getPublicPayload will diff against this
+    // snapshot to surface a "vs. previous period" delta.
+    if (dto.includeServiceAreas !== undefined) {
+      $set.serviceAreasSnapshot = dto.includeServiceAreas
+        ? await this.buildServiceAreasSnapshot(dto.clientId)
+        : undefined;
+    }
 
     // Determine kpisPrevious for $setOnInsert (only used when creating new doc):
     // - First try: KPIs from the previous cycle's report
@@ -532,6 +574,68 @@ export class ReportsService {
       return baseline as Record<string, number>;
     }
     return null;
+  }
+
+  /**
+   * Snapshots the client's service areas (the ones with metrics) into the
+   * report so the data is frozen at save time. Future tweaks to the client
+   * doc never change historical reports.
+   */
+  private async buildServiceAreasSnapshot(clientId: string) {
+    const client = await this.clients.findOne(clientId).catch(() => null);
+    const areas = (client as { serviceAreas?: Array<Record<string, unknown>> } | null)
+      ?.serviceAreas;
+    if (!Array.isArray(areas)) return [];
+    return areas
+      .filter((a) => a && (a as { metrics?: unknown }).metrics)
+      .map((a) => {
+        const m = (a as { metrics: Record<string, unknown> }).metrics;
+        return {
+          name: String(a.name || ''),
+          city: a.city ? String(a.city) : undefined,
+          region: a.region ? String(a.region) : undefined,
+          country: a.country ? String(a.country) : undefined,
+          landingPageUrl: a.landingPageUrl ? String(a.landingPageUrl) : undefined,
+          googleMapsUrl: a.googleMapsUrl ? String(a.googleMapsUrl) : undefined,
+          clicks: Number(m.clicks ?? 0),
+          impressions: Number(m.impressions ?? 0),
+          ctr: Number(m.ctr ?? 0),
+          position: Number(m.position ?? 0),
+          rangeFrom: String(m.rangeFrom ?? ''),
+          rangeTo: String(m.rangeTo ?? ''),
+        };
+      });
+  }
+
+  /**
+   * Finds the previous report's service-area snapshot for the same client.
+   * Used by the public payload to render before/after deltas per area.
+   */
+  private async findPreviousServiceAreasSnapshot(
+    clientId: string,
+    cycleId: string,
+  ) {
+    const cycle = await this.cycles.findOne(cycleId).catch(() => null);
+    if (!cycle) return [];
+    const prev = await this.model
+      .aggregate([
+        { $match: { clientId: new Types.ObjectId(clientId) } },
+        {
+          $lookup: {
+            from: 'cycles',
+            localField: 'cycleId',
+            foreignField: '_id',
+            as: 'cycle',
+          },
+        },
+        { $unwind: '$cycle' },
+        { $match: { 'cycle.startDate': { $lt: cycle.startDate } } },
+        { $sort: { 'cycle.startDate': -1 } },
+        { $limit: 1 },
+      ])
+      .exec();
+    if (!prev.length) return [];
+    return (prev[0].serviceAreasSnapshot as Array<Record<string, unknown>> | undefined) || [];
   }
 
   async autoCompose(clientId: string, cycleId: string) {

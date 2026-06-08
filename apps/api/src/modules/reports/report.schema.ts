@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
-import { ReportKpis } from '@seo/shared';
+import { ReportKpis, ServiceAreaSnapshot } from '@seo/shared';
 
 export type ReportDocument = HydratedDocument<Report>;
 
@@ -56,6 +56,9 @@ export class Report {
 
   @Prop({ default: false })
   includeServiceAreas?: boolean;
+
+  @Prop({ type: [Object], default: undefined })
+  serviceAreasSnapshot?: ServiceAreaSnapshot[];
 
   @Prop({ default: '' })
   finalConsiderations!: string;
