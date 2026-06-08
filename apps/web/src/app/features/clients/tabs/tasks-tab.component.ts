@@ -247,6 +247,15 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                         }
                         <div class="border-t border-ink-100 my-1"></div>
                         <button type="button"
+                                (click)="openEditModal(t)"
+                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 inline-flex items-center gap-2">
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke-linejoin="round" />
+                            <path d="M10 4l2 2" />
+                          </svg>
+                          Edit task
+                        </button>
+                        <button type="button"
                                 (click)="duplicate(t)"
                                 class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 inline-flex items-center gap-2">
                           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -332,6 +341,84 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
         </div>
       }
     </div>
+
+    <!-- Edit task modal -->
+    @if (editingTask(); as e) {
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+           (click)="closeEditModal()">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto"
+             (click)="$event.stopPropagation()">
+          <div class="flex items-start justify-between mb-4">
+            <h2 class="text-lg font-bold text-ink-900">Edit task</h2>
+            <button type="button"
+                    (click)="closeEditModal()"
+                    class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <label class="label">Title</label>
+              <input class="input" [(ngModel)]="editForm.title" placeholder="Task title" />
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label class="label">Category</label>
+                <select class="input" [(ngModel)]="editForm.category">
+                  @for (cat of categories; track cat) {
+                    <option [value]="cat">{{ cat }}</option>
+                  }
+                </select>
+              </div>
+              <div>
+                <label class="label">Priority</label>
+                <select class="input" [(ngModel)]="editForm.priority">
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+              <div>
+                <label class="label">Estimated hours</label>
+                <input type="number" class="input" min="0" step="0.5"
+                       [(ngModel)]="editForm.estimatedHours" />
+              </div>
+            </div>
+
+            <div>
+              <label class="label">Description</label>
+              <quill-editor
+                [(ngModel)]="editForm.description"
+                [modules]="quillModules"
+                placeholder="Why this task is needed, scope, success criteria…"
+                [styles]="{ minHeight: '160px' }"></quill-editor>
+            </div>
+
+            <div>
+              <label class="label">Notes (internal)</label>
+              <textarea class="input" rows="3" [(ngModel)]="editForm.notes"
+                        placeholder="Short notes only the team sees"></textarea>
+            </div>
+
+            @if (editError()) {
+              <div class="text-xs text-danger-500">{{ editError() }}</div>
+            }
+          </div>
+
+          <div class="flex items-center justify-between mt-6 pt-4 border-t border-ink-100">
+            <div class="text-[11px] text-ink-400">
+              Created {{ e.createdAt ? (e.createdAt | date: 'mediumDate') : 'just now' }}
+            </div>
+            <div class="flex gap-2">
+              <button class="btn-secondary" (click)="closeEditModal()">Cancel</button>
+              <button class="btn-primary" (click)="saveEdit()" [disabled]="savingEdit()">
+                {{ savingEdit() ? 'Saving…' : 'Save changes' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class ClientTasksTab implements OnChanges {
@@ -348,6 +435,17 @@ export class ClientTasksTab implements OnChanges {
   searchQuery = signal('');
   menuOpenId = signal<string | null>(null);
   expandedIds = signal<Set<string>>(new Set());
+  editingTask = signal<Task | null>(null);
+  editForm = {
+    title: '',
+    description: '' as string | undefined,
+    category: 'onpage' as TaskCategory,
+    priority: 'medium' as 'high' | 'medium' | 'low',
+    estimatedHours: 0,
+    notes: '' as string | undefined,
+  };
+  savingEdit = signal(false);
+  editError = signal<string | null>(null);
   Math = Math;
 
   categories: TaskCategory[] = [
@@ -505,6 +603,62 @@ export class ClientTasksTab implements OnChanges {
         x._id === t._id ? { ...x, actualHours } : x,
       );
       this.tasks.set(updated);
+    });
+  }
+
+  // --- Edit modal ---------------------------------------------------------
+
+  openEditModal(t: Task) {
+    this.menuOpenId.set(null);
+    this.editForm = {
+      title: t.title || '',
+      description: t.description || '',
+      category: t.category,
+      priority: t.priority,
+      estimatedHours: t.estimatedHours || 0,
+      notes: t.notes || '',
+    };
+    this.editError.set(null);
+    this.editingTask.set(t);
+  }
+
+  closeEditModal() {
+    if (this.savingEdit()) return;
+    this.editingTask.set(null);
+    this.editError.set(null);
+  }
+
+  saveEdit() {
+    const t = this.editingTask();
+    if (!t?._id) return;
+    const title = (this.editForm.title || '').trim();
+    if (!title) {
+      this.editError.set('Title is required.');
+      return;
+    }
+    this.savingEdit.set(true);
+    this.editError.set(null);
+    const patch: Partial<Task> = {
+      title,
+      description: this.editForm.description || undefined,
+      category: this.editForm.category,
+      priority: this.editForm.priority,
+      estimatedHours: Number(this.editForm.estimatedHours) || 0,
+      notes: this.editForm.notes?.trim() || undefined,
+    };
+    this.tasksSvc.update(t._id, patch).subscribe({
+      next: () => {
+        this.savingEdit.set(false);
+        this.editingTask.set(null);
+        this.loadTasks();
+      },
+      error: (err) => {
+        this.savingEdit.set(false);
+        const msg = err?.error?.message;
+        this.editError.set(
+          Array.isArray(msg) ? msg.join(', ') : msg || 'Could not save the task.',
+        );
+      },
     });
   }
 
