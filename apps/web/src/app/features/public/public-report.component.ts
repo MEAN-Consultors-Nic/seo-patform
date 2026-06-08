@@ -488,8 +488,15 @@ interface PublicPayload {
                       </div>
                       <h3 class="font-semibold text-ink-900 text-sm leading-snug">{{ t.title }}</h3>
                       @if (t.description) {
-                        <div class="rich-content text-xs text-ink-500 mt-1 leading-relaxed"
+                        <div class="rich-content text-xs text-ink-500 mt-1 leading-relaxed line-clamp-4"
                              [innerHTML]="sanitizer.trustRichHtml(t.description)"></div>
+                        @if (isLongDescription(t.description)) {
+                          <button type="button"
+                                  (click)="openTaskDescription(t)"
+                                  class="mt-1 text-[11px] font-semibold text-brand-500 hover:text-brand-600">
+                            View full description →
+                          </button>
+                        }
                       }
                       @if (t.notes) {
                         <div class="text-xs text-ink-700 mt-1 italic">{{ t.notes }}</div>
@@ -664,6 +671,40 @@ interface PublicPayload {
         </footer>
       </div>
     }
+
+    <!-- Task description modal -->
+    @if (descriptionModal(); as t) {
+      <div class="fixed inset-0 bg-ink-900/70 z-[9999] flex items-center justify-center p-4"
+           (click)="closeTaskDescription()">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col"
+             (click)="$event.stopPropagation()">
+          <div class="px-6 py-4 border-b border-ink-200 flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 mb-1">
+                <span class="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded"
+                      [ngClass]="categoryBadgeClass(t.category)">{{ t.category }}</span>
+              </div>
+              <h2 class="text-lg font-bold text-ink-900 leading-snug">{{ t.title }}</h2>
+            </div>
+            <button (click)="closeTaskDescription()"
+                    class="text-ink-400 hover:text-ink-900 text-2xl leading-none flex-shrink-0">×</button>
+          </div>
+          <div class="px-6 py-5 overflow-y-auto flex-1">
+            <div class="rich-content text-sm text-ink-700"
+                 [innerHTML]="sanitizer.trustRichHtml(t.description)"></div>
+            @if (t.notes) {
+              <div class="mt-4 pt-4 border-t border-ink-100">
+                <div class="text-[10px] uppercase tracking-wider font-semibold text-ink-400 mb-1">Notes</div>
+                <div class="text-sm text-ink-700">{{ t.notes }}</div>
+              </div>
+            }
+          </div>
+          <div class="px-6 py-3 border-t border-ink-200 flex justify-end">
+            <button class="btn-secondary" (click)="closeTaskDescription()">Close</button>
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class PublicReportComponent implements OnInit {
@@ -676,6 +717,7 @@ export class PublicReportComponent implements OnInit {
   data = signal<PublicPayload | null>(null);
   downloading = signal(false);
   publicLightbox = signal<TaskAttachmentPayload | null>(null);
+  descriptionModal = signal<PublicPayload['tasks'][number] | null>(null);
   visibleMetrics = signal<Set<string>>(new Set(['organicSessions', 'clicks']));
   Math = Math;
 
@@ -1147,6 +1189,20 @@ export class PublicReportComponent implements OnInit {
     if (p === 'high') return 'High';
     if (p === 'medium') return 'Medium';
     return 'Low';
+  }
+
+  isLongDescription(html: string | undefined | null): boolean {
+    if (!html) return false;
+    const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    return text.length > 280 || (html.match(/\n/g) || []).length > 4;
+  }
+
+  openTaskDescription(t: PublicPayload['tasks'][number]) {
+    this.descriptionModal.set(t);
+  }
+
+  closeTaskDescription() {
+    this.descriptionModal.set(null);
   }
 
   downloadPdf() {

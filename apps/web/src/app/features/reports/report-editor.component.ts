@@ -440,8 +440,15 @@ interface KpiGroup {
                         </div>
                         <div class="text-sm font-medium text-ink-900">{{ t.title }}</div>
                         @if (t.description) {
-                          <div class="rich-content text-xs text-ink-500 mt-0.5"
+                          <div class="rich-content text-xs text-ink-500 mt-0.5 line-clamp-3"
                                [innerHTML]="sanitize(t.description)"></div>
+                          @if (isLongDescription(t.description)) {
+                            <button type="button"
+                                    (click)="openTaskDescription(t)"
+                                    class="mt-1 text-[11px] font-semibold text-brand-500 hover:text-brand-600">
+                              View full description →
+                            </button>
+                          }
                         }
                       </div>
                     </div>
@@ -486,8 +493,15 @@ interface KpiGroup {
                         </div>
                         <div class="text-sm font-medium text-ink-900">{{ t.title }}</div>
                         @if (t.description) {
-                          <div class="rich-content text-xs text-ink-500 mt-0.5"
+                          <div class="rich-content text-xs text-ink-500 mt-0.5 line-clamp-3"
                                [innerHTML]="sanitize(t.description)"></div>
+                          @if (isLongDescription(t.description)) {
+                            <button type="button"
+                                    (click)="openTaskDescription(t)"
+                                    class="mt-1 text-[11px] font-semibold text-brand-500 hover:text-brand-600">
+                              View full description →
+                            </button>
+                          }
                         }
                       </div>
                     </div>
@@ -616,6 +630,43 @@ interface KpiGroup {
         </div>
       </div>
     }
+
+    <!-- Task description modal -->
+    @if (descriptionModal(); as t) {
+      <div class="fixed inset-0 bg-ink-900/70 z-[9999] flex items-center justify-center p-4"
+           (click)="closeTaskDescription()">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col"
+             (click)="$event.stopPropagation()">
+          <div class="px-6 py-4 border-b border-ink-200 flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 mb-1">
+                <span class="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded"
+                      [ngClass]="categoryBadgeClass(t.category)">{{ t.category }}</span>
+                <span class="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded"
+                      [ngClass]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
+                <span class="text-[10px] uppercase tracking-wider font-semibold text-ink-500">{{ t.status }}</span>
+              </div>
+              <h2 class="text-lg font-bold text-ink-900 leading-snug">{{ t.title }}</h2>
+            </div>
+            <button (click)="closeTaskDescription()"
+                    class="text-ink-400 hover:text-ink-900 text-2xl leading-none flex-shrink-0">×</button>
+          </div>
+          <div class="px-6 py-5 overflow-y-auto flex-1">
+            <div class="rich-content text-sm text-ink-700"
+                 [innerHTML]="sanitize(t.description || '')"></div>
+            @if (t.notes) {
+              <div class="mt-4 pt-4 border-t border-ink-100">
+                <div class="text-[10px] uppercase tracking-wider font-semibold text-ink-400 mb-1">Notes</div>
+                <div class="text-sm text-ink-700">{{ t.notes }}</div>
+              </div>
+            }
+          </div>
+          <div class="px-6 py-3 border-t border-ink-200 flex justify-end">
+            <button class="btn-secondary" (click)="closeTaskDescription()">Close</button>
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class ReportEditorComponent implements OnInit {
@@ -630,6 +681,20 @@ export class ReportEditorComponent implements OnInit {
 
   sanitize(html: string | undefined | null) {
     return this.sanitizer.trustRichHtml(html);
+  }
+
+  isLongDescription(html: string | undefined | null): boolean {
+    if (!html) return false;
+    const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    return text.length > 220 || (html.match(/\n/g) || []).length > 3;
+  }
+
+  openTaskDescription(t: Task) {
+    this.descriptionModal.set(t);
+  }
+
+  closeTaskDescription() {
+    this.descriptionModal.set(null);
   }
 
   clients = signal<Client[]>([]);
@@ -685,6 +750,7 @@ export class ReportEditorComponent implements OnInit {
   uploadingCover = signal(false);
   coverUploadProgress = signal<number | null>(null);
   coverError = signal<string | null>(null);
+  descriptionModal = signal<Task | null>(null);
   coverDropActive = signal(false);
   readingCoverClipboard = signal(false);
   coverPasteHint = this.detectPasteHint();
