@@ -98,6 +98,7 @@ export interface ServiceArea {
   country?: string; // US, MX, PR, DO, etc.
   postalCode?: string;
   landingPageUrl?: string;
+  googleMapsUrl?: string;
   primaryKeyword?: string;
   notes?: string;
   metrics?: ServiceAreaMetrics;

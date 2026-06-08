@@ -63,6 +63,7 @@ class ServiceAreaSubSchema implements ServiceArea {
   @Prop() country?: string;
   @Prop() postalCode?: string;
   @Prop() landingPageUrl?: string;
+  @Prop() googleMapsUrl?: string;
   @Prop() primaryKeyword?: string;
   @Prop() notes?: string;
   @Prop({ type: ServiceAreaMetricsSchemaDef })

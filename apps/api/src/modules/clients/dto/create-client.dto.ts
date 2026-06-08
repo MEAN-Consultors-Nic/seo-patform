@@ -53,6 +53,7 @@ class ServiceAreaDto {
   @IsOptional() @IsString() country?: string;
   @IsOptional() @IsString() postalCode?: string;
   @IsOptional() @IsString() landingPageUrl?: string;
+  @IsOptional() @IsString() googleMapsUrl?: string;
   @IsOptional() @IsString() primaryKeyword?: string;
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @ValidateNested() @Type(() => ServiceAreaMetricsDto) metrics?: ServiceAreaMetricsDto;

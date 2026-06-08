@@ -84,7 +84,9 @@ function normalizeUrl(url: string): string {
         <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
           <input class="input" [(ngModel)]="newArea.landingPageUrl"
                  placeholder="Landing page URL (e.g. https://site.com/services/los-angeles)" />
-          <input class="input" [(ngModel)]="newArea.primaryKeyword"
+          <input class="input" [(ngModel)]="newArea.googleMapsUrl"
+                 placeholder="Google Maps link (e.g. https://maps.google.com/...)" />
+          <input class="input md:col-span-2" [(ngModel)]="newArea.primaryKeyword"
                  placeholder="Primary keyword for this area" />
         </div>
         <textarea class="input mt-2" rows="2" [(ngModel)]="newArea.notes"
@@ -117,6 +119,7 @@ function normalizeUrl(url: string): string {
                     <input class="input" [(ngModel)]="editDraft.primaryKeyword" placeholder="Primary keyword" />
                   </div>
                   <input class="input" [(ngModel)]="editDraft.landingPageUrl" placeholder="Landing page URL" />
+                  <input class="input" [(ngModel)]="editDraft.googleMapsUrl" placeholder="Google Maps link" />
                   <textarea class="input" rows="2" [(ngModel)]="editDraft.notes" placeholder="Notes"></textarea>
                   <div class="flex justify-end gap-2 mt-2">
                     <button class="btn-ghost text-xs" (click)="cancelEdit()">Cancel</button>
@@ -145,17 +148,26 @@ function normalizeUrl(url: string): string {
                         </span>
                       }
                     </div>
-                    @if (a.landingPageUrl) {
-                      <a [href]="a.landingPageUrl" target="_blank"
-                         class="text-xs text-brand-500 hover:underline truncate inline-block max-w-full mt-1"
-                         [title]="a.landingPageUrl">
-                        {{ shortUrl(a.landingPageUrl) }}
-                      </a>
-                    } @else {
-                      <div class="text-[11px] text-warning-500 mt-1">
-                        ⚠ No landing page configured — can't pull metrics
-                      </div>
-                    }
+                    <div class="flex flex-wrap items-center gap-3 mt-1">
+                      @if (a.landingPageUrl) {
+                        <a [href]="a.landingPageUrl" target="_blank"
+                           class="text-xs text-brand-500 hover:underline truncate inline-flex items-center gap-1 max-w-[200px]"
+                           [title]="a.landingPageUrl">
+                          🔗 {{ shortUrl(a.landingPageUrl) }}
+                        </a>
+                      } @else {
+                        <span class="text-[11px] text-warning-500">
+                          ⚠ No landing page configured — can't pull metrics
+                        </span>
+                      }
+                      @if (a.googleMapsUrl) {
+                        <a [href]="a.googleMapsUrl" target="_blank"
+                           class="text-xs text-sky-600 hover:underline inline-flex items-center gap-1"
+                           [title]="a.googleMapsUrl">
+                          📍 Google Maps
+                        </a>
+                      }
+                    </div>
                     @if (a.notes) {
                       <p class="text-xs text-ink-500 mt-1 italic">{{ a.notes }}</p>
                     }
@@ -233,6 +245,7 @@ export class ClientServiceAreasTab implements OnInit, OnChanges {
     country: '',
     postalCode: '',
     landingPageUrl: '',
+    googleMapsUrl: '',
     primaryKeyword: '',
     notes: '',
   };
@@ -288,6 +301,7 @@ export class ClientServiceAreasTab implements OnInit, OnChanges {
       country: this.newArea.country?.trim()?.toUpperCase() || undefined,
       postalCode: this.newArea.postalCode?.trim() || undefined,
       landingPageUrl: this.newArea.landingPageUrl?.trim() || undefined,
+      googleMapsUrl: this.newArea.googleMapsUrl?.trim() || undefined,
       primaryKeyword: this.newArea.primaryKeyword?.trim() || undefined,
       notes: this.newArea.notes?.trim() || undefined,
     };
@@ -327,6 +341,7 @@ export class ClientServiceAreasTab implements OnInit, OnChanges {
             country: this.editDraft.country?.trim()?.toUpperCase() || undefined,
             postalCode: this.editDraft.postalCode?.trim() || undefined,
             landingPageUrl: this.editDraft.landingPageUrl?.trim() || undefined,
+            googleMapsUrl: this.editDraft.googleMapsUrl?.trim() || undefined,
             primaryKeyword: this.editDraft.primaryKeyword?.trim() || undefined,
             notes: this.editDraft.notes?.trim() || undefined,
           }
