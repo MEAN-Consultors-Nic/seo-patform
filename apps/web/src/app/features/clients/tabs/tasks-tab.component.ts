@@ -198,8 +198,9 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           @for (t of filteredTasks(); track t._id) {
             <article
-              class="relative bg-white rounded-lg border border-ink-200 shadow-card hover:shadow-elevated transition-all overflow-hidden flex flex-col"
-              [class.opacity-80]="t.status === 'completed'">
+              class="relative rounded-lg border border-ink-200 shadow-card hover:shadow-elevated transition-all overflow-hidden flex flex-col"
+              [class.bg-white]="t.status !== 'completed'"
+              [class.bg-ink-50]="t.status === 'completed'">
               <!-- Status side bar -->
               <div class="absolute top-0 left-0 bottom-0 w-1" [ngClass]="statusOf(t).bar"></div>
 

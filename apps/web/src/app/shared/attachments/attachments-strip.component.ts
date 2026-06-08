@@ -1,10 +1,14 @@
 import { CommonModule } from '@angular/common';
 import {
+  AfterViewChecked,
   Component,
+  ElementRef,
   EventEmitter,
   HostListener,
   Input,
+  OnDestroy,
   Output,
+  ViewChild,
   inject,
   signal,
 } from '@angular/core';
@@ -215,9 +219,12 @@ interface UploadDraft {
       </div>
     }
 
-    <!-- Lightbox -->
+    <!-- Lightbox (teleported to document.body so it escapes any
+         ancestor stacking context, e.g. completed task cards) -->
     @if (lightbox(); as a) {
-      <div class="fixed inset-0 bg-ink-900/80 z-50 flex items-center justify-center p-6"
+      <div #lightboxRoot
+           class="fixed inset-0 bg-ink-900/80 flex items-center justify-center p-6"
+           style="z-index: 10000;"
            (click)="lightbox.set(null)">
         <div class="relative max-w-5xl w-full" (click)="$event.stopPropagation()">
           <img [src]="cloudinary.fullUrl(a.publicId)" [alt]="a.caption || a.label"
@@ -261,9 +268,12 @@ interface UploadDraft {
     }
   `],
 })
-export class AttachmentsStripComponent {
+export class AttachmentsStripComponent implements AfterViewChecked, OnDestroy {
   protected cloudinary = inject(CloudinaryService);
   private tasksSvc = inject(TasksService);
+
+  @ViewChild('lightboxRoot') lightboxRoot?: ElementRef<HTMLDivElement>;
+  private lightboxInBody = false;
 
   @Input({ required: true }) taskId!: string;
   @Input() attachments: TaskAttachment[] = [];
@@ -489,6 +499,29 @@ export class AttachmentsStripComponent {
   open(a: TaskAttachment) {
     this.lightbox.set(a);
     this.captionDraft = a.caption || '';
+  }
+
+  // Teleport the lightbox DOM node to <body> the first time it's rendered
+  // so it lives outside any ancestor stacking context (e.g. completed task
+  // cards that used to be opacity-faded, modals, sticky headers, etc.).
+  ngAfterViewChecked() {
+    if (!this.lightbox()) {
+      this.lightboxInBody = false;
+      return;
+    }
+    const el = this.lightboxRoot?.nativeElement;
+    if (el && !this.lightboxInBody && el.parentElement !== document.body) {
+      document.body.appendChild(el);
+      this.lightboxInBody = true;
+    }
+  }
+
+  ngOnDestroy() {
+    // Clean up if we teleported the lightbox out of the component subtree.
+    const el = this.lightboxRoot?.nativeElement;
+    if (el && el.parentElement === document.body) {
+      el.remove();
+    }
   }
 
   setLabel(a: TaskAttachment, label: LabelOption) {
