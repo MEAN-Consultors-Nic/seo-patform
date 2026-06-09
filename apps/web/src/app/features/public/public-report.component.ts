@@ -284,36 +284,50 @@ interface PublicPayload {
                 <h2 class="text-3xl font-bold text-ink-900">Key Metrics</h2>
               </div>
 
-              <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
-                @for (k of kpiCards(); track k.key) {
-                  <div class="bg-white rounded-xl p-5 border border-ink-200 shadow-card">
-                    <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-2">
-                      {{ k.label }}
-                    </div>
-                    <div class="text-3xl font-black text-ink-900 leading-none">
-                      {{ formatNum(k.current) }}
-                    </div>
-                    @if (k.delta !== null) {
-                      <div class="mt-3 flex items-center gap-2">
-                        <div class="text-xs font-semibold flex items-center gap-1"
-                             [class.text-positive-500]="k.good"
-                             [class.text-danger-500]="!k.good">
-                          <svg width="10" height="10" viewBox="0 0 10 10" *ngIf="k.delta > 0">
-                            <polygon points="5,0 10,10 0,10" fill="currentColor"/>
-                          </svg>
-                          <svg width="10" height="10" viewBox="0 0 10 10" *ngIf="k.delta < 0">
-                            <polygon points="0,0 10,0 5,10" fill="currentColor"/>
-                          </svg>
-                          <span>{{ k.deltaPct > 0 ? '+' : '' }}{{ k.deltaPct | number: '1.1-1' }}%</span>
-                        </div>
-                        <span class="text-xs text-ink-400">·</span>
-                        <div class="text-xs text-ink-500">
-                          vs <span class="font-semibold text-ink-700">{{ formatNum(k.previous) }}</span>
-                        </div>
+              <div class="space-y-8 mb-6">
+                @for (group of kpiGroups(); track group.source) {
+                  <div>
+                    <div class="flex items-baseline justify-between gap-3 mb-3">
+                      <div class="flex items-baseline gap-2">
+                        <h3 class="text-sm font-bold uppercase tracking-wider text-ink-900">
+                          {{ group.label }}
+                        </h3>
+                        <span class="text-xs text-ink-400">· {{ group.subtitle }}</span>
                       </div>
-                    } @else {
-                      <div class="text-xs text-ink-400 mt-3">no previous period</div>
-                    }
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      @for (k of group.cards; track k.key) {
+                        <div class="bg-white rounded-xl p-5 border border-ink-200 shadow-card">
+                          <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-2">
+                            {{ k.label }}
+                          </div>
+                          <div class="text-3xl font-black text-ink-900 leading-none">
+                            {{ formatNum(k.current) }}
+                          </div>
+                          @if (k.delta !== null) {
+                            <div class="mt-3 flex items-center gap-2">
+                              <div class="text-xs font-semibold flex items-center gap-1"
+                                   [class.text-positive-500]="k.good"
+                                   [class.text-danger-500]="!k.good">
+                                <svg width="10" height="10" viewBox="0 0 10 10" *ngIf="k.delta > 0">
+                                  <polygon points="5,0 10,10 0,10" fill="currentColor"/>
+                                </svg>
+                                <svg width="10" height="10" viewBox="0 0 10 10" *ngIf="k.delta < 0">
+                                  <polygon points="0,0 10,0 5,10" fill="currentColor"/>
+                                </svg>
+                                <span>{{ k.deltaPct > 0 ? '+' : '' }}{{ k.deltaPct | number: '1.1-1' }}%</span>
+                              </div>
+                              <span class="text-xs text-ink-400">·</span>
+                              <div class="text-xs text-ink-500">
+                                vs <span class="font-semibold text-ink-700">{{ formatNum(k.previous) }}</span>
+                              </div>
+                            </div>
+                          } @else {
+                            <div class="text-xs text-ink-400 mt-3">no previous period</div>
+                          }
+                        </div>
+                      }
+                    </div>
                   </div>
                 }
               </div>
@@ -877,24 +891,38 @@ export class PublicReportComponent implements OnInit {
     conversions: '#D97706',
   };
 
-  kpiFields = [
-    { key: 'organicSessions', label: 'Organic sessions', inverse: false },
-    { key: 'newUsers', label: 'New users', inverse: false },
-    { key: 'engagementRate', label: 'Engagement rate (%)', inverse: false },
-    { key: 'avgEngagementTime', label: 'Avg engagement (s)', inverse: false },
-    { key: 'conversionRate', label: 'Conversion rate (%)', inverse: false },
-    { key: 'impressions', label: 'Impressions', inverse: false },
-    { key: 'clicks', label: 'Clicks', inverse: false },
-    { key: 'ctr', label: 'CTR (%)', inverse: false },
-    { key: 'avgPosition', label: 'Avg position', inverse: true },
-    { key: 'conversions', label: 'Conversions', inverse: false },
-    { key: 'indexedPages', label: 'Indexed pages', inverse: false },
-    { key: 'nonIndexedPages', label: 'Non-indexed pages', inverse: true },
-    { key: 'gbpSearches', label: 'GBP searches', inverse: false },
-    { key: 'gbpCalls', label: 'GBP calls', inverse: false },
-    { key: 'gbpDirections', label: 'GBP directions', inverse: false },
-    { key: 'gbpWebsiteClicks', label: 'GBP website clicks', inverse: false },
-    { key: 'gbpReviews', label: 'GBP reviews', inverse: false },
+  kpiFields: {
+    key: string;
+    label: string;
+    inverse: boolean;
+    source: 'gsc' | 'ga4' | 'gbp';
+  }[] = [
+    // GSC
+    { key: 'impressions', label: 'Impressions', inverse: false, source: 'gsc' },
+    { key: 'clicks', label: 'Clicks', inverse: false, source: 'gsc' },
+    { key: 'ctr', label: 'CTR (%)', inverse: false, source: 'gsc' },
+    { key: 'avgPosition', label: 'Avg position', inverse: true, source: 'gsc' },
+    { key: 'indexedPages', label: 'Indexed pages', inverse: false, source: 'gsc' },
+    { key: 'nonIndexedPages', label: 'Non-indexed pages', inverse: true, source: 'gsc' },
+    // GA4
+    { key: 'organicSessions', label: 'Organic sessions', inverse: false, source: 'ga4' },
+    { key: 'newUsers', label: 'New users', inverse: false, source: 'ga4' },
+    { key: 'engagementRate', label: 'Engagement rate (%)', inverse: false, source: 'ga4' },
+    { key: 'avgEngagementTime', label: 'Avg engagement (s)', inverse: false, source: 'ga4' },
+    { key: 'conversionRate', label: 'Conversion rate (%)', inverse: false, source: 'ga4' },
+    { key: 'conversions', label: 'Conversions', inverse: false, source: 'ga4' },
+    // GBP
+    { key: 'gbpSearches', label: 'GBP searches', inverse: false, source: 'gbp' },
+    { key: 'gbpCalls', label: 'GBP calls', inverse: false, source: 'gbp' },
+    { key: 'gbpDirections', label: 'GBP directions', inverse: false, source: 'gbp' },
+    { key: 'gbpWebsiteClicks', label: 'GBP website clicks', inverse: false, source: 'gbp' },
+    { key: 'gbpReviews', label: 'GBP reviews', inverse: false, source: 'gbp' },
+  ];
+
+  kpiGroupOrder: { source: 'gsc' | 'ga4' | 'gbp'; label: string; subtitle: string }[] = [
+    { source: 'gsc', label: 'Search Console', subtitle: 'Visibility on Google search results' },
+    { source: 'ga4', label: 'Analytics', subtitle: 'On-site engagement and conversions' },
+    { source: 'gbp', label: 'Business Profile', subtitle: 'Local discovery on Google Maps and Search' },
   ];
 
   year = () => new Date().getFullYear();
@@ -1226,8 +1254,24 @@ export class PublicReportComponent implements OnInit {
           const up = current > previous;
           good = f.inverse ? !up : up;
         }
-        return { key: f.key, label: f.label, current, previous, delta, deltaPct, good };
+        return {
+          key: f.key,
+          label: f.label,
+          source: f.source,
+          current,
+          previous,
+          delta,
+          deltaPct,
+          good,
+        };
       });
+  }
+
+  kpiGroups() {
+    const cards = this.kpiCards();
+    return this.kpiGroupOrder
+      .map((g) => ({ ...g, cards: cards.filter((c) => c.source === g.source) }))
+      .filter((g) => g.cards.length > 0);
   }
 
   sortedKeywords() {
