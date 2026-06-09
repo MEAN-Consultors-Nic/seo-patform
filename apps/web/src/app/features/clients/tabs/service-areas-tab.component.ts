@@ -105,6 +105,42 @@ function normalizeUrl(url: string): string {
           No service areas yet. Add the first one above.
         </div>
       } @else {
+        <!-- Sort controls -->
+        <div class="card !py-3 flex flex-wrap items-center justify-between gap-3">
+          <div class="text-xs text-ink-500">
+            <strong class="text-ink-900">{{ areas().length }}</strong>
+            {{ areas().length === 1 ? 'area' : 'areas' }}
+            @if (areasWithoutMetricsCount() > 0) {
+              <span class="text-ink-300"> · </span>
+              <span class="text-ink-400">
+                {{ areasWithoutMetricsCount() }} without metrics (shown last)
+              </span>
+            }
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs text-ink-500">Sort by</span>
+            <select class="input input-sm" [ngModel]="sortKey()" (ngModelChange)="setSortKey($event)">
+              <option value="position">Avg position</option>
+              <option value="clicks">Clicks</option>
+              <option value="impressions">Impressions</option>
+              <option value="ctr">CTR</option>
+              <option value="name">Name</option>
+            </select>
+            <button type="button"
+                    class="text-xs font-semibold px-2.5 py-1 rounded border transition inline-flex items-center gap-1"
+                    [class.border-brand-500]="isWorstFirst()"
+                    [class.bg-brand-50]="isWorstFirst()"
+                    [class.text-brand-700]="isWorstFirst()"
+                    [class.border-ink-200]="!isWorstFirst()"
+                    [class.text-ink-700]="!isWorstFirst()"
+                    [class.hover:border-ink-300]="!isWorstFirst()"
+                    (click)="toggleSortDir()"
+                    [title]="sortDirTitle()">
+              {{ sortDirLabel() }}
+            </button>
+          </div>
+        </div>
+
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
           @for (a of pagedAreas(); track a._key) {
             <article class="card border border-ink-200">
@@ -253,7 +289,71 @@ export class ClientServiceAreasTab implements OnInit, OnChanges {
   editingIndex = signal<string | null>(null);
   editDraft: Partial<ServiceArea> = {};
 
-  pagedAreas = () => this.areas();
+  sortKey = signal<'position' | 'clicks' | 'impressions' | 'ctr' | 'name'>('position');
+  sortDir = signal<'asc' | 'desc'>('desc');
+
+  setSortKey(k: 'position' | 'clicks' | 'impressions' | 'ctr' | 'name') {
+    this.sortKey.set(k);
+    this.sortDir.set(this.defaultDirFor(k));
+  }
+
+  toggleSortDir() {
+    this.sortDir.set(this.sortDir() === 'asc' ? 'desc' : 'asc');
+  }
+
+  private defaultDirFor(k: 'position' | 'clicks' | 'impressions' | 'ctr' | 'name'): 'asc' | 'desc' {
+    if (k === 'position') return 'desc';
+    if (k === 'name') return 'asc';
+    return 'asc';
+  }
+
+  isWorstFirst(): boolean {
+    const k = this.sortKey();
+    const d = this.sortDir();
+    if (k === 'name') return false;
+    return d === this.defaultDirFor(k);
+  }
+
+  sortDirLabel(): string {
+    const k = this.sortKey();
+    const d = this.sortDir();
+    if (k === 'name') return d === 'asc' ? 'A → Z' : 'Z → A';
+    return this.isWorstFirst() ? '⬇ Worst first' : '⬆ Best first';
+  }
+
+  sortDirTitle(): string {
+    return 'Click to flip the sort direction';
+  }
+
+  areasWithoutMetricsCount(): number {
+    return this.areas().filter((a) => !a.metrics).length;
+  }
+
+  pagedAreas() {
+    const list = this.areas();
+    const key = this.sortKey();
+    const dir = this.sortDir();
+    const mult = dir === 'asc' ? 1 : -1;
+
+    if (key === 'name') {
+      return [...list].sort((a, b) => a.name.localeCompare(b.name) * mult);
+    }
+
+    const withMetrics = list.filter((a) => a.metrics);
+    const withoutMetrics = list.filter((a) => !a.metrics);
+
+    const getValue = (a: ServiceArea & { _key: string }): number => {
+      const m = a.metrics!;
+      if (key === 'position') return m.position ?? 0;
+      if (key === 'clicks') return m.clicks ?? 0;
+      if (key === 'impressions') return m.impressions ?? 0;
+      if (key === 'ctr') return m.ctr ?? 0;
+      return 0;
+    };
+
+    withMetrics.sort((a, b) => (getValue(a) - getValue(b)) * mult);
+    return [...withMetrics, ...withoutMetrics];
+  }
 
   ngOnInit() {
     this.hydrate();
