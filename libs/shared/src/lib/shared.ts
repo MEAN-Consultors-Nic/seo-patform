@@ -73,6 +73,32 @@ export interface ClientAccess {
   notes?: string;
 }
 
+export type CredentialCategory =
+  | 'website'
+  | 'booking'
+  | 'social'
+  | 'email'
+  | 'other';
+
+export const CREDENTIAL_CATEGORY_LABELS: Record<CredentialCategory, string> = {
+  website: 'Website',
+  booking: 'Booking / Scheduling',
+  social: 'Social / Ads',
+  email: 'Email / Marketing',
+  other: 'Other',
+};
+
+export interface ClientCredential {
+  _id?: string;
+  label: string;
+  category: CredentialCategory;
+  url?: string;
+  username?: string;
+  password?: string;
+  notes?: string;
+  updatedAt?: Date;
+}
+
 export interface ClientKnowledge {
   brandVoice?: string;
   targetPersona?: string;
@@ -130,6 +156,7 @@ export interface Client {
   ownerId?: string | { _id: string; name: string; email: string };
   contacts: ClientContact[];
   access: ClientAccess;
+  credentials?: ClientCredential[];
   knowledge?: ClientKnowledge;
   baselineKpis?: ReportKpis;
   baselineDate?: Date;

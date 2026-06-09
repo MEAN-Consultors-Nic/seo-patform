@@ -3,8 +3,10 @@ import { HydratedDocument, Types } from 'mongoose';
 import {
   ClientAccess,
   ClientContact,
+  ClientCredential,
   ClientKnowledge,
   ClientTier,
+  CredentialCategory,
   HOURS_PER_TIER,
   ReportKpis,
   ServiceArea,
@@ -30,6 +32,23 @@ class AccessSubSchema implements ClientAccess {
   @Prop() semrush?: boolean;
   @Prop() notes?: string;
 }
+
+@Schema({ timestamps: { createdAt: false, updatedAt: true }, _id: true })
+class CredentialSubSchema implements ClientCredential {
+  @Prop({ required: true }) label!: string;
+  @Prop({
+    required: true,
+    type: String,
+    enum: ['website', 'booking', 'social', 'email', 'other'],
+  })
+  category!: CredentialCategory;
+  @Prop() url?: string;
+  @Prop() username?: string;
+  @Prop() password?: string;
+  @Prop() notes?: string;
+}
+
+const CredentialSchemaDef = SchemaFactory.createForClass(CredentialSubSchema);
 
 @Schema({ _id: false })
 class KnowledgeSubSchema implements ClientKnowledge {
@@ -118,6 +137,9 @@ export class Client {
 
   @Prop({ type: AccessSubSchema, default: {} })
   access!: ClientAccess;
+
+  @Prop({ type: [CredentialSchemaDef], default: [] })
+  credentials!: ClientCredential[];
 
   @Prop({ type: KnowledgeSubSchema, default: {} })
   knowledge!: ClientKnowledge;

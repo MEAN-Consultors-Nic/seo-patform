@@ -28,6 +28,17 @@ class AccessDto {
   @IsOptional() @IsString() notes?: string;
 }
 
+class CredentialDto {
+  @IsOptional() @IsString() _id?: string;
+  @IsString() label!: string;
+  @IsEnum(['website', 'booking', 'social', 'email', 'other'])
+  category!: 'website' | 'booking' | 'social' | 'email' | 'other';
+  @IsOptional() @IsString() url?: string;
+  @IsOptional() @IsString() username?: string;
+  @IsOptional() @IsString() password?: string;
+  @IsOptional() @IsString() notes?: string;
+}
+
 class KnowledgeDto {
   @IsOptional() @IsString() brandVoice?: string;
   @IsOptional() @IsString() targetPersona?: string;
@@ -92,6 +103,11 @@ export class CreateClientDto {
   @Type(() => ContactDto)
   contacts?: ContactDto[];
   @IsOptional() @ValidateNested() @Type(() => AccessDto) access?: AccessDto;
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CredentialDto)
+  credentials?: CredentialDto[];
   @IsOptional() @ValidateNested() @Type(() => KnowledgeDto) knowledge?: KnowledgeDto;
   @IsOptional() @ValidateNested() @Type(() => BaselineKpisDto) baselineKpis?: BaselineKpisDto;
   @IsOptional() baselineDate?: Date;

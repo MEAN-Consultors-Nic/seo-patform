@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, HostListener, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Client } from '@seo/shared';
@@ -16,6 +16,7 @@ import { ClientPositionTrackerTab } from './tabs/position-tracker-tab.component'
 import { ClientIntegrationsTab } from './tabs/integrations-tab.component';
 import { ClientGscInsightsTab } from './tabs/gsc-insights-tab.component';
 import { ClientServiceAreasTab } from './tabs/service-areas-tab.component';
+import { ClientAccessTab } from './tabs/access-tab.component';
 
 type TabKey =
   | 'access'
@@ -31,6 +32,11 @@ type TabKey =
   | 'integrations'
   | 'gsc-insights'
   | 'service-areas';
+
+interface TabDef {
+  key: TabKey;
+  label: string;
+}
 
 @Component({
   selector: 'app-client-detail',
@@ -51,6 +57,7 @@ type TabKey =
     ClientIntegrationsTab,
     ClientGscInsightsTab,
     ClientServiceAreasTab,
+    ClientAccessTab,
   ],
   template: `
     @if (client(); as c) {
@@ -89,34 +96,44 @@ type TabKey =
           </div>
         </header>
 
-        <nav class="tab-bar mb-6 overflow-x-auto">
-          @for (t of tabs; track t.key) {
+        <nav class="tab-bar mb-6 flex items-center gap-0 relative">
+          @for (t of primaryTabs; track t.key) {
             <button
               (click)="activeTab.set(t.key)"
               [class]="'tab whitespace-nowrap ' + (activeTab() === t.key ? 'tab-active' : '')">
               {{ t.label }}
             </button>
           }
+          @if (overflowTabs.length) {
+            <div class="relative">
+              <button
+                type="button"
+                (click)="toggleMore($event)"
+                [class]="'tab whitespace-nowrap inline-flex items-center gap-1 ' + (activeIsInOverflow() ? 'tab-active' : '')">
+                {{ moreLabel() }}
+                <span class="text-[10px] leading-none">▾</span>
+              </button>
+              @if (moreOpen()) {
+                <div
+                  class="absolute right-0 top-full mt-1 bg-white border border-ink-200 rounded-lg shadow-lg py-1 min-w-[180px] z-20"
+                  (click)="$event.stopPropagation()">
+                  @for (t of overflowTabs; track t.key) {
+                    <button
+                      type="button"
+                      (click)="selectOverflow(t.key)"
+                      [class]="'w-full text-left px-3 py-1.5 text-sm hover:bg-ink-50 ' + (activeTab() === t.key ? 'text-coral-600 font-semibold' : 'text-ink-700')">
+                      {{ t.label }}
+                    </button>
+                  }
+                </div>
+              }
+            </div>
+          }
         </nav>
 
         @switch (activeTab()) {
           @case ('access') {
-            <div class="card max-w-2xl">
-              <h2 class="text-base font-semibold text-ink-900 mb-3">Confirmed access</h2>
-              <div class="grid grid-cols-2 gap-2 text-sm">
-                @for (key of accessKeys; track key) {
-                  <label class="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" [(ngModel)]="accessState[key]" class="rounded" />
-                    <span class="uppercase text-xs font-semibold text-ink-700">{{ key }}</span>
-                  </label>
-                }
-              </div>
-              <div class="mt-4">
-                <label class="label">Access notes</label>
-                <textarea class="input" rows="3" [(ngModel)]="accessNotes"></textarea>
-              </div>
-              <button class="btn-primary mt-3" (click)="saveAccess()">Save access</button>
-            </div>
+            <app-client-access-tab [client]="c" (changed)="reload()" />
           }
           @case ('contacts') {
             <app-client-contacts-tab [client]="c" (changed)="reload()" />
@@ -249,7 +266,7 @@ export class ClientDetailComponent implements OnInit {
   activeTab = signal<TabKey>('tasks');
   logoPreviewOk = signal<boolean | null>(null);
 
-  tabs: Array<{ key: TabKey; label: string }> = [
+  primaryTabs: TabDef[] = [
     { key: 'tasks', label: 'Tasks' },
     { key: 'content', label: 'Content' },
     { key: 'keywords', label: 'Keywords' },
@@ -258,12 +275,41 @@ export class ClientDetailComponent implements OnInit {
     { key: 'backlinks', label: 'Backlinks' },
     { key: 'kpis', label: 'KPI History' },
     { key: 'gsc-insights', label: 'GSC Insights' },
+  ];
+
+  overflowTabs: TabDef[] = [
     { key: 'service-areas', label: 'Service Areas' },
     { key: 'knowledge', label: 'Knowledge' },
     { key: 'contacts', label: 'Contacts' },
-    { key: 'access', label: 'Access' },
+    { key: 'access', label: 'Access & Credentials' },
     { key: 'integrations', label: 'Integrations' },
   ];
+
+  moreOpen = signal(false);
+
+  activeIsInOverflow(): boolean {
+    return this.overflowTabs.some((t) => t.key === this.activeTab());
+  }
+
+  moreLabel(): string {
+    const active = this.overflowTabs.find((t) => t.key === this.activeTab());
+    return active ? active.label : 'More';
+  }
+
+  toggleMore(ev: MouseEvent) {
+    ev.stopPropagation();
+    this.moreOpen.update((v) => !v);
+  }
+
+  selectOverflow(key: TabKey) {
+    this.activeTab.set(key);
+    this.moreOpen.set(false);
+  }
+
+  @HostListener('document:click')
+  onDocClick() {
+    if (this.moreOpen()) this.moreOpen.set(false);
+  }
 
   form: {
     name: string;
@@ -283,9 +329,6 @@ export class ClientDetailComponent implements OnInit {
     active: true,
   };
   editOpen = signal(false);
-  accessKeys = ['gsc', 'ga4', 'gbp', 'cms', 'ahrefs', 'semrush'] as const;
-  accessState: Record<string, boolean> = {};
-  accessNotes = '';
   savingData = signal(false);
   dataError = signal<string | null>(null);
   dataSaved = signal(false);
@@ -328,8 +371,6 @@ export class ClientDetailComponent implements OnInit {
       this.form.industry = c.industry || '';
       this.form.hoursPerCycle = c.hoursPerCycle ?? 0;
       this.form.active = c.active ?? true;
-      this.accessKeys.forEach((k) => (this.accessState[k] = !!c.access?.[k]));
-      this.accessNotes = c.access?.notes || '';
     });
   }
 
@@ -375,15 +416,5 @@ export class ClientDetailComponent implements OnInit {
           );
         },
       });
-  }
-
-  saveAccess() {
-    const c = this.client();
-    if (!c?._id) return;
-    this.svc
-      .update(c._id, {
-        access: { ...c.access, ...this.accessState, notes: this.accessNotes },
-      })
-      .subscribe((u) => this.client.set(u));
   }
 }
