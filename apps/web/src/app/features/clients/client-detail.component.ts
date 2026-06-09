@@ -281,7 +281,7 @@ export class ClientDetailComponent implements OnInit {
     { key: 'service-areas', label: 'Service Areas' },
     { key: 'knowledge', label: 'Knowledge' },
     { key: 'contacts', label: 'Contacts' },
-    { key: 'access', label: 'Access & Credentials' },
+    { key: 'access', label: 'Credentials' },
     { key: 'integrations', label: 'Integrations' },
   ];
 

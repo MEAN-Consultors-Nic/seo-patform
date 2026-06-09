@@ -18,9 +18,6 @@ import { ClientsService } from '../../../core/clients.service';
 
 type CredentialDraft = ClientCredential & { _show?: boolean };
 
-const ACCESS_KEYS = ['gsc', 'ga4', 'gbp', 'cms', 'ahrefs', 'semrush'] as const;
-type AccessKey = (typeof ACCESS_KEYS)[number];
-
 const CATEGORY_ORDER: CredentialCategory[] = [
   'website',
   'booking',
@@ -35,41 +32,6 @@ const CATEGORY_ORDER: CredentialCategory[] = [
   imports: [CommonModule, FormsModule],
   template: `
     <div class="space-y-6">
-      <!-- Confirmed access checklist -->
-      <div class="card max-w-2xl">
-        <h2 class="text-base font-semibold text-ink-900 mb-3">
-          Confirmed access
-        </h2>
-        <div class="grid grid-cols-2 gap-2 text-sm">
-          @for (key of accessKeys; track key) {
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                [(ngModel)]="accessState[key]"
-                class="rounded"
-              />
-              <span class="uppercase text-xs font-semibold text-ink-700">{{
-                key
-              }}</span>
-            </label>
-          }
-        </div>
-        <div class="mt-4">
-          <label class="label">Access notes</label>
-          <textarea
-            class="input"
-            rows="3"
-            [(ngModel)]="accessNotes"
-          ></textarea>
-        </div>
-        <button class="btn-primary mt-3" (click)="saveAccess()">
-          Save access
-        </button>
-        @if (accessSaved()) {
-          <span class="ml-3 text-xs text-positive-500">✓ Saved</span>
-        }
-      </div>
-
       <!-- Credentials -->
       <div class="card">
         <div class="flex items-start justify-between gap-4 mb-4">
@@ -329,20 +291,8 @@ export class ClientAccessTab {
   private svc = inject(ClientsService);
   @Output() changed = new EventEmitter<void>();
 
-  accessKeys = ACCESS_KEYS;
   categoryOrder = CATEGORY_ORDER;
   categoryLabels = CREDENTIAL_CATEGORY_LABELS;
-
-  accessState: Record<AccessKey, boolean> = {
-    gsc: false,
-    ga4: false,
-    gbp: false,
-    cms: false,
-    ahrefs: false,
-    semrush: false,
-  };
-  accessNotes = '';
-  accessSaved = signal(false);
 
   credentials = signal<CredentialDraft[]>([]);
   copyToast = signal<string | null>(null);
@@ -358,8 +308,6 @@ export class ClientAccessTab {
 
   @Input() set client(c: Client) {
     this.clientId = c._id;
-    ACCESS_KEYS.forEach((k) => (this.accessState[k] = !!c.access?.[k]));
-    this.accessNotes = c.access?.notes || '';
     this.credentials.set(
       (c.credentials || []).map((x) => ({ ...x, _show: false })),
     );
@@ -377,19 +325,6 @@ export class ClientAccessTab {
       (out[c.category] || out.other).push(c);
     }
     return out;
-  }
-
-  saveAccess() {
-    if (!this.clientId) return;
-    this.svc
-      .update(this.clientId, {
-        access: { ...this.accessState, notes: this.accessNotes },
-      })
-      .subscribe(() => {
-        this.accessSaved.set(true);
-        setTimeout(() => this.accessSaved.set(false), 1500);
-        this.changed.emit();
-      });
   }
 
   openCredential(c?: CredentialDraft) {
