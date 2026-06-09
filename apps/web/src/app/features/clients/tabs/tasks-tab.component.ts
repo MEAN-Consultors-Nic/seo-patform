@@ -288,14 +288,16 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                 <!-- Description -->
                 @if (t.description) {
                   <div class="mt-2 text-sm text-ink-600 leading-relaxed">
-                    <div class="rich-content"
-                         [class.line-clamp-3]="!isExpanded(t._id!)"
+                    <div class="rich-content line-clamp-3"
                          [innerHTML]="sanitize(t.description)"></div>
                     @if (isDescriptionLong(t.description)) {
                       <button type="button"
-                              (click)="toggleExpanded(t._id!)"
-                              class="mt-1 text-xs font-semibold text-brand-500 hover:text-brand-600">
-                        {{ isExpanded(t._id!) ? 'Show less' : 'Show more' }}
+                              (click)="openDetailModal(t)"
+                              class="mt-1 text-xs font-semibold text-brand-500 hover:text-brand-600 inline-flex items-center gap-1">
+                        View details
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5">
+                          <path d="M3 1h6v6M9 1L3.5 6.5" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
                       </button>
                     }
                   </div>
@@ -419,6 +421,107 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
         </div>
       </div>
     }
+
+    <!-- Detail task modal -->
+    @if (detailTask(); as d) {
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+           (click)="closeDetailModal()">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col"
+             (click)="$event.stopPropagation()">
+          <!-- Header -->
+          <div class="px-6 py-4 border-b border-ink-100 flex items-start justify-between gap-4">
+            <div class="flex flex-wrap items-center gap-2 min-w-0">
+              <span [class]="'inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded ' + statusOf(d).pill">
+                <span class="w-1.5 h-1.5 rounded-full" [ngClass]="statusOf(d).dot"></span>
+                {{ statusOf(d).label }}
+              </span>
+              <span class="badge-neutral text-[10px]">{{ d.category }}</span>
+              <span [class]="'text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ' + priorityBadgeClass(d.priority)">
+                {{ d.priority }}
+              </span>
+            </div>
+            <div class="flex items-center gap-1 flex-shrink-0">
+              <button type="button"
+                      (click)="editFromDetail(d)"
+                      class="text-xs font-semibold text-brand-500 hover:text-brand-600 px-2 py-1 rounded hover:bg-brand-50 inline-flex items-center gap-1"
+                      title="Edit task">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke-linejoin="round" />
+                  <path d="M10 4l2 2" />
+                </svg>
+                Edit
+              </button>
+              <button type="button"
+                      (click)="closeDetailModal()"
+                      class="text-ink-400 hover:text-ink-900 text-2xl leading-none w-8 h-8 flex items-center justify-center rounded hover:bg-ink-100">
+                ×
+              </button>
+            </div>
+          </div>
+
+          <!-- Body (scrollable) -->
+          <div class="px-6 py-5 overflow-y-auto flex-1">
+            <h2 class="text-2xl font-bold text-ink-900 leading-tight"
+                [class.line-through]="d.status === 'completed'"
+                [class.text-ink-500]="d.status === 'completed'">
+              {{ d.title }}
+            </h2>
+
+            @if (d.description) {
+              <div class="mt-5">
+                <div class="text-[10px] uppercase tracking-wider font-bold text-ink-400 mb-2">Description</div>
+                <div class="rich-content text-sm text-ink-700 leading-relaxed"
+                     [innerHTML]="sanitize(d.description)"></div>
+              </div>
+            }
+
+            @if (d.notes) {
+              <div class="mt-5">
+                <div class="text-[10px] uppercase tracking-wider font-bold text-ink-400 mb-2">Internal notes</div>
+                <div class="rounded-md bg-ink-50 border border-ink-100 px-3 py-2.5 text-sm text-ink-700 whitespace-pre-line">
+                  {{ d.notes }}
+                </div>
+              </div>
+            }
+
+            @if ((d.attachments?.length || 0) > 0) {
+              <div class="mt-5">
+                <div class="text-[10px] uppercase tracking-wider font-bold text-ink-400 mb-2">Attachments</div>
+                <app-attachments-strip
+                  [taskId]="d._id!"
+                  [attachments]="d.attachments || []"
+                  (changed)="onAttachmentsChangedFromDetail(d, $event)" />
+              </div>
+            }
+          </div>
+
+          <!-- Footer -->
+          <div class="px-6 py-4 border-t border-ink-100 flex flex-wrap items-center justify-between gap-4 text-xs">
+            <div class="flex flex-wrap items-center gap-x-5 gap-y-1">
+              <div>
+                <span class="text-ink-400 uppercase tracking-wider text-[10px] font-semibold mr-1">Estimated</span>
+                <span class="font-semibold text-ink-900">{{ d.estimatedHours || 0 }}h</span>
+              </div>
+              <div>
+                <span class="text-ink-400 uppercase tracking-wider text-[10px] font-semibold mr-1">Actual</span>
+                <span class="font-semibold text-ink-900">{{ d.actualHours || 0 }}h</span>
+              </div>
+              @if (d.createdAt) {
+                <div class="text-ink-400">
+                  Created {{ d.createdAt | date: 'mediumDate' }}
+                </div>
+              }
+              @if (d.completedAt && d.status === 'completed') {
+                <div class="text-positive-500">
+                  Completed {{ d.completedAt | date: 'mediumDate' }}
+                </div>
+              }
+            </div>
+            <button class="btn-secondary text-xs" (click)="closeDetailModal()">Close</button>
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class ClientTasksTab implements OnChanges {
@@ -434,8 +537,8 @@ export class ClientTasksTab implements OnChanges {
   statusFilter = signal<StatusFilter>('all');
   searchQuery = signal('');
   menuOpenId = signal<string | null>(null);
-  expandedIds = signal<Set<string>>(new Set());
   editingTask = signal<Task | null>(null);
+  detailTask = signal<Task | null>(null);
   editForm = {
     title: '',
     description: '' as string | undefined,
@@ -711,22 +814,29 @@ export class ClientTasksTab implements OnChanges {
     if (this.menuOpenId()) this.menuOpenId.set(null);
   }
 
-  // --- Description expand ---------------------------------------------------
+  // --- Detail modal --------------------------------------------------------
 
-  isExpanded(id: string): boolean {
-    return this.expandedIds().has(id);
+  openDetailModal(t: Task) {
+    this.detailTask.set(t);
   }
 
-  toggleExpanded(id: string) {
-    const set = new Set(this.expandedIds());
-    if (set.has(id)) set.delete(id);
-    else set.add(id);
-    this.expandedIds.set(set);
+  closeDetailModal() {
+    this.detailTask.set(null);
+  }
+
+  editFromDetail(t: Task) {
+    this.closeDetailModal();
+    this.openEditModal(t);
+  }
+
+  onAttachmentsChangedFromDetail(t: Task, attachments: TaskAttachment[]) {
+    this.onAttachmentsChanged(t, attachments);
+    const fresh = this.tasks().find((x) => x._id === t._id);
+    if (fresh) this.detailTask.set(fresh);
   }
 
   isDescriptionLong(html: string | undefined | null): boolean {
     if (!html) return false;
-    // Approximate visible text length to decide if Show more is useful.
     const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
     return text.length > 220;
   }
