@@ -284,47 +284,57 @@ interface PublicPayload {
                 <h2 class="text-3xl font-bold text-ink-900">Key Metrics</h2>
               </div>
 
-              <div class="space-y-8 mb-6">
+              <div class="space-y-6 mb-6">
                 @for (group of kpiGroups(); track group.source) {
                   <div>
-                    <div class="flex items-baseline justify-between gap-3 mb-3">
+                    <div class="flex items-baseline justify-between gap-3 mb-2.5">
                       <div class="flex items-baseline gap-2">
-                        <h3 class="text-sm font-bold uppercase tracking-wider text-ink-900">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-ink-900">
                           {{ group.label }}
                         </h3>
-                        <span class="text-xs text-ink-400">· {{ group.subtitle }}</span>
+                        <span class="text-[11px] text-ink-400">· {{ group.subtitle }}</span>
                       </div>
                     </div>
-                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
                       @for (k of group.cards; track k.key) {
-                        <div class="bg-white rounded-xl p-5 border border-ink-200 shadow-card">
-                          <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-2">
+                        <div class="group relative bg-white rounded-lg px-3 py-2.5 border border-ink-200 shadow-card hover:border-ink-300 transition-colors">
+                          <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-0.5 truncate">
                             {{ k.label }}
                           </div>
-                          <div class="text-3xl font-black text-ink-900 leading-none">
+                          <div class="text-xl font-black text-ink-900 leading-tight">
                             {{ formatNum(k.current) }}
                           </div>
                           @if (k.delta !== null) {
-                            <div class="mt-3 flex items-center gap-2">
-                              <div class="text-xs font-semibold flex items-center gap-1"
+                            <div class="mt-1 flex items-center gap-1.5">
+                              <div class="text-[11px] font-semibold flex items-center gap-0.5"
                                    [class.text-positive-500]="k.good"
                                    [class.text-danger-500]="!k.good">
-                                <svg width="10" height="10" viewBox="0 0 10 10" *ngIf="k.delta > 0">
+                                <svg width="8" height="8" viewBox="0 0 10 10" *ngIf="k.delta > 0">
                                   <polygon points="5,0 10,10 0,10" fill="currentColor"/>
                                 </svg>
-                                <svg width="10" height="10" viewBox="0 0 10 10" *ngIf="k.delta < 0">
+                                <svg width="8" height="8" viewBox="0 0 10 10" *ngIf="k.delta < 0">
                                   <polygon points="0,0 10,0 5,10" fill="currentColor"/>
                                 </svg>
                                 <span>{{ k.deltaPct > 0 ? '+' : '' }}{{ k.deltaPct | number: '1.1-1' }}%</span>
                               </div>
-                              <span class="text-xs text-ink-400">·</span>
-                              <div class="text-xs text-ink-500">
+                              <span class="text-[10px] text-ink-300">·</span>
+                              <div class="text-[10px] text-ink-500 truncate">
                                 vs <span class="font-semibold text-ink-700">{{ formatNum(k.previous) }}</span>
                               </div>
                             </div>
                           } @else {
-                            <div class="text-xs text-ink-400 mt-3">no previous period</div>
+                            <div class="text-[10px] text-ink-400 mt-1">no previous period</div>
                           }
+
+                          <!-- Tooltip -->
+                          <div class="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-56 z-20
+                                      opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
+                                      transition duration-150 ease-out">
+                            <div class="rounded-md bg-ink-900 text-white text-[11px] leading-snug px-2.5 py-2 shadow-lg">
+                              {{ k.description }}
+                            </div>
+                            <div class="absolute left-1/2 -translate-x-1/2 -bottom-1 w-2 h-2 rotate-45 bg-ink-900"></div>
+                          </div>
                         </div>
                       }
                     </div>
@@ -896,27 +906,135 @@ export class PublicReportComponent implements OnInit {
     label: string;
     inverse: boolean;
     source: 'gsc' | 'ga4' | 'gbp';
+    description: string;
   }[] = [
     // GSC
-    { key: 'impressions', label: 'Impressions', inverse: false, source: 'gsc' },
-    { key: 'clicks', label: 'Clicks', inverse: false, source: 'gsc' },
-    { key: 'ctr', label: 'CTR (%)', inverse: false, source: 'gsc' },
-    { key: 'avgPosition', label: 'Avg position', inverse: true, source: 'gsc' },
-    { key: 'indexedPages', label: 'Indexed pages', inverse: false, source: 'gsc' },
-    { key: 'nonIndexedPages', label: 'Non-indexed pages', inverse: true, source: 'gsc' },
+    {
+      key: 'impressions',
+      label: 'Impressions',
+      inverse: false,
+      source: 'gsc',
+      description: 'How many times the site appeared in Google search results.',
+    },
+    {
+      key: 'clicks',
+      label: 'Clicks',
+      inverse: false,
+      source: 'gsc',
+      description: 'Visits coming from Google search results to the site.',
+    },
+    {
+      key: 'ctr',
+      label: 'CTR (%)',
+      inverse: false,
+      source: 'gsc',
+      description:
+        'Share of impressions that turn into a click. Higher means the listing is more compelling.',
+    },
+    {
+      key: 'avgPosition',
+      label: 'Avg position',
+      inverse: true,
+      source: 'gsc',
+      description:
+        'Average ranking on Google across all queries — lower numbers are better.',
+    },
+    {
+      key: 'indexedPages',
+      label: 'Indexed pages',
+      inverse: false,
+      source: 'gsc',
+      description: 'Pages Google has indexed and can show in search results.',
+    },
+    {
+      key: 'nonIndexedPages',
+      label: 'Non-indexed pages',
+      inverse: true,
+      source: 'gsc',
+      description:
+        'Pages Google knows about but is not showing in results. Worth reviewing if this number is high.',
+    },
     // GA4
-    { key: 'organicSessions', label: 'Organic sessions', inverse: false, source: 'ga4' },
-    { key: 'newUsers', label: 'New users', inverse: false, source: 'ga4' },
-    { key: 'engagementRate', label: 'Engagement rate (%)', inverse: false, source: 'ga4' },
-    { key: 'avgEngagementTime', label: 'Avg engagement (s)', inverse: false, source: 'ga4' },
-    { key: 'conversionRate', label: 'Conversion rate (%)', inverse: false, source: 'ga4' },
-    { key: 'conversions', label: 'Conversions', inverse: false, source: 'ga4' },
+    {
+      key: 'organicSessions',
+      label: 'Organic sessions',
+      inverse: false,
+      source: 'ga4',
+      description: 'Visits to the site from unpaid search engines.',
+    },
+    {
+      key: 'newUsers',
+      label: 'New users',
+      inverse: false,
+      source: 'ga4',
+      description: 'First-time visitors during this period.',
+    },
+    {
+      key: 'engagementRate',
+      label: 'Engagement rate (%)',
+      inverse: false,
+      source: 'ga4',
+      description:
+        'Share of sessions where users engaged with the page (scroll, time on site, or events).',
+    },
+    {
+      key: 'avgEngagementTime',
+      label: 'Avg engagement (s)',
+      inverse: false,
+      source: 'ga4',
+      description: 'Average seconds users actively spent on the site per session.',
+    },
+    {
+      key: 'conversionRate',
+      label: 'Conversion rate (%)',
+      inverse: false,
+      source: 'ga4',
+      description: 'Percentage of sessions that completed a tracked conversion.',
+    },
+    {
+      key: 'conversions',
+      label: 'Conversions',
+      inverse: false,
+      source: 'ga4',
+      description:
+        'Total tracked goal completions during the period (form submits, calls, bookings, etc.).',
+    },
     // GBP
-    { key: 'gbpSearches', label: 'GBP searches', inverse: false, source: 'gbp' },
-    { key: 'gbpCalls', label: 'GBP calls', inverse: false, source: 'gbp' },
-    { key: 'gbpDirections', label: 'GBP directions', inverse: false, source: 'gbp' },
-    { key: 'gbpWebsiteClicks', label: 'GBP website clicks', inverse: false, source: 'gbp' },
-    { key: 'gbpReviews', label: 'GBP reviews', inverse: false, source: 'gbp' },
+    {
+      key: 'gbpSearches',
+      label: 'GBP searches',
+      inverse: false,
+      source: 'gbp',
+      description: 'Times the Business Profile appeared in Google Search or Maps.',
+    },
+    {
+      key: 'gbpCalls',
+      label: 'GBP calls',
+      inverse: false,
+      source: 'gbp',
+      description: 'Phone calls placed directly from the Business Profile.',
+    },
+    {
+      key: 'gbpDirections',
+      label: 'GBP directions',
+      inverse: false,
+      source: 'gbp',
+      description: 'Requests for directions to the business from Google Maps.',
+    },
+    {
+      key: 'gbpWebsiteClicks',
+      label: 'GBP website clicks',
+      inverse: false,
+      source: 'gbp',
+      description: 'Clicks to the website coming from the Business Profile listing.',
+    },
+    {
+      key: 'gbpReviews',
+      label: 'GBP reviews',
+      inverse: false,
+      source: 'gbp',
+      description: 'New reviews left on the Business Profile during this period.',
+    },
   ];
 
   kpiGroupOrder: { source: 'gsc' | 'ga4' | 'gbp'; label: string; subtitle: string }[] = [
@@ -1258,6 +1376,7 @@ export class PublicReportComponent implements OnInit {
           key: f.key,
           label: f.label,
           source: f.source,
+          description: f.description,
           current,
           previous,
           delta,
