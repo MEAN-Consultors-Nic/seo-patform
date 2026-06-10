@@ -88,8 +88,9 @@ function normalizeUrl(url: string): string {
         </div>
       } @else {
         <!-- Sort controls -->
-        <div class="card !py-3 flex flex-wrap items-center justify-between gap-3">
-          <div class="text-xs text-ink-500 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <div class="card !py-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <!-- Left: counts -->
+          <div class="text-xs text-ink-500 inline-flex items-center gap-x-2 flex-wrap">
             <span>
               <strong class="text-ink-900">{{ areas().length }}</strong>
               {{ areas().length === 1 ? 'area' : 'areas' }}
@@ -103,14 +104,16 @@ function normalizeUrl(url: string): string {
             @if (areasWithoutMetricsCount() > 0) {
               <span class="text-ink-300">·</span>
               <span class="text-ink-400">
-                {{ areasWithoutMetricsCount() }} without metrics (shown last)
+                {{ areasWithoutMetricsCount() }} without metrics
               </span>
             }
           </div>
-          <div class="flex flex-wrap items-center gap-2">
+
+          <!-- Right: controls -->
+          <div class="inline-flex items-center gap-2 flex-nowrap">
             @if (hubsCount() > 0) {
               <button type="button"
-                      class="text-xs font-semibold px-2.5 py-1 rounded border transition inline-flex items-center gap-1"
+                      class="h-8 text-xs font-semibold px-2.5 rounded-md border transition inline-flex items-center gap-1 whitespace-nowrap"
                       [class.border-brand-500]="hubsOnly()"
                       [class.bg-brand-500]="hubsOnly()"
                       [class.text-white]="hubsOnly()"
@@ -121,10 +124,12 @@ function normalizeUrl(url: string): string {
                       title="Show only city hubs">
                 🏙 Hubs only
               </button>
-              <span class="text-ink-200">|</span>
+              <span class="h-5 w-px bg-ink-200"></span>
             }
-            <span class="text-xs text-ink-500">Sort by</span>
-            <select class="input input-sm" [ngModel]="sortKey()" (ngModelChange)="setSortKey($event)">
+            <label class="text-xs text-ink-500 whitespace-nowrap">Sort by</label>
+            <select class="h-8 text-xs rounded-md border border-ink-200 bg-white px-2 pr-7 text-ink-700 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500 w-36"
+                    [ngModel]="sortKey()"
+                    (ngModelChange)="setSortKey($event)">
               <option value="position">Avg position</option>
               <option value="clicks">Clicks</option>
               <option value="impressions">Impressions</option>
@@ -132,7 +137,7 @@ function normalizeUrl(url: string): string {
               <option value="name">Name</option>
             </select>
             <button type="button"
-                    class="text-xs font-semibold px-2.5 py-1 rounded border transition inline-flex items-center gap-1"
+                    class="h-8 text-xs font-semibold px-2.5 rounded-md border transition inline-flex items-center gap-1 whitespace-nowrap"
                     [class.border-brand-500]="isWorstFirst()"
                     [class.bg-brand-50]="isWorstFirst()"
                     [class.text-brand-700]="isWorstFirst()"
