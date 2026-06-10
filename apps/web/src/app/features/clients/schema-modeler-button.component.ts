@@ -157,6 +157,21 @@ import {
                         </button>
                       }
                     </div>
+                    <button type="button"
+                            (click)="applySeoPreset()"
+                            [class]="'w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold px-2 py-1.5 rounded border transition ' +
+                              (isSeoPresetActive()
+                                ? 'border-warning-500 bg-warning-100 text-warning-700'
+                                : 'border-ink-200 text-ink-700 hover:border-warning-500 hover:bg-warning-50')"
+                            title="Show only schema types Google uses for rich results and Knowledge Graph">
+                      <span>⭐</span>
+                      <span>Important for SEO</span>
+                      @if (seoTypesPresentCount() > 0) {
+                        <span class="text-[10px] font-normal opacity-70">
+                          ({{ seoTypesPresentCount() }})
+                        </span>
+                      }
+                    </button>
                     <div class="relative">
                       <span class="absolute left-2 top-1/2 -translate-y-1/2 text-ink-400 text-xs">⌕</span>
                       <input class="input input-sm pl-6 text-xs"
@@ -200,6 +215,9 @@ import {
                           <span class="w-2 h-2 rounded-full flex-shrink-0"
                                 [style.background-color]="typeColor(t.type)"></span>
                           <span class="font-mono truncate flex-1">{{ t.type }}</span>
+                          @if (isSeoImportant(t.type)) {
+                            <span class="text-warning-500 text-[10px]" title="Important for SEO — eligible for rich results or Knowledge Graph">⭐</span>
+                          }
                           <span class="text-ink-400 font-semibold">{{ t.count }}</span>
                         </button>
                       </li>
@@ -315,6 +333,80 @@ export class SchemaModelerButtonComponent implements AfterViewChecked, OnDestroy
     '#0891B2',
   ];
 
+  /**
+   * Schema.org types Google uses for rich results, Knowledge Graph, or AI
+   * Overviews. Lower-value structural types (ListItem, ImageObject by itself,
+   * PostalAddress in isolation, generic Thing, etc.) are deliberately
+   * excluded — they crowd the graph without driving SEO outcomes on their
+   * own.
+   */
+  private readonly SEO_IMPORTANT_TYPES = new Set<string>([
+    'Article',
+    'NewsArticle',
+    'BlogPosting',
+    'TechArticle',
+    'Organization',
+    'LocalBusiness',
+    'Corporation',
+    'OnlineStore',
+    'Store',
+    'Restaurant',
+    'Hotel',
+    'AutoDealer',
+    'AutoRepair',
+    'MedicalBusiness',
+    'Dentist',
+    'Physician',
+    'AttorneyService',
+    'LegalService',
+    'HomeAndConstructionBusiness',
+    'ProfessionalService',
+    'FinancialService',
+    'Person',
+    'ProfilePage',
+    'Product',
+    'IndividualProduct',
+    'ProductGroup',
+    'Offer',
+    'AggregateOffer',
+    'Review',
+    'AggregateRating',
+    'Recipe',
+    'Event',
+    'MusicEvent',
+    'SportsEvent',
+    'BusinessEvent',
+    'Course',
+    'EducationalOccupationalCredential',
+    'JobPosting',
+    'FAQPage',
+    'QAPage',
+    'Question',
+    'Answer',
+    'HowTo',
+    'HowToStep',
+    'BreadcrumbList',
+    'WebSite',
+    'WebPage',
+    'CollectionPage',
+    'AboutPage',
+    'ContactPage',
+    'Service',
+    'SoftwareApplication',
+    'MobileApplication',
+    'Book',
+    'Movie',
+    'TVSeries',
+    'TVEpisode',
+    'PodcastEpisode',
+    'VideoObject',
+    'Dataset',
+    'ClaimReview',
+    'LearningResource',
+    'Speakable',
+    'SiteNavigationElement',
+  ]);
+
   domain(): string {
     const raw = this.url || this.resolvedUrl();
     if (!raw) return '';
@@ -415,6 +507,40 @@ export class SchemaModelerButtonComponent implements AfterViewChecked, OnDestroy
 
   isTypeSelected(type: string): boolean {
     return this.selectedTypes().has(type);
+  }
+
+  isSeoImportant(type: string): boolean {
+    return this.SEO_IMPORTANT_TYPES.has(type);
+  }
+
+  seoTypesPresent(): string[] {
+    const r = this.result();
+    if (!r) return [];
+    return r.typeCounts
+      .filter((t) => this.SEO_IMPORTANT_TYPES.has(t.type))
+      .map((t) => t.type);
+  }
+
+  seoTypesPresentCount(): number {
+    return this.seoTypesPresent().length;
+  }
+
+  applySeoPreset() {
+    if (this.isSeoPresetActive()) {
+      // Already active — clicking again clears the preset
+      this.selectedTypes.set(new Set());
+    } else {
+      const seoPresent = this.seoTypesPresent();
+      this.selectedTypes.set(new Set(seoPresent));
+    }
+    this.applyFilters();
+  }
+
+  isSeoPresetActive(): boolean {
+    const selected = this.selectedTypes();
+    const seoPresent = this.seoTypesPresent();
+    if (selected.size === 0 || selected.size !== seoPresent.length) return false;
+    return seoPresent.every((t) => selected.has(t));
   }
 
   setSearch(value: string) {
