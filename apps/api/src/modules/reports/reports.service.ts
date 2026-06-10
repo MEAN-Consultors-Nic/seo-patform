@@ -597,6 +597,7 @@ export class ReportsService {
           country: a.country ? String(a.country) : undefined,
           landingPageUrl: a.landingPageUrl ? String(a.landingPageUrl) : undefined,
           googleMapsUrl: a.googleMapsUrl ? String(a.googleMapsUrl) : undefined,
+          isCityHub: Boolean(a.isCityHub),
           clicks: Number(m.clicks ?? 0),
           impressions: Number(m.impressions ?? 0),
           ctr: Number(m.ctr ?? 0),

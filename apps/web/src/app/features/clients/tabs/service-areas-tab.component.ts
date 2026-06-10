@@ -91,6 +91,12 @@ function normalizeUrl(url: string): string {
         </div>
         <textarea class="input mt-2" rows="2" [(ngModel)]="newArea.notes"
                   placeholder="Notes (optional)"></textarea>
+        <label class="mt-3 inline-flex items-center gap-2 text-sm text-ink-700 cursor-pointer select-none">
+          <input type="checkbox" class="rounded border-ink-300 text-brand-500 focus:ring-brand-500"
+                 [(ngModel)]="newArea.isCityHub" />
+          <span>🏙 Mark as <strong>City Hub</strong></span>
+          <span class="text-xs text-ink-400">— primary city this client serves (pinned and shown separately in reports)</span>
+        </label>
         @if (addError()) {
           <div class="mt-2 text-xs text-danger-500">{{ addError() }}</div>
         }
@@ -107,17 +113,40 @@ function normalizeUrl(url: string): string {
       } @else {
         <!-- Sort controls -->
         <div class="card !py-3 flex flex-wrap items-center justify-between gap-3">
-          <div class="text-xs text-ink-500">
-            <strong class="text-ink-900">{{ areas().length }}</strong>
-            {{ areas().length === 1 ? 'area' : 'areas' }}
+          <div class="text-xs text-ink-500 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>
+              <strong class="text-ink-900">{{ areas().length }}</strong>
+              {{ areas().length === 1 ? 'area' : 'areas' }}
+            </span>
+            @if (hubsCount() > 0) {
+              <span class="text-ink-300">·</span>
+              <span class="text-brand-600 font-semibold inline-flex items-center gap-1">
+                🏙 {{ hubsCount() }} hub{{ hubsCount() === 1 ? '' : 's' }}
+              </span>
+            }
             @if (areasWithoutMetricsCount() > 0) {
-              <span class="text-ink-300"> · </span>
+              <span class="text-ink-300">·</span>
               <span class="text-ink-400">
                 {{ areasWithoutMetricsCount() }} without metrics (shown last)
               </span>
             }
           </div>
           <div class="flex flex-wrap items-center gap-2">
+            @if (hubsCount() > 0) {
+              <button type="button"
+                      class="text-xs font-semibold px-2.5 py-1 rounded border transition inline-flex items-center gap-1"
+                      [class.border-brand-500]="hubsOnly()"
+                      [class.bg-brand-500]="hubsOnly()"
+                      [class.text-white]="hubsOnly()"
+                      [class.border-ink-200]="!hubsOnly()"
+                      [class.text-ink-700]="!hubsOnly()"
+                      [class.hover:border-ink-300]="!hubsOnly()"
+                      (click)="toggleHubsOnly()"
+                      title="Show only city hubs">
+                🏙 Hubs only
+              </button>
+              <span class="text-ink-200">|</span>
+            }
             <span class="text-xs text-ink-500">Sort by</span>
             <select class="input input-sm" [ngModel]="sortKey()" (ngModelChange)="setSortKey($event)">
               <option value="position">Avg position</option>
@@ -143,7 +172,12 @@ function normalizeUrl(url: string): string {
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
           @for (a of pagedAreas(); track a._key) {
-            <article class="card border border-ink-200">
+            <article class="card border"
+                     [class.border-ink-200]="!a.isCityHub"
+                     [class.border-brand-300]="a.isCityHub"
+                     [class.bg-brand-50]="a.isCityHub"
+                     [class.ring-1]="a.isCityHub"
+                     [class.ring-brand-200]="a.isCityHub">
               @if (editingIndex() === a._key) {
                 <div class="space-y-2">
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -157,6 +191,11 @@ function normalizeUrl(url: string): string {
                   <input class="input" [(ngModel)]="editDraft.landingPageUrl" placeholder="Landing page URL" />
                   <input class="input" [(ngModel)]="editDraft.googleMapsUrl" placeholder="Google Maps link" />
                   <textarea class="input" rows="2" [(ngModel)]="editDraft.notes" placeholder="Notes"></textarea>
+                  <label class="inline-flex items-center gap-2 text-sm text-ink-700 cursor-pointer select-none mt-1">
+                    <input type="checkbox" class="rounded border-ink-300 text-brand-500 focus:ring-brand-500"
+                           [(ngModel)]="editDraft.isCityHub" />
+                    <span>🏙 City Hub</span>
+                  </label>
                   <div class="flex justify-end gap-2 mt-2">
                     <button class="btn-ghost text-xs" (click)="cancelEdit()">Cancel</button>
                     <button class="btn-primary text-xs" (click)="saveEdit(a._key)" [disabled]="saving()">
@@ -169,6 +208,12 @@ function normalizeUrl(url: string): string {
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 flex-wrap">
                       <h3 class="font-semibold text-ink-900">{{ a.name }}</h3>
+                      @if (a.isCityHub) {
+                        <span class="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-brand-100 text-brand-700 border border-brand-200"
+                              title="City Hub — primary city this client serves">
+                          🏙 Hub
+                        </span>
+                      }
                       @if (a.country) {
                         <span class="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-ink-100 text-ink-700">
                           {{ a.country }}
@@ -284,6 +329,7 @@ export class ClientServiceAreasTab implements OnInit, OnChanges {
     googleMapsUrl: '',
     primaryKeyword: '',
     notes: '',
+    isCityHub: false,
   };
 
   editingIndex = signal<string | null>(null);
@@ -291,6 +337,15 @@ export class ClientServiceAreasTab implements OnInit, OnChanges {
 
   sortKey = signal<'position' | 'clicks' | 'impressions' | 'ctr' | 'name'>('position');
   sortDir = signal<'asc' | 'desc'>('desc');
+  hubsOnly = signal(false);
+
+  toggleHubsOnly() {
+    this.hubsOnly.set(!this.hubsOnly());
+  }
+
+  hubsCount(): number {
+    return this.areas().filter((a) => a.isCityHub).length;
+  }
 
   setSortKey(k: 'position' | 'clicks' | 'impressions' | 'ctr' | 'name') {
     this.sortKey.set(k);
@@ -330,29 +385,35 @@ export class ClientServiceAreasTab implements OnInit, OnChanges {
   }
 
   pagedAreas() {
-    const list = this.areas();
+    let list = this.areas();
+    if (this.hubsOnly()) list = list.filter((a) => a.isCityHub);
+
     const key = this.sortKey();
     const dir = this.sortDir();
     const mult = dir === 'asc' ? 1 : -1;
 
-    if (key === 'name') {
-      return [...list].sort((a, b) => a.name.localeCompare(b.name) * mult);
-    }
-
-    const withMetrics = list.filter((a) => a.metrics);
-    const withoutMetrics = list.filter((a) => !a.metrics);
-
-    const getValue = (a: ServiceArea & { _key: string }): number => {
-      const m = a.metrics!;
-      if (key === 'position') return m.position ?? 0;
-      if (key === 'clicks') return m.clicks ?? 0;
-      if (key === 'impressions') return m.impressions ?? 0;
-      if (key === 'ctr') return m.ctr ?? 0;
-      return 0;
+    const sortGroup = (group: Array<ServiceArea & { _key: string }>) => {
+      if (key === 'name') {
+        group.sort((a, b) => a.name.localeCompare(b.name) * mult);
+        return group;
+      }
+      const withMetrics = group.filter((a) => a.metrics);
+      const withoutMetrics = group.filter((a) => !a.metrics);
+      const getValue = (a: ServiceArea & { _key: string }): number => {
+        const m = a.metrics!;
+        if (key === 'position') return m.position ?? 0;
+        if (key === 'clicks') return m.clicks ?? 0;
+        if (key === 'impressions') return m.impressions ?? 0;
+        if (key === 'ctr') return m.ctr ?? 0;
+        return 0;
+      };
+      withMetrics.sort((a, b) => (getValue(a) - getValue(b)) * mult);
+      return [...withMetrics, ...withoutMetrics];
     };
 
-    withMetrics.sort((a, b) => (getValue(a) - getValue(b)) * mult);
-    return [...withMetrics, ...withoutMetrics];
+    const hubs = list.filter((a) => a.isCityHub);
+    const others = list.filter((a) => !a.isCityHub);
+    return [...sortGroup(hubs), ...sortGroup(others)];
   }
 
   ngOnInit() {
@@ -404,6 +465,7 @@ export class ClientServiceAreasTab implements OnInit, OnChanges {
       googleMapsUrl: this.newArea.googleMapsUrl?.trim() || undefined,
       primaryKeyword: this.newArea.primaryKeyword?.trim() || undefined,
       notes: this.newArea.notes?.trim() || undefined,
+      isCityHub: !!this.newArea.isCityHub,
     };
     const next_list = this.stripKey([...this.areas(), { ...next, _key: '' }]);
     this.persist(next_list, () => {
@@ -416,6 +478,7 @@ export class ClientServiceAreasTab implements OnInit, OnChanges {
         landingPageUrl: '',
         primaryKeyword: '',
         notes: '',
+        isCityHub: false,
       };
     });
   }
@@ -444,6 +507,7 @@ export class ClientServiceAreasTab implements OnInit, OnChanges {
             googleMapsUrl: this.editDraft.googleMapsUrl?.trim() || undefined,
             primaryKeyword: this.editDraft.primaryKeyword?.trim() || undefined,
             notes: this.editDraft.notes?.trim() || undefined,
+            isCityHub: !!this.editDraft.isCityHub,
           }
         : a,
     );

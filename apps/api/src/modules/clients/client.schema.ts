@@ -85,6 +85,7 @@ class ServiceAreaSubSchema implements ServiceArea {
   @Prop() googleMapsUrl?: string;
   @Prop() primaryKeyword?: string;
   @Prop() notes?: string;
+  @Prop({ default: false }) isCityHub?: boolean;
   @Prop({ type: ServiceAreaMetricsSchemaDef })
   metrics?: ServiceAreaMetrics;
 }

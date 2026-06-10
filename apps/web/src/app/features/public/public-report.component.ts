@@ -81,6 +81,7 @@ interface PublicPayload {
     country?: string;
     landingPageUrl?: string;
     googleMapsUrl?: string;
+    isCityHub?: boolean;
     clicks: number;
     impressions: number;
     ctr: number;
@@ -397,12 +398,35 @@ interface PublicPayload {
                 How each of <strong class="text-ink-900">{{ d.client.name }}</strong>'s
                 service locations performed during this period.
               </p>
-              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                @for (a of d.serviceAreas; track a.name) {
-                  <div class="bg-white rounded-xl border border-ink-200 shadow-card p-5">
+              @for (group of serviceAreaGroups(); track group.key; let groupIndex = $index) {
+                <div [class.mt-8]="groupIndex > 0">
+                  @if (group.showHeader) {
+                    <div class="flex items-baseline gap-2 mb-3">
+                      <h3 class="text-sm font-bold uppercase tracking-wider text-ink-900">
+                        {{ group.label }}
+                      </h3>
+                      <span class="text-[11px] text-ink-400">· {{ group.subtitle }}</span>
+                    </div>
+                  }
+                  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    @for (a of group.items; track a.name) {
+                      <div class="rounded-xl shadow-card p-5"
+                           [class.bg-white]="!a.isCityHub"
+                           [class.border]="!a.isCityHub"
+                           [class.border-ink-200]="!a.isCityHub"
+                           [class.bg-brand-50]="a.isCityHub"
+                           [class.border-2]="a.isCityHub"
+                           [class.border-brand-300]="a.isCityHub">
                     <div class="flex items-start justify-between gap-2 mb-3">
                       <div class="min-w-0">
-                        <h3 class="font-bold text-ink-900 leading-tight">{{ a.name }}</h3>
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <h3 class="font-bold text-ink-900 leading-tight">{{ a.name }}</h3>
+                          @if (a.isCityHub) {
+                            <span class="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-brand-500 text-white">
+                              🏙 Hub
+                            </span>
+                          }
+                        </div>
                         @if (a.city || a.region) {
                           <div class="text-[11px] text-ink-500 mt-0.5">
                             {{ a.city }}@if (a.city && a.region) { · }{{ a.region }}
@@ -490,9 +514,11 @@ interface PublicPayload {
                         }
                       </div>
                     }
+                      </div>
+                    }
                   </div>
-                }
-              </div>
+                </div>
+              }
             </section>
           }
 
@@ -1391,6 +1417,42 @@ export class PublicReportComponent implements OnInit {
     return this.kpiGroupOrder
       .map((g) => ({ ...g, cards: cards.filter((c) => c.source === g.source) }))
       .filter((g) => g.cards.length > 0);
+  }
+
+  serviceAreaGroups() {
+    const d = this.data();
+    const areas = d?.serviceAreas || [];
+    if (areas.length === 0) return [];
+    const hubs = areas.filter((a) => a.isCityHub);
+    const others = areas.filter((a) => !a.isCityHub);
+    const hasHubs = hubs.length > 0;
+    const hasOthers = others.length > 0;
+    const groups: Array<{
+      key: string;
+      label: string;
+      subtitle: string;
+      showHeader: boolean;
+      items: typeof areas;
+    }> = [];
+    if (hasHubs) {
+      groups.push({
+        key: 'hubs',
+        label: 'City Hubs',
+        subtitle: 'Primary cities this client serves',
+        showHeader: hasOthers,
+        items: hubs,
+      });
+    }
+    if (hasOthers) {
+      groups.push({
+        key: 'others',
+        label: hasHubs ? 'Other Locations' : 'Locations',
+        subtitle: 'Additional service areas',
+        showHeader: hasHubs,
+        items: others,
+      });
+    }
+    return groups;
   }
 
   sortedKeywords() {

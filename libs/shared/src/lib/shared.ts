@@ -127,6 +127,7 @@ export interface ServiceArea {
   googleMapsUrl?: string;
   primaryKeyword?: string;
   notes?: string;
+  isCityHub?: boolean; // primary city the client serves — pinned and surfaced separately in reports
   metrics?: ServiceAreaMetrics;
 }
 
@@ -137,6 +138,7 @@ export interface ServiceAreaSnapshot {
   country?: string;
   landingPageUrl?: string;
   googleMapsUrl?: string;
+  isCityHub?: boolean;
   clicks: number;
   impressions: number;
   ctr: number;

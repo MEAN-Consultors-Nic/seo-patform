@@ -67,6 +67,7 @@ class ServiceAreaDto {
   @IsOptional() @IsString() googleMapsUrl?: string;
   @IsOptional() @IsString() primaryKeyword?: string;
   @IsOptional() @IsString() notes?: string;
+  @IsOptional() @IsBoolean() isCityHub?: boolean;
   @IsOptional() @ValidateNested() @Type(() => ServiceAreaMetricsDto) metrics?: ServiceAreaMetricsDto;
 }
 
