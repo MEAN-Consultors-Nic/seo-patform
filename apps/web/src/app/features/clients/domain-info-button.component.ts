@@ -1,20 +1,21 @@
 import { CommonModule, DatePipe } from '@angular/common';
 import { Component, Input, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { DomainToolsService, DomainLookupResult } from '../../core/domain-tools.service';
 
 @Component({
   selector: 'app-domain-info-button',
   standalone: true,
-  imports: [CommonModule, DatePipe],
+  imports: [CommonModule, FormsModule, DatePipe],
   template: `
-    @if (url) {
-      <button type="button"
-              class="text-xs text-ink-500 hover:text-ink-900 hover:bg-ink-100 rounded px-1.5 py-0.5 inline-flex items-center gap-1 transition"
-              (click)="open()"
-              title="Domain info — hosting, registrar, DNS">
-        🌐 Domain info
-      </button>
-    }
+    <button type="button"
+            [class]="buttonClass"
+            (click)="open()"
+            title="Domain info — hosting, registrar, DNS">
+      🌐 {{ label }}
+    </button>
+
+
 
     @if (modalOpen()) {
       <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
@@ -24,7 +25,13 @@ import { DomainToolsService, DomainLookupResult } from '../../core/domain-tools.
           <div class="px-6 py-4 border-b border-ink-100 flex items-start justify-between gap-4">
             <div class="min-w-0">
               <h2 class="text-lg font-bold text-ink-900 truncate">🌐 Domain info</h2>
-              <p class="text-xs text-ink-500 mt-0.5 truncate">{{ domain() }}</p>
+              @if (domain() && (result() || loading())) {
+                <p class="text-xs text-ink-500 mt-0.5 truncate">{{ domain() }}</p>
+              } @else {
+                <p class="text-xs text-ink-500 mt-0.5 truncate">
+                  Look up hosting, registrar, DNS, and email host for any domain.
+                </p>
+              }
             </div>
             <button type="button"
                     (click)="close()"
@@ -32,6 +39,29 @@ import { DomainToolsService, DomainLookupResult } from '../../core/domain-tools.
           </div>
 
           <div class="px-6 py-5 overflow-y-auto flex-1 space-y-5">
+            <!-- Standalone input (only shown when no URL was passed) -->
+            @if (!url && !result() && !loading()) {
+              <form (submit)="$event.preventDefault(); submitDomain()" class="space-y-2">
+                <label class="label">Domain</label>
+                <div class="flex gap-2">
+                  <input class="input flex-1"
+                         [(ngModel)]="domainInput"
+                         name="domain"
+                         placeholder="example.com"
+                         autocomplete="off"
+                         autofocus />
+                  <button type="submit"
+                          class="btn-primary text-xs"
+                          [disabled]="!domainInput.trim()">
+                    Get info →
+                  </button>
+                </div>
+                <p class="text-[11px] text-ink-400">
+                  Paste a URL or a bare domain — we strip the protocol and path automatically.
+                </p>
+              </form>
+            }
+
             @if (loading()) {
               <div class="text-center py-12 text-sm text-ink-400">
                 <div class="inline-block animate-spin mr-2">⏳</div>
@@ -167,12 +197,16 @@ import { DomainToolsService, DomainLookupResult } from '../../core/domain-tools.
           </div>
 
           <div class="px-6 py-3 border-t border-ink-100 flex justify-between items-center text-xs">
-            <button type="button"
-                    class="text-ink-500 hover:text-ink-900"
-                    [disabled]="loading()"
-                    (click)="refresh()">
-              ⟳ Re-run lookup
-            </button>
+            @if (result()) {
+              <button type="button"
+                      class="text-ink-500 hover:text-ink-900"
+                      [disabled]="loading()"
+                      (click)="reset()">
+                {{ url ? '⟳ Re-run lookup' : '← New lookup' }}
+              </button>
+            } @else {
+              <span></span>
+            }
             <button class="btn-secondary text-xs" (click)="close()">Close</button>
           </div>
         </div>
@@ -182,6 +216,9 @@ import { DomainToolsService, DomainLookupResult } from '../../core/domain-tools.
 })
 export class DomainInfoButtonComponent {
   @Input() url?: string;
+  @Input() label = 'Domain info';
+  @Input() buttonClass =
+    'text-xs text-ink-500 hover:text-ink-900 hover:bg-ink-100 rounded px-1.5 py-0.5 inline-flex items-center gap-1 transition';
 
   private svc = inject(DomainToolsService);
 
@@ -189,33 +226,63 @@ export class DomainInfoButtonComponent {
   loading = signal(false);
   error = signal<string | null>(null);
   result = signal<DomainLookupResult | null>(null);
+  domainInput = '';
+  private resolvedDomain = signal<string>('');
 
   domain(): string {
-    if (!this.url) return '';
-    try {
-      return new URL(this.url).hostname.replace(/^www\./, '');
-    } catch {
-      return this.url.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
+    if (this.url) {
+      try {
+        return new URL(this.url).hostname.replace(/^www\./, '');
+      } catch {
+        return this.url.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
+      }
     }
+    return this.resolvedDomain();
   }
 
   open() {
     this.modalOpen.set(true);
-    if (!this.result()) this.runLookup();
+    if (this.url && !this.result()) {
+      this.runLookup(this.domain());
+    }
   }
 
   close() {
     if (this.loading()) return;
     this.modalOpen.set(false);
+    // Reset standalone state so reopening starts fresh
+    if (!this.url) {
+      this.result.set(null);
+      this.error.set(null);
+      this.domainInput = '';
+      this.resolvedDomain.set('');
+    }
   }
 
-  refresh() {
-    this.result.set(null);
-    this.runLookup();
+  reset() {
+    if (this.url) {
+      this.result.set(null);
+      this.runLookup(this.domain());
+    } else {
+      this.result.set(null);
+      this.error.set(null);
+      this.resolvedDomain.set('');
+    }
   }
 
-  private runLookup() {
-    const d = this.domain();
+  submitDomain() {
+    const raw = this.domainInput.trim();
+    if (!raw) return;
+    const d = this.normalize(raw);
+    this.resolvedDomain.set(d);
+    this.runLookup(d);
+  }
+
+  private normalize(input: string): string {
+    return input.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '').toLowerCase();
+  }
+
+  private runLookup(d: string) {
     if (!d) return;
     this.loading.set(true);
     this.error.set(null);

@@ -3,6 +3,7 @@ import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { USER_ROLE_LABELS, UserRole } from '@seo/shared';
 import { AuthService } from '../core/auth.service';
+import { DomainInfoButtonComponent } from '../features/clients/domain-info-button.component';
 
 interface NavItem {
   route: string;
@@ -15,7 +16,13 @@ interface NavItem {
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [
+    CommonModule,
+    RouterOutlet,
+    RouterLink,
+    RouterLinkActive,
+    DomainInfoButtonComponent,
+  ],
   template: `
     <div class="flex h-screen overflow-hidden bg-ink-50">
       <!-- Sidebar -->
@@ -62,10 +69,22 @@ interface NavItem {
         </div>
       </aside>
 
-      <!-- Main content -->
-      <main class="flex-1 overflow-y-auto">
-        <router-outlet />
-      </main>
+      <!-- Main content area -->
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <!-- Top header bar with quick actions -->
+        <header class="h-12 bg-white border-b border-ink-200 flex items-center justify-end px-5 gap-2 flex-shrink-0">
+          <span class="text-[10px] uppercase tracking-wider font-bold text-ink-400 mr-1">
+            Quick actions
+          </span>
+          <app-domain-info-button
+            label="Domain info"
+            buttonClass="h-8 text-xs font-semibold px-3 rounded-md border border-ink-200 text-ink-700 hover:border-ink-300 hover:bg-ink-50 inline-flex items-center gap-1.5 transition" />
+        </header>
+
+        <main class="flex-1 overflow-y-auto">
+          <router-outlet />
+        </main>
+      </div>
     </div>
   `,
 })
