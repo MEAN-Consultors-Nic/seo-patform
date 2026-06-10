@@ -12,6 +12,7 @@ import { FormsModule } from '@angular/forms';
 import { QuillEditorComponent } from 'ngx-quill';
 import {
   Cycle,
+  Subtask,
   Task,
   TaskAttachment,
   TaskCategory,
@@ -295,6 +296,21 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                   [attachments]="t.attachments || []"
                   (changed)="onAttachmentsChanged(t, $event)" />
 
+                @if ((t.subtasks?.length || 0) > 0) {
+                  <div class="mt-2 flex items-center gap-2 text-[11px]">
+                    <span class="text-ink-400 uppercase tracking-wider text-[10px] font-semibold">Subtasks</span>
+                    <div class="flex-1 h-1.5 bg-ink-100 rounded-full overflow-hidden">
+                      <div class="h-full bg-positive-500 transition-all"
+                           [style.width.%]="subtaskProgressPct(t)"></div>
+                    </div>
+                    <span class="font-semibold tabular-nums"
+                          [class.text-positive-500]="subtasksAllDone(t)"
+                          [class.text-ink-700]="!subtasksAllDone(t)">
+                      {{ subtasksDone(t) }} / {{ t.subtasks?.length }}
+                    </span>
+                  </div>
+                }
+
                 <!-- Footer: hours -->
                 <div class="mt-auto pt-3 border-t border-ink-100 flex items-center justify-between gap-4 text-xs">
                   <div class="flex items-center gap-4">
@@ -375,6 +391,40 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                 [modules]="quillModules"
                 placeholder="Why this task is needed, scope, success criteria…"
                 [styles]="{ minHeight: '160px' }"></quill-editor>
+            </div>
+
+            <div>
+              <div class="flex items-baseline justify-between mb-1.5">
+                <label class="label !mb-0">Subtasks</label>
+                @if (editForm.subtasks.length > 0) {
+                  <span class="text-[11px] text-ink-400">
+                    {{ subtasksDoneCount() }} / {{ editForm.subtasks.length }} done
+                  </span>
+                }
+              </div>
+              <div class="space-y-1.5">
+                @for (s of editForm.subtasks; track $index; let i = $index) {
+                  <div class="flex items-center gap-2">
+                    <input type="checkbox" class="rounded border-ink-300 text-positive-500 focus:ring-positive-500"
+                           [(ngModel)]="s.done" />
+                    <input class="input flex-1 !py-1.5"
+                           [class.line-through]="s.done"
+                           [class.text-ink-400]="s.done"
+                           [(ngModel)]="s.title"
+                           placeholder="Subtask title"
+                           (keydown.enter)="addSubtask(); $event.preventDefault()" />
+                    <button type="button"
+                            (click)="removeSubtask(i)"
+                            class="text-ink-400 hover:text-danger-500 text-lg leading-none px-1"
+                            title="Remove">×</button>
+                  </div>
+                }
+              </div>
+              <button type="button"
+                      (click)="addSubtask()"
+                      class="mt-2 text-xs font-semibold text-brand-500 hover:text-brand-600 inline-flex items-center gap-1">
+                + Add subtask
+              </button>
             </div>
 
             <div>
@@ -471,6 +521,31 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
               </div>
             }
 
+            @if ((d.subtasks?.length || 0) > 0) {
+              <div class="mt-5">
+                <div class="flex items-baseline justify-between mb-2">
+                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-400">Subtasks</div>
+                  <div class="text-[11px] text-ink-500 font-semibold">
+                    {{ subtasksDone(d) }} / {{ d.subtasks?.length }} done
+                  </div>
+                </div>
+                <ul class="space-y-1">
+                  @for (s of d.subtasks; track $index; let i = $index) {
+                    <li class="flex items-center gap-2 text-sm">
+                      <input type="checkbox" class="rounded border-ink-300 text-positive-500 focus:ring-positive-500"
+                             [checked]="s.done"
+                             (change)="toggleSubtaskFromDetail(d, i, $any($event.target).checked)" />
+                      <span class="text-ink-700"
+                            [class.line-through]="s.done"
+                            [class.text-ink-400]="s.done">
+                        {{ s.title }}
+                      </span>
+                    </li>
+                  }
+                </ul>
+              </div>
+            }
+
             @if ((d.attachments?.length || 0) > 0) {
               <div class="mt-5">
                 <div class="text-[10px] uppercase tracking-wider font-bold text-ink-400 mb-2">Attachments</div>
@@ -527,13 +602,22 @@ export class ClientTasksTab implements OnChanges {
   editingTask = signal<Task | null>(null);
   creatingTask = signal(false);
   detailTask = signal<Task | null>(null);
-  editForm = {
+  editForm: {
+    title: string;
+    description?: string;
+    category: TaskCategory;
+    priority: 'high' | 'medium' | 'low';
+    estimatedHours: number;
+    notes?: string;
+    subtasks: Subtask[];
+  } = {
     title: '',
-    description: '' as string | undefined,
-    category: 'onpage' as TaskCategory,
-    priority: 'medium' as 'high' | 'medium' | 'low',
+    description: '',
+    category: 'onpage',
+    priority: 'medium',
     estimatedHours: 0,
-    notes: '' as string | undefined,
+    notes: '',
+    subtasks: [],
   };
   savingEdit = signal(false);
   editError = signal<string | null>(null);
@@ -641,10 +725,50 @@ export class ClientTasksTab implements OnChanges {
       priority: 'medium',
       estimatedHours: 1,
       notes: '',
+      subtasks: [],
     };
     this.editError.set(null);
     this.editingTask.set(null);
     this.creatingTask.set(true);
+  }
+
+  addSubtask() {
+    this.editForm.subtasks = [...this.editForm.subtasks, { title: '', done: false }];
+  }
+
+  removeSubtask(i: number) {
+    this.editForm.subtasks = this.editForm.subtasks.filter((_, idx) => idx !== i);
+  }
+
+  subtasksDoneCount(): number {
+    return this.editForm.subtasks.filter((s) => s.done).length;
+  }
+
+  subtasksDone(t: Task): number {
+    return (t.subtasks || []).filter((s) => s.done).length;
+  }
+
+  subtasksAllDone(t: Task): boolean {
+    const subs = t.subtasks || [];
+    return subs.length > 0 && subs.every((s) => s.done);
+  }
+
+  subtaskProgressPct(t: Task): number {
+    const subs = t.subtasks || [];
+    if (subs.length === 0) return 0;
+    return (this.subtasksDone(t) / subs.length) * 100;
+  }
+
+  toggleSubtaskFromDetail(t: Task, index: number, done: boolean) {
+    if (!t._id) return;
+    const next = (t.subtasks || []).map((s, i) => (i === index ? { ...s, done } : s));
+    this.tasksSvc.update(t._id, { subtasks: next }).subscribe({
+      next: (updated) => {
+        const list = this.tasks().map((x) => (x._id === t._id ? updated : x));
+        this.tasks.set(list);
+        this.detailTask.set(updated);
+      },
+    });
   }
 
   saveTaskFromModal() {
@@ -672,6 +796,7 @@ export class ClientTasksTab implements OnChanges {
       priority: this.editForm.priority,
       estimatedHours: Number(this.editForm.estimatedHours) || 0,
       notes: this.editForm.notes?.trim() || undefined,
+      subtasks: this.cleanSubtasks(),
       status: 'pending',
       clientId: this.clientId,
       cycleId: cycle._id,
@@ -709,7 +834,22 @@ export class ClientTasksTab implements OnChanges {
   setStatus(t: Task, status: TaskStatus) {
     this.menuOpenId.set(null);
     if (!t._id || t.status === status) return;
-    this.tasksSvc.update(t._id, { status }).subscribe(() => this.loadTasks());
+    if (status === 'completed') {
+      const pending = (t.subtasks || []).filter((s) => !s.done).length;
+      if (pending > 0) {
+        alert(
+          `Cannot mark this task as completed — ${pending} subtask${pending === 1 ? '' : 's'} still pending. Check them off first.`,
+        );
+        return;
+      }
+    }
+    this.tasksSvc.update(t._id, { status }).subscribe({
+      next: () => this.loadTasks(),
+      error: (err) => {
+        const msg = err?.error?.message;
+        alert(Array.isArray(msg) ? msg.join(', ') : msg || 'Could not update status.');
+      },
+    });
   }
 
   updateHours(t: Task, actualHours: number) {
@@ -733,9 +873,16 @@ export class ClientTasksTab implements OnChanges {
       priority: t.priority,
       estimatedHours: t.estimatedHours || 0,
       notes: t.notes || '',
+      subtasks: (t.subtasks || []).map((s) => ({ ...s })),
     };
     this.editError.set(null);
     this.editingTask.set(t);
+  }
+
+  private cleanSubtasks(): Subtask[] {
+    return this.editForm.subtasks
+      .map((s) => ({ title: s.title.trim(), done: !!s.done }))
+      .filter((s) => s.title.length > 0);
   }
 
   closeEditModal() {
@@ -762,6 +909,7 @@ export class ClientTasksTab implements OnChanges {
       priority: this.editForm.priority,
       estimatedHours: Number(this.editForm.estimatedHours) || 0,
       notes: this.editForm.notes?.trim() || undefined,
+      subtasks: this.cleanSubtasks(),
     };
     this.tasksSvc.update(t._id, patch).subscribe({
       next: () => {

@@ -344,6 +344,11 @@ export interface Cycle {
   label: string;
 }
 
+export interface Subtask {
+  title: string;
+  done: boolean;
+}
+
 export interface Task {
   _id?: string;
   clientId: string;
@@ -358,6 +363,7 @@ export interface Task {
   completedAt?: Date;
   notes?: string;
   attachments?: TaskAttachment[];
+  subtasks?: Subtask[];
   createdAt?: Date;
   updatedAt?: Date;
 }

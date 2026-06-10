@@ -1,4 +1,10 @@
-import { forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  forwardRef,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { TaskAttachment } from '@seo/shared';
@@ -74,7 +80,20 @@ export class TasksService {
     const patch: Record<string, unknown> = { ...dto };
     if (dto.clientId) patch.clientId = new Types.ObjectId(dto.clientId);
     if (dto.cycleId) patch.cycleId = new Types.ObjectId(dto.cycleId);
-    if (dto.status === 'completed') patch.completedAt = new Date();
+    if (dto.status === 'completed') {
+      // Block completion if there are unchecked subtasks. We must consider
+      // both the existing subtasks and any new ones included in this PATCH.
+      const existing = await this.model.findById(id).lean().exec();
+      if (!existing) throw new NotFoundException(`Task ${id} not found`);
+      const subtasks = dto.subtasks ?? existing.subtasks ?? [];
+      const pending = subtasks.filter((s) => !s.done).length;
+      if (pending > 0) {
+        throw new BadRequestException(
+          `Cannot mark task as completed — ${pending} subtask${pending === 1 ? '' : 's'} still pending.`,
+        );
+      }
+      patch.completedAt = new Date();
+    }
     const updated = await this.model
       .findByIdAndUpdate(id, patch, { new: true })
       .lean()

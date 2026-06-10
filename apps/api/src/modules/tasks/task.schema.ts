@@ -1,6 +1,12 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
-import { AttachmentLabel, TaskAttachment, TaskCategory, TaskStatus } from '@seo/shared';
+import {
+  AttachmentLabel,
+  Subtask,
+  TaskAttachment,
+  TaskCategory,
+  TaskStatus,
+} from '@seo/shared';
 
 export type TaskDocument = HydratedDocument<Task>;
 
@@ -21,6 +27,14 @@ class TaskAttachmentSubSchema implements TaskAttachment {
   @Prop() caption?: string;
   @Prop({ default: () => new Date() }) uploadedAt!: Date;
 }
+
+@Schema({ _id: false })
+class SubtaskSubSchema implements Subtask {
+  @Prop({ required: true }) title!: string;
+  @Prop({ default: false }) done!: boolean;
+}
+
+const SubtaskSchemaDef = SchemaFactory.createForClass(SubtaskSubSchema);
 
 @Schema({ timestamps: true, collection: 'tasks' })
 export class Task {
@@ -81,6 +95,9 @@ export class Task {
 
   @Prop({ type: [TaskAttachmentSubSchema], default: [] })
   attachments?: TaskAttachment[];
+
+  @Prop({ type: [SubtaskSchemaDef], default: [] })
+  subtasks?: Subtask[];
 }
 
 export const TaskSchema = SchemaFactory.createForClass(Task);

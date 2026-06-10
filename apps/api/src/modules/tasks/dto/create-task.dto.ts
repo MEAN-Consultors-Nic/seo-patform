@@ -1,11 +1,20 @@
 import {
+  IsArray,
+  IsBoolean,
   IsEnum,
   IsMongoId,
   IsNumber,
   IsOptional,
   IsString,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { TaskCategory, TaskStatus } from '@seo/shared';
+
+export class SubtaskDto {
+  @IsString() title!: string;
+  @IsOptional() @IsBoolean() done?: boolean;
+}
 
 export class CreateTaskDto {
   @IsMongoId() clientId!: string;
@@ -36,4 +45,10 @@ export class CreateTaskDto {
   priority?: 'high' | 'medium' | 'low';
 
   @IsOptional() @IsString() notes?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SubtaskDto)
+  subtasks?: SubtaskDto[];
 }
