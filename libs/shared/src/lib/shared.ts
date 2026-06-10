@@ -50,6 +50,8 @@ export interface TaskAttachment {
   width?: number;
   height?: number;
   bytes?: number;
+  resourceType?: 'image' | 'raw' | 'video';
+  originalFilename?: string;
   label?: AttachmentLabel;
   caption?: string;
   uploadedAt: Date;

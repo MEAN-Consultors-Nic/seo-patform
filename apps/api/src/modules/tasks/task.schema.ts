@@ -13,6 +13,9 @@ class TaskAttachmentSubSchema implements TaskAttachment {
   @Prop() width?: number;
   @Prop() height?: number;
   @Prop() bytes?: number;
+  @Prop({ type: String, enum: ['image', 'raw', 'video'] })
+  resourceType?: 'image' | 'raw' | 'video';
+  @Prop() originalFilename?: string;
   @Prop({ type: String, enum: ['before', 'after', 'other'], default: 'other' })
   label?: AttachmentLabel;
   @Prop() caption?: string;

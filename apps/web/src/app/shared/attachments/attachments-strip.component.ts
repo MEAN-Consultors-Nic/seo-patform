@@ -23,7 +23,8 @@ type LabelOption = 'before' | 'after' | 'other';
 
 interface UploadDraft {
   file: File;
-  previewUrl: string;
+  previewUrl: string; // image preview, empty for non-image files
+  isImage: boolean;
   label: LabelOption;
   caption: string;
 }
@@ -36,16 +37,30 @@ interface UploadDraft {
     <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
       @for (a of attachments; track a.publicId) {
         <div class="group relative">
-          <button (click)="open(a)"
-                  class="block w-10 h-10 rounded border border-ink-200 overflow-hidden hover:border-brand-500 transition">
-            <img [src]="a.thumbnailUrl || a.url" [alt]="a.caption || a.label"
-                 class="w-full h-full object-cover" />
-          </button>
+          @if (isImage(a)) {
+            <button (click)="open(a)"
+                    class="block w-10 h-10 rounded border border-ink-200 overflow-hidden hover:border-brand-500 transition">
+              <img [src]="a.thumbnailUrl || a.url" [alt]="a.caption || a.label"
+                   class="w-full h-full object-cover" />
+            </button>
+          } @else {
+            <a [href]="a.url" target="_blank" rel="noopener"
+               [title]="a.originalFilename || a.caption || 'Document'"
+               class="flex flex-col items-center justify-center w-10 h-10 rounded border border-ink-200 bg-ink-50 text-ink-600 hover:border-brand-500 hover:text-brand-600 transition text-[8px] font-bold uppercase">
+              <span class="text-base leading-none">📄</span>
+              <span class="leading-none mt-0.5">{{ fileExt(a) }}</span>
+            </a>
+          }
           @if (a.label && a.label !== 'other') {
             <span class="absolute -top-1 -right-1 text-[8px] font-bold px-1 py-0.5 rounded-sm uppercase tracking-wider"
                   [class]="labelBadgeClass(a.label)">
               {{ a.label }}
             </span>
+          }
+          @if (!isImage(a) && !readOnly) {
+            <button (click)="remove(a)"
+                    title="Delete"
+                    class="opacity-0 group-hover:opacity-100 absolute -top-1.5 -left-1.5 w-4 h-4 rounded-full bg-danger-500 text-white text-[10px] leading-none flex items-center justify-center hover:bg-danger-700 transition">×</button>
           }
         </div>
       }
@@ -98,7 +113,7 @@ interface UploadDraft {
         <div class="bg-white rounded-xl max-w-lg w-full shadow-2xl overflow-hidden"
              (click)="$event.stopPropagation()">
           <div class="px-6 py-4 border-b border-ink-200 flex items-center justify-between">
-            <h3 class="text-lg font-bold text-ink-900">Attach screenshot</h3>
+            <h3 class="text-lg font-bold text-ink-900">Attach file</h3>
             <button (click)="closeUploadModal()"
                     class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
           </div>
@@ -117,13 +132,17 @@ interface UploadDraft {
                 (dragleave)="onDragLeave($event)"
                 (drop)="onDrop($event)">
                 <div class="text-5xl mb-3">📁</div>
-                <div class="font-semibold text-ink-900">Choose an image</div>
-                <div class="text-xs text-ink-500 mt-1">PNG, JPG, GIF, WebP — up to 10 MB</div>
+                <div class="font-semibold text-ink-900">Choose a file</div>
+                <div class="text-xs text-ink-500 mt-1">
+                  Images (PNG/JPG/WebP) or documents (PDF, Word, Excel, PowerPoint, TXT, CSV, ZIP) — up to 10 MB
+                </div>
                 <div class="text-[11px] text-ink-400 mt-3">
-                  or drop it here · paste with
+                  or drop it here · paste images with
                   <kbd class="px-1.5 py-0.5 rounded border border-ink-300 bg-white text-[10px] font-mono text-ink-700">{{ pasteHint }}</kbd>
                 </div>
-                <input type="file" class="hidden" accept="image/*" (change)="onPick($event)" />
+                <input type="file" class="hidden"
+                       accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rtf,.odt,.ods,.odp"
+                       (change)="onPick($event)" />
               </label>
               <button type="button"
                       (click)="pasteFromClipboard()"
@@ -144,8 +163,25 @@ interface UploadDraft {
               <!-- Preview + label/caption -->
               <div class="space-y-4">
                 <div class="rounded-lg overflow-hidden bg-ink-50 border border-ink-200">
-                  <img [src]="draft()!.previewUrl" alt="preview"
-                       class="w-full max-h-64 object-contain" />
+                  @if (draft()!.isImage) {
+                    <img [src]="draft()!.previewUrl" alt="preview"
+                         class="w-full max-h-64 object-contain" />
+                  } @else {
+                    <div class="flex items-center gap-3 p-4">
+                      <div class="w-12 h-12 rounded bg-ink-100 flex flex-col items-center justify-center text-ink-700 text-[10px] font-bold uppercase flex-shrink-0">
+                        <span class="text-xl leading-none">📄</span>
+                        <span class="leading-none mt-0.5">{{ draftFileExt() }}</span>
+                      </div>
+                      <div class="min-w-0">
+                        <div class="font-semibold text-ink-900 truncate text-sm">
+                          {{ draft()!.file.name }}
+                        </div>
+                        <div class="text-xs text-ink-500 mt-0.5">
+                          {{ formatBytes(draft()!.file.size) }}
+                        </div>
+                      </div>
+                    </div>
+                  }
                 </div>
 
                 <div>
@@ -314,7 +350,7 @@ export class AttachmentsStripComponent implements AfterViewChecked, OnDestroy {
 
   resetDraft() {
     const current = this.draft();
-    if (current) URL.revokeObjectURL(current.previewUrl);
+    if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl);
     this.draft.set(null);
     this.uploadError.set(null);
   }
@@ -389,12 +425,12 @@ export class AttachmentsStripComponent implements AfterViewChecked, OnDestroy {
 
   onDragEnter(ev: DragEvent) {
     ev.preventDefault();
-    if (this.hasImageInTransfer(ev.dataTransfer)) this.dropActive.set(true);
+    if (this.hasFileInTransfer(ev.dataTransfer)) this.dropActive.set(true);
   }
 
   onDragOver(ev: DragEvent) {
     ev.preventDefault();
-    if (this.hasImageInTransfer(ev.dataTransfer)) this.dropActive.set(true);
+    if (this.hasFileInTransfer(ev.dataTransfer)) this.dropActive.set(true);
   }
 
   onDragLeave(ev: DragEvent) {
@@ -409,25 +445,20 @@ export class AttachmentsStripComponent implements AfterViewChecked, OnDestroy {
     if (file) this.acceptFile(file);
   }
 
-  private hasImageInTransfer(dt: DataTransfer | null): boolean {
+  private hasFileInTransfer(dt: DataTransfer | null): boolean {
     if (!dt) return false;
-    return Array.from(dt.items || []).some(
-      (i) => i.kind === 'file' && i.type.startsWith('image/'),
-    );
+    return Array.from(dt.items || []).some((i) => i.kind === 'file');
   }
 
   private acceptFile(file: File) {
     this.uploadError.set(null);
-    if (!file.type.startsWith('image/')) {
-      this.uploadError.set('That file is not an image.');
-      return;
-    }
     if (file.size > MAX_ATTACHMENT_BYTES) {
-      this.uploadError.set('Image is over 10 MB. Compress it and try again.');
+      this.uploadError.set('File is over 10 MB. Compress it and try again.');
       return;
     }
-    const previewUrl = URL.createObjectURL(file);
-    this.draft.set({ file, previewUrl, label: 'other', caption: '' });
+    const isImage = file.type.startsWith('image/');
+    const previewUrl = isImage ? URL.createObjectURL(file) : '';
+    this.draft.set({ file, previewUrl, isImage, label: 'other', caption: '' });
   }
 
   private renameClipboardFile(file: File): File {
@@ -481,7 +512,7 @@ export class AttachmentsStripComponent implements AfterViewChecked, OnDestroy {
             this.attachments = task.attachments || [];
             this.changed.emit(this.attachments);
             this.uploadingPct.set(null);
-            URL.revokeObjectURL(d.previewUrl);
+            if (d.previewUrl) URL.revokeObjectURL(d.previewUrl);
             this.draft.set(null);
             this.uploadModalOpen.set(false);
           },
@@ -497,8 +528,42 @@ export class AttachmentsStripComponent implements AfterViewChecked, OnDestroy {
   }
 
   open(a: TaskAttachment) {
+    if (!this.isImage(a)) return;
     this.lightbox.set(a);
     this.captionDraft = a.caption || '';
+  }
+
+  isImage(a: TaskAttachment): boolean {
+    if (a.resourceType) return a.resourceType === 'image';
+    // Legacy attachments without resourceType — fall back to format check
+    const imgFormats = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp'];
+    return !!(a.format && imgFormats.includes(a.format.toLowerCase()));
+  }
+
+  fileExt(a: TaskAttachment): string {
+    if (a.format) return a.format.toUpperCase().slice(0, 4);
+    const name = a.originalFilename || '';
+    const m = /\.([a-z0-9]+)$/i.exec(name);
+    return m ? m[1].toUpperCase().slice(0, 4) : 'FILE';
+  }
+
+  draftFileExt(): string {
+    const d = this.draft();
+    if (!d) return '';
+    const m = /\.([a-z0-9]+)$/i.exec(d.file.name);
+    return m ? m[1].toUpperCase().slice(0, 4) : 'FILE';
+  }
+
+  formatBytes(bytes: number): string {
+    if (!bytes) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let i = 0;
+    let n = bytes;
+    while (n >= 1024 && i < units.length - 1) {
+      n /= 1024;
+      i++;
+    }
+    return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
   }
 
   // Teleport the lightbox DOM node to <body> the first time it's rendered

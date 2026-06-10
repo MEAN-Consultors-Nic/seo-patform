@@ -72,6 +72,8 @@ export class TasksController {
       width?: number;
       height?: number;
       bytes?: number;
+      resourceType?: 'image' | 'raw' | 'video';
+      originalFilename?: string;
       label?: 'before' | 'after' | 'other';
       caption?: string;
     },

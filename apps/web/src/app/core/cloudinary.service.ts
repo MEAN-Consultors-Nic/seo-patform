@@ -9,6 +9,8 @@ export interface CloudinaryUploadResult {
   width: number;
   height: number;
   bytes: number;
+  resourceType: 'image' | 'raw' | 'video';
+  originalFilename: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -30,7 +32,9 @@ export class CloudinaryService {
       }
 
       const { cloudName, uploadPreset } = environment.cloudinary;
-      const url = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
+      // Use /auto/upload so Cloudinary detects whether the file is an image,
+      // raw document (PDF, Word, etc.), or video.
+      const url = `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`;
 
       const xhr = new XMLHttpRequest();
       const formData = new FormData();
@@ -48,14 +52,18 @@ export class CloudinaryService {
       xhr.addEventListener('load', () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           const res = JSON.parse(xhr.responseText);
+          const resourceType = (res.resource_type as 'image' | 'raw' | 'video') || 'raw';
           resolve({
             publicId: res.public_id,
             url: res.secure_url,
-            thumbnailUrl: this.thumbnailUrl(res.public_id),
+            thumbnailUrl:
+              resourceType === 'image' ? this.thumbnailUrl(res.public_id) : '',
             format: res.format,
             width: res.width,
             height: res.height,
             bytes: res.bytes,
+            resourceType,
+            originalFilename: res.original_filename || file.name,
           });
         } else {
           let msg = 'Upload failed';
