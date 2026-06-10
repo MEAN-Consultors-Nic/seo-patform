@@ -87,7 +87,7 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
     <div class="space-y-4">
       <!-- Cycle header -->
       @if (cycle(); as c) {
-        <div class="card flex items-center justify-between">
+        <div class="card flex items-center justify-between gap-4">
           <div>
             <div class="text-xs font-semibold text-ink-500 uppercase tracking-wider">Current cycle</div>
             <div class="flex items-baseline gap-2 mt-0.5">
@@ -96,7 +96,7 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
               <span class="text-xs text-ink-500">closes {{ c.endDate | date: 'mediumDate' }}</span>
             </div>
           </div>
-          <div class="flex items-center gap-3 text-sm">
+          <div class="flex items-center gap-4 text-sm">
             <div class="text-right">
               <div class="text-xs text-ink-500">Hours invested</div>
               <div class="font-bold" [ngClass]="hoursTextColor()">
@@ -107,36 +107,15 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
             <div class="w-32 h-2 bg-ink-100 rounded-full overflow-hidden">
               <div class="h-full transition-all" [ngClass]="hoursBarColor()" [style.width.%]="Math.min(pct(), 100)"></div>
             </div>
+            <button class="btn-primary text-xs whitespace-nowrap"
+                    type="button"
+                    (click)="openCreateModal()"
+                    [disabled]="!cycle()?._id">
+              + New task
+            </button>
           </div>
         </div>
       }
-
-      <!-- New task -->
-      <div class="card">
-        <h3 class="text-sm font-semibold text-ink-900 mb-3">+ New task</h3>
-        <div class="grid grid-cols-1 md:grid-cols-6 gap-2">
-          <input class="input md:col-span-3" [(ngModel)]="newTask.title" placeholder="Task title" />
-          <select class="input" [(ngModel)]="newTask.category">
-            @for (cat of categories; track cat) {
-              <option [value]="cat">{{ cat }}</option>
-            }
-          </select>
-          <select class="input" [(ngModel)]="newTask.priority">
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
-          </select>
-          <input type="number" class="input" [(ngModel)]="newTask.estimatedHours" step="0.5" min="0" placeholder="Est. h" />
-        </div>
-        <div class="mt-2">
-          <quill-editor
-            [(ngModel)]="newTask.description"
-            [modules]="quillModules"
-            placeholder="Short description — why this task is needed, scope, success criteria… (optional but recommended)"
-            [styles]="{ minHeight: '110px' }"></quill-editor>
-        </div>
-        <button class="btn-primary mt-3" (click)="addTask()" [disabled]="!canAdd()">Create task</button>
-      </div>
 
       <!-- Stats -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -344,14 +323,16 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
       }
     </div>
 
-    <!-- Edit task modal -->
-    @if (editingTask(); as e) {
+    <!-- Edit / Create task modal -->
+    @if (editingTask() || creatingTask()) {
       <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
            (click)="closeEditModal()">
         <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto"
              (click)="$event.stopPropagation()">
           <div class="flex items-start justify-between mb-4">
-            <h2 class="text-lg font-bold text-ink-900">Edit task</h2>
+            <h2 class="text-lg font-bold text-ink-900">
+              {{ creatingTask() ? 'New task' : 'Edit task' }}
+            </h2>
             <button type="button"
                     (click)="closeEditModal()"
                     class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
@@ -409,12 +390,18 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
 
           <div class="flex items-center justify-between mt-6 pt-4 border-t border-ink-100">
             <div class="text-[11px] text-ink-400">
-              Created {{ e.createdAt ? (e.createdAt | date: 'mediumDate') : 'just now' }}
+              @if (creatingTask()) {
+                Will be added to current cycle
+              } @else if (editingTask()?.createdAt) {
+                Created {{ editingTask()?.createdAt | date: 'mediumDate' }}
+              }
             </div>
             <div class="flex gap-2">
               <button class="btn-secondary" (click)="closeEditModal()">Cancel</button>
-              <button class="btn-primary" (click)="saveEdit()" [disabled]="savingEdit()">
-                {{ savingEdit() ? 'Saving…' : 'Save changes' }}
+              <button class="btn-primary"
+                      (click)="saveTaskFromModal()"
+                      [disabled]="savingEdit()">
+                {{ savingEdit() ? 'Saving…' : (creatingTask() ? 'Create task' : 'Save changes') }}
               </button>
             </div>
           </div>
@@ -538,6 +525,7 @@ export class ClientTasksTab implements OnChanges {
   searchQuery = signal('');
   menuOpenId = signal<string | null>(null);
   editingTask = signal<Task | null>(null);
+  creatingTask = signal(false);
   detailTask = signal<Task | null>(null);
   editForm = {
     title: '',
@@ -575,15 +563,6 @@ export class ClientTasksTab implements OnChanges {
       ['link'],
       ['clean'],
     ],
-  };
-
-  newTask: Partial<Task> = {
-    title: '',
-    description: '',
-    category: 'onpage',
-    priority: 'medium',
-    estimatedHours: 1,
-    status: 'pending',
   };
 
   actualHours = computed(() =>
@@ -653,30 +632,64 @@ export class ClientTasksTab implements OnChanges {
       .subscribe((t) => this.tasks.set(t));
   }
 
-  canAdd(): boolean {
-    return !!(this.newTask.title && this.cycle()?._id);
+  openCreateModal() {
+    if (!this.cycle()?._id) return;
+    this.editForm = {
+      title: '',
+      description: '',
+      category: 'onpage',
+      priority: 'medium',
+      estimatedHours: 1,
+      notes: '',
+    };
+    this.editError.set(null);
+    this.editingTask.set(null);
+    this.creatingTask.set(true);
   }
 
-  addTask() {
+  saveTaskFromModal() {
+    if (this.creatingTask()) {
+      this.createTask();
+    } else {
+      this.saveEdit();
+    }
+  }
+
+  private createTask() {
     const cycle = this.cycle();
-    if (!cycle?._id || !this.canAdd()) return;
-    this.tasksSvc
-      .create({
-        ...this.newTask,
-        clientId: this.clientId,
-        cycleId: cycle._id,
-      } as Partial<Task>)
-      .subscribe(() => {
-        this.newTask = {
-          title: '',
-          description: '',
-          category: 'onpage',
-          priority: 'medium',
-          estimatedHours: 1,
-          status: 'pending',
-        };
+    if (!cycle?._id) return;
+    const title = (this.editForm.title || '').trim();
+    if (!title) {
+      this.editError.set('Title is required.');
+      return;
+    }
+    this.savingEdit.set(true);
+    this.editError.set(null);
+    const payload: Partial<Task> = {
+      title,
+      description: this.editForm.description || undefined,
+      category: this.editForm.category,
+      priority: this.editForm.priority,
+      estimatedHours: Number(this.editForm.estimatedHours) || 0,
+      notes: this.editForm.notes?.trim() || undefined,
+      status: 'pending',
+      clientId: this.clientId,
+      cycleId: cycle._id,
+    };
+    this.tasksSvc.create(payload).subscribe({
+      next: () => {
+        this.savingEdit.set(false);
+        this.creatingTask.set(false);
         this.loadTasks();
-      });
+      },
+      error: (err) => {
+        this.savingEdit.set(false);
+        const msg = err?.error?.message;
+        this.editError.set(
+          Array.isArray(msg) ? msg.join(', ') : msg || 'Could not create the task.',
+        );
+      },
+    });
   }
 
   // --- Status / filters -----------------------------------------------------
@@ -728,6 +741,7 @@ export class ClientTasksTab implements OnChanges {
   closeEditModal() {
     if (this.savingEdit()) return;
     this.editingTask.set(null);
+    this.creatingTask.set(false);
     this.editError.set(null);
   }
 
