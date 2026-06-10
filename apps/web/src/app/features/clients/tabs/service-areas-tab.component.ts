@@ -53,10 +53,15 @@ function normalizeUrl(url: string): string {
               <input type="date" class="input input-sm" [(ngModel)]="from" />
               <input type="date" class="input input-sm" [(ngModel)]="to" />
             }
-            <button class="btn-primary text-xs"
+            <button class="btn-secondary text-xs"
                     (click)="refreshMetrics()"
                     [disabled]="refreshing() || pagedAreas().length === 0">
               {{ refreshing() ? 'Refreshing…' : '⚡ Refresh metrics' }}
+            </button>
+            <button class="btn-primary text-xs"
+                    (click)="openAddModal()"
+                    type="button">
+              + New area
             </button>
           </div>
         </div>
@@ -71,44 +76,15 @@ function normalizeUrl(url: string): string {
         }
       </div>
 
-      <!-- New area -->
-      <div class="card">
-        <h3 class="text-sm font-semibold text-ink-900 mb-3">+ Add service area</h3>
-        <div class="grid grid-cols-1 md:grid-cols-6 gap-2">
-          <input class="input md:col-span-2" [(ngModel)]="newArea.name" placeholder="Area name (e.g. Downtown LA)" />
-          <input class="input" [(ngModel)]="newArea.city" placeholder="City" />
-          <input class="input" [(ngModel)]="newArea.region" placeholder="State / region" />
-          <input class="input" [(ngModel)]="newArea.country" placeholder="Country (US, MX...)" />
-          <input class="input" [(ngModel)]="newArea.postalCode" placeholder="ZIP / postal" />
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
-          <input class="input" [(ngModel)]="newArea.landingPageUrl"
-                 placeholder="Landing page URL (e.g. https://site.com/services/los-angeles)" />
-          <input class="input" [(ngModel)]="newArea.googleMapsUrl"
-                 placeholder="Google Maps link (e.g. https://maps.google.com/...)" />
-          <input class="input md:col-span-2" [(ngModel)]="newArea.primaryKeyword"
-                 placeholder="Primary keyword for this area" />
-        </div>
-        <textarea class="input mt-2" rows="2" [(ngModel)]="newArea.notes"
-                  placeholder="Notes (optional)"></textarea>
-        <label class="mt-3 inline-flex items-center gap-2 text-sm text-ink-700 cursor-pointer select-none">
-          <input type="checkbox" class="rounded border-ink-300 text-brand-500 focus:ring-brand-500"
-                 [(ngModel)]="newArea.isCityHub" />
-          <span>🏙 Mark as <strong>City Hub</strong></span>
-          <span class="text-xs text-ink-400">— primary city this client serves (pinned and shown separately in reports)</span>
-        </label>
-        @if (addError()) {
-          <div class="mt-2 text-xs text-danger-500">{{ addError() }}</div>
-        }
-        <button class="btn-primary mt-3" (click)="addArea()" [disabled]="saving() || !newArea.name?.trim()">
-          {{ saving() ? 'Saving…' : 'Add area' }}
-        </button>
-      </div>
-
       <!-- Areas list -->
       @if (pagedAreas().length === 0) {
         <div class="card text-center py-10 text-ink-400 italic text-sm">
-          No service areas yet. Add the first one above.
+          No service areas yet.
+          <button type="button"
+                  class="text-brand-500 hover:text-brand-600 font-semibold not-italic ml-1"
+                  (click)="openAddModal()">
+            Create the first one →
+          </button>
         </div>
       } @else {
         <!-- Sort controls -->
@@ -301,6 +277,91 @@ function normalizeUrl(url: string): string {
         </div>
       }
     </div>
+
+    <!-- Create service area modal -->
+    @if (addModalOpen()) {
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+           (click)="closeAddModal()">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col"
+             (click)="$event.stopPropagation()">
+          <div class="px-6 py-4 border-b border-ink-100 flex items-start justify-between gap-4">
+            <div>
+              <h2 class="text-lg font-bold text-ink-900">Create service area</h2>
+              <p class="text-xs text-ink-500 mt-0.5">
+                Link the area to a landing page so GSC metrics can be pulled per city.
+              </p>
+            </div>
+            <button type="button"
+                    (click)="closeAddModal()"
+                    class="text-ink-400 hover:text-ink-900 text-2xl leading-none w-8 h-8 flex items-center justify-center rounded hover:bg-ink-100">×</button>
+          </div>
+
+          <div class="px-6 py-5 overflow-y-auto flex-1 space-y-3">
+            <div>
+              <label class="label">Area name *</label>
+              <input class="input" [(ngModel)]="newArea.name" placeholder="e.g. Downtown LA" />
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="label">City</label>
+                <input class="input" [(ngModel)]="newArea.city" placeholder="City" />
+              </div>
+              <div>
+                <label class="label">State / region</label>
+                <input class="input" [(ngModel)]="newArea.region" placeholder="State or province" />
+              </div>
+              <div>
+                <label class="label">Country</label>
+                <input class="input" [(ngModel)]="newArea.country" placeholder="US, MX, PR…" />
+              </div>
+              <div>
+                <label class="label">ZIP / postal</label>
+                <input class="input" [(ngModel)]="newArea.postalCode" placeholder="e.g. 90001" />
+              </div>
+            </div>
+            <div>
+              <label class="label">Landing page URL</label>
+              <input class="input" [(ngModel)]="newArea.landingPageUrl"
+                     placeholder="https://site.com/services/los-angeles" />
+            </div>
+            <div>
+              <label class="label">Google Maps link</label>
+              <input class="input" [(ngModel)]="newArea.googleMapsUrl"
+                     placeholder="https://maps.google.com/..." />
+            </div>
+            <div>
+              <label class="label">Primary keyword</label>
+              <input class="input" [(ngModel)]="newArea.primaryKeyword"
+                     placeholder="e.g. plumber in Los Angeles" />
+            </div>
+            <div>
+              <label class="label">Notes</label>
+              <textarea class="input" rows="2" [(ngModel)]="newArea.notes"
+                        placeholder="Optional"></textarea>
+            </div>
+            <label class="inline-flex items-center gap-2 text-sm text-ink-700 cursor-pointer select-none pt-1">
+              <input type="checkbox" class="rounded border-ink-300 text-brand-500 focus:ring-brand-500"
+                     [(ngModel)]="newArea.isCityHub" />
+              <span>🏙 Mark as <strong>City Hub</strong></span>
+              <span class="text-xs text-ink-400">— pinned and shown separately in reports</span>
+            </label>
+
+            @if (addError()) {
+              <div class="text-xs text-danger-500">{{ addError() }}</div>
+            }
+          </div>
+
+          <div class="px-6 py-4 border-t border-ink-100 flex justify-end gap-2">
+            <button class="btn-secondary text-xs" (click)="closeAddModal()" [disabled]="saving()">Cancel</button>
+            <button class="btn-primary text-xs"
+                    (click)="addArea()"
+                    [disabled]="saving() || !newArea.name?.trim()">
+              {{ saving() ? 'Saving…' : 'Create area' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class ClientServiceAreasTab implements OnInit, OnChanges {
@@ -334,6 +395,31 @@ export class ClientServiceAreasTab implements OnInit, OnChanges {
 
   editingIndex = signal<string | null>(null);
   editDraft: Partial<ServiceArea> = {};
+
+  addModalOpen = signal(false);
+
+  openAddModal() {
+    this.addError.set(null);
+    this.newArea = {
+      name: '',
+      city: '',
+      region: '',
+      country: '',
+      postalCode: '',
+      landingPageUrl: '',
+      googleMapsUrl: '',
+      primaryKeyword: '',
+      notes: '',
+      isCityHub: false,
+    };
+    this.addModalOpen.set(true);
+  }
+
+  closeAddModal() {
+    if (this.saving()) return;
+    this.addModalOpen.set(false);
+    this.addError.set(null);
+  }
 
   sortKey = signal<'position' | 'clicks' | 'impressions' | 'ctr' | 'name'>('position');
   sortDir = signal<'asc' | 'desc'>('desc');
@@ -480,6 +566,7 @@ export class ClientServiceAreasTab implements OnInit, OnChanges {
         notes: '',
         isCityHub: false,
       };
+      this.addModalOpen.set(false);
     });
   }
 
