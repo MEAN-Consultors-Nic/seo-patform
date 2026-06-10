@@ -98,23 +98,30 @@ export class DomainToolsService {
   }
 
   private async lookupAsn(ip: string, out: DomainLookupResult): Promise<void> {
+    let ripeResult: DomainLookupResult['hosting'] | null = null;
     try {
-      const hosting = await this.fromRipe(ip);
-      if (hosting?.org) {
-        out.hosting = hosting;
-        return;
-      }
+      ripeResult = await this.fromRipe(ip);
     } catch (err) {
       this.logger.warn(`RIPE ASN lookup failed for ${ip}: ${(err as Error).message}`);
     }
 
-    // Fallback: infer hosting from reverse DNS — many providers leak it
-    // (e.g. *.secureserver.net = GoDaddy, *.cloudfront.net = AWS, ...).
-    if (out.reverseDns) {
-      const fromPtr = this.guessHostFromPtr(out.reverseDns);
-      if (fromPtr) {
-        out.hosting = { org: fromPtr };
-      }
+    const ptrHint = out.reverseDns ? this.guessHostFromPtr(out.reverseDns) : undefined;
+    const cdnPattern = /cloudflare|cloudfront|fastly|akamai/i;
+    const ripeIsCdn = ripeResult?.org ? cdnPattern.test(ripeResult.org) : false;
+
+    if (ptrHint && ripeIsCdn) {
+      // CDN is fronting the real host — surface the actual provider as
+      // primary and note the CDN edge.
+      out.hosting = {
+        org: ptrHint,
+        asn: ripeResult?.asn,
+        holder: `Behind ${ripeResult?.org}`,
+        country: ripeResult?.country,
+      };
+    } else if (ripeResult?.org) {
+      out.hosting = ripeResult;
+    } else if (ptrHint) {
+      out.hosting = { org: ptrHint };
     }
   }
 
