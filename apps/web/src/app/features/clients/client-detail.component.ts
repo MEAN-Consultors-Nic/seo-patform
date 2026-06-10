@@ -17,6 +17,7 @@ import { ClientIntegrationsTab } from './tabs/integrations-tab.component';
 import { ClientGscInsightsTab } from './tabs/gsc-insights-tab.component';
 import { ClientServiceAreasTab } from './tabs/service-areas-tab.component';
 import { ClientAccessTab } from './tabs/access-tab.component';
+import { DomainInfoButtonComponent } from './domain-info-button.component';
 
 type TabKey =
   | 'access'
@@ -58,6 +59,7 @@ interface TabDef {
     ClientGscInsightsTab,
     ClientServiceAreasTab,
     ClientAccessTab,
+    DomainInfoButtonComponent,
   ],
   template: `
     @if (client(); as c) {
@@ -78,11 +80,12 @@ interface TabDef {
             }
             <div>
               <h1 class="text-2xl font-bold text-ink-900">{{ c.name }}</h1>
-              <div class="flex items-center gap-2 mt-1">
+              <div class="flex items-center gap-2 mt-1 flex-wrap">
                 <span [class]="'tier-' + c.tier">{{ c.tier }}</span>
                 <span class="text-xs text-ink-500">{{ c.hoursPerCycle }} h / cycle</span>
                 <span class="text-xs text-ink-300">·</span>
                 <a [href]="c.url" target="_blank" class="text-xs text-sky-500 hover:underline">{{ c.url }}</a>
+                <app-domain-info-button [url]="c.url" />
               </div>
             </div>
           </div>
