@@ -10,7 +10,7 @@ import {
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import cytoscape, { Core, ElementDefinition } from 'cytoscape';
+import cytoscape, { Core, ElementDefinition, NodeSingular } from 'cytoscape';
 import {
   SchemaCrawlResult,
   SchemaNode,
@@ -145,20 +145,63 @@ import {
                     </div>
                   </div>
 
-                  <!-- Type breakdown -->
-                  <h3 class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-2">
-                    Types ({{ r.typeCounts.length }})
-                  </h3>
-                  <ul class="space-y-1 mb-4">
-                    @for (t of r.typeCounts.slice(0, 12); track t.type) {
-                      <li class="flex items-center justify-between text-xs">
-                        <span class="font-mono text-ink-700 truncate">{{ t.type }}</span>
-                        <span class="text-ink-400 font-semibold ml-2">{{ t.count }}</span>
-                      </li>
+                  <!-- Filters -->
+                  <div class="mb-4 space-y-2">
+                    <div class="flex items-center justify-between">
+                      <h3 class="text-[10px] uppercase tracking-wider font-bold text-ink-500">Filters</h3>
+                      @if (hasActiveFilters()) {
+                        <button type="button"
+                                (click)="clearFilters()"
+                                class="text-[10px] font-semibold text-brand-500 hover:text-brand-600">
+                          Clear
+                        </button>
+                      }
+                    </div>
+                    <div class="relative">
+                      <span class="absolute left-2 top-1/2 -translate-y-1/2 text-ink-400 text-xs">⌕</span>
+                      <input class="input input-sm pl-6 text-xs"
+                             placeholder="Search nodes…"
+                             [ngModel]="searchQuery()"
+                             (ngModelChange)="setSearch($event)" />
+                    </div>
+                    <label class="inline-flex items-center gap-1.5 text-xs text-ink-600 cursor-pointer select-none">
+                      <input type="checkbox" class="rounded border-ink-300 text-brand-500 focus:ring-brand-500 w-3.5 h-3.5"
+                             [ngModel]="hideOrphans()"
+                             (ngModelChange)="setHideOrphans($event)" />
+                      <span>Hide orphan nodes</span>
+                    </label>
+                    @if (visibleCount() < r.graph.nodes.length) {
+                      <div class="text-[10px] text-ink-400">
+                        Showing {{ visibleCount() }} of {{ r.graph.nodes.length }} nodes
+                      </div>
                     }
-                    @if (r.typeCounts.length > 12) {
-                      <li class="text-[10px] text-ink-400 italic">
-                        + {{ r.typeCounts.length - 12 }} more
+                  </div>
+
+                  <!-- Type breakdown (clickable) -->
+                  <div class="flex items-center justify-between mb-1.5">
+                    <h3 class="text-[10px] uppercase tracking-wider font-bold text-ink-500">
+                      Types ({{ r.typeCounts.length }})
+                    </h3>
+                    @if (selectedTypes().size > 0) {
+                      <span class="text-[10px] text-ink-400">
+                        {{ selectedTypes().size }} selected
+                      </span>
+                    }
+                  </div>
+                  <ul class="space-y-0.5 mb-4 max-h-64 overflow-y-auto">
+                    @for (t of r.typeCounts; track t.type) {
+                      <li>
+                        <button type="button"
+                                (click)="toggleType(t.type)"
+                                [class]="'w-full text-left flex items-center gap-2 px-1.5 py-0.5 rounded text-xs transition ' +
+                                  (isTypeSelected(t.type)
+                                    ? 'bg-brand-50 text-brand-700'
+                                    : 'hover:bg-ink-50 text-ink-700')">
+                          <span class="w-2 h-2 rounded-full flex-shrink-0"
+                                [style.background-color]="typeColor(t.type)"></span>
+                          <span class="font-mono truncate flex-1">{{ t.type }}</span>
+                          <span class="text-ink-400 font-semibold">{{ t.count }}</span>
+                        </button>
                       </li>
                     }
                   </ul>
@@ -252,8 +295,25 @@ export class SchemaModelerButtonComponent implements AfterViewChecked, OnDestroy
   maxPages = 25;
   private resolvedUrl = signal<string>('');
 
+  // Filters
+  searchQuery = signal<string>('');
+  selectedTypes = signal<Set<string>>(new Set());
+  hideOrphans = signal<boolean>(false);
+  visibleCount = signal<number>(0);
+
   private cy: Core | null = null;
   private graphRendered = false;
+  private typeColorMap = new Map<string, string>();
+  private readonly palette = [
+    '#FF7A59',
+    '#0EA5E9',
+    '#16A34A',
+    '#D97706',
+    '#7C3AED',
+    '#DB2777',
+    '#0F172A',
+    '#0891B2',
+  ];
 
   domain(): string {
     const raw = this.url || this.resolvedUrl();
@@ -288,6 +348,9 @@ export class SchemaModelerButtonComponent implements AfterViewChecked, OnDestroy
   reset() {
     this.destroyGraph();
     this.selectedNode.set(null);
+    this.searchQuery.set('');
+    this.selectedTypes.set(new Set());
+    this.hideOrphans.set(false);
     if (this.url) {
       this.result.set(null);
       this.runCrawl(this.url);
@@ -326,7 +389,97 @@ export class SchemaModelerButtonComponent implements AfterViewChecked, OnDestroy
   }
 
   fitGraph() {
-    if (this.cy) this.cy.fit(undefined, 30);
+    if (!this.cy) return;
+    const visible = this.cy.nodes().filter((n) => n.style('display') !== 'none');
+    if (visible.length > 0) this.cy.fit(visible, 30);
+    else this.cy.fit(undefined, 30);
+  }
+
+  typeColor(type: string): string {
+    if (!this.typeColorMap.has(type)) {
+      this.typeColorMap.set(
+        type,
+        this.palette[this.typeColorMap.size % this.palette.length],
+      );
+    }
+    return this.typeColorMap.get(type)!;
+  }
+
+  toggleType(type: string) {
+    const next = new Set(this.selectedTypes());
+    if (next.has(type)) next.delete(type);
+    else next.add(type);
+    this.selectedTypes.set(next);
+    this.applyFilters();
+  }
+
+  isTypeSelected(type: string): boolean {
+    return this.selectedTypes().has(type);
+  }
+
+  setSearch(value: string) {
+    this.searchQuery.set(value);
+    this.applyFilters();
+  }
+
+  setHideOrphans(value: boolean) {
+    this.hideOrphans.set(value);
+    this.applyFilters();
+  }
+
+  hasActiveFilters(): boolean {
+    return (
+      this.selectedTypes().size > 0 ||
+      this.searchQuery().trim().length > 0 ||
+      this.hideOrphans()
+    );
+  }
+
+  clearFilters() {
+    this.selectedTypes.set(new Set());
+    this.searchQuery.set('');
+    this.hideOrphans.set(false);
+    this.applyFilters();
+  }
+
+  private applyFilters() {
+    if (!this.cy) return;
+    const types = this.selectedTypes();
+    const q = this.searchQuery().trim().toLowerCase();
+    const hideOrphans = this.hideOrphans();
+    const r = this.result();
+    if (!r) return;
+
+    const nodeMatchesType = (node: NodeSingular): boolean => {
+      if (types.size === 0) return true;
+      const t = node.data('type') as string;
+      return types.has(t);
+    };
+    const nodeMatchesQuery = (node: NodeSingular): boolean => {
+      if (!q) return true;
+      const label = String(node.data('label') || '').toLowerCase();
+      const t = String(node.data('type') || '').toLowerCase();
+      return label.includes(q) || t.includes(q);
+    };
+
+    let shown = 0;
+    this.cy.batch(() => {
+      this.cy!.nodes().forEach((node) => {
+        let visible = nodeMatchesType(node) && nodeMatchesQuery(node);
+        if (visible && hideOrphans) {
+          if (node.connectedEdges().length === 0) visible = false;
+        }
+        node.style('display', visible ? 'element' : 'none');
+        if (visible) shown++;
+      });
+      // Hide edges whose endpoints are hidden
+      this.cy!.edges().forEach((edge) => {
+        const sourceVisible = edge.source().style('display') !== 'none';
+        const targetVisible = edge.target().style('display') !== 'none';
+        edge.style('display', sourceVisible && targetVisible ? 'element' : 'none');
+      });
+    });
+    this.visibleCount.set(shown);
   }
 
   exportGraph() {
@@ -386,23 +539,10 @@ export class SchemaModelerButtonComponent implements AfterViewChecked, OnDestroy
     const host = this.graphHost?.nativeElement;
     if (!r || !host || r.graph.nodes.length === 0) return;
 
-    const palette = [
-      '#FF7A59',
-      '#0EA5E9',
-      '#16A34A',
-      '#D97706',
-      '#7C3AED',
-      '#DB2777',
-      '#0F172A',
-      '#0891B2',
-    ];
-    const typeColor = new Map<string, string>();
-    const colorFor = (type: string) => {
-      if (!typeColor.has(type)) {
-        typeColor.set(type, palette[typeColor.size % palette.length]);
-      }
-      return typeColor.get(type)!;
-    };
+    // Reset color map so it's deterministic per-render and matches sidebar
+    this.typeColorMap = new Map<string, string>();
+    // Pre-seed in type-count order so the most common types get the first palette colors
+    for (const t of r.typeCounts) this.typeColor(t.type);
 
     const elements: ElementDefinition[] = [
       ...r.graph.nodes.map((n) => ({
@@ -410,7 +550,7 @@ export class SchemaModelerButtonComponent implements AfterViewChecked, OnDestroy
           id: n.id,
           label: n.label,
           type: n.types[0] || 'Thing',
-          color: colorFor(n.types[0] || 'Thing'),
+          color: this.typeColor(n.types[0] || 'Thing'),
         },
       })),
       ...r.graph.edges.map((e, i) => ({
@@ -487,6 +627,9 @@ export class SchemaModelerButtonComponent implements AfterViewChecked, OnDestroy
     this.cy.on('tap', (evt) => {
       if (evt.target === this.cy) this.selectedNode.set(null);
     });
+
+    this.visibleCount.set(r.graph.nodes.length);
+    this.applyFilters();
   }
 
   private destroyGraph() {
