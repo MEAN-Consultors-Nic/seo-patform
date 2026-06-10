@@ -99,60 +99,87 @@ export class DomainToolsService {
 
   private async lookupAsn(ip: string, out: DomainLookupResult): Promise<void> {
     try {
-      // ipinfo's free no-key endpoint embedded in their lite anycast
-      const res = await fetch(`https://ipapi.is/?q=${ip}`, {
-        signal: AbortSignal.timeout(8000),
-      });
-      if (res.ok) {
-        const data = (await res.json()) as {
-          asn?: { asn?: number; org?: string; descr?: string; country?: string };
-          company?: { name?: string };
-          location?: { country?: string };
-        };
-        out.hosting = {
-          asn: data.asn?.asn ? `AS${data.asn.asn}` : undefined,
-          org: data.asn?.org || data.company?.name,
-          holder: data.asn?.descr,
-          country: data.location?.country || data.asn?.country,
-        };
+      const hosting = await this.fromRipe(ip);
+      if (hosting?.org) {
+        out.hosting = hosting;
         return;
       }
     } catch (err) {
-      this.logger.warn(`ipapi.is failed for ${ip}: ${(err as Error).message}`);
+      this.logger.warn(`RIPE ASN lookup failed for ${ip}: ${(err as Error).message}`);
     }
 
-    // Fallback: RIPE
-    try {
-      const res = await fetch(
-        `https://stat.ripe.net/data/network-info.json?resource=${ip}`,
-        { signal: AbortSignal.timeout(8000) },
-      );
-      if (!res.ok) return;
-      const data = (await res.json()) as { data?: { asns?: string[]; prefix?: string } };
-      const asn = data.data?.asns?.[0];
-      if (asn) {
-        const holder = await this.fetchAsnHolder(asn);
-        out.hosting = {
-          asn: `AS${asn}`,
-          org: holder,
-        };
+    // Fallback: infer hosting from reverse DNS — many providers leak it
+    // (e.g. *.secureserver.net = GoDaddy, *.cloudfront.net = AWS, ...).
+    if (out.reverseDns) {
+      const fromPtr = this.guessHostFromPtr(out.reverseDns);
+      if (fromPtr) {
+        out.hosting = { org: fromPtr };
       }
-    } catch (err) {
-      out.errors?.push(`ASN lookup failed: ${(err as Error).message}`);
     }
   }
 
-  private async fetchAsnHolder(asn: string): Promise<string | undefined> {
+  private async fromRipe(ip: string): Promise<DomainLookupResult['hosting'] | null> {
+    const res = await fetch(
+      `https://stat.ripe.net/data/network-info/data.json?resource=${ip}`,
+      { signal: AbortSignal.timeout(8000) },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { data?: { asns?: string[]; prefix?: string } };
+    const asn = data.data?.asns?.[0];
+    if (!asn) return null;
+    const overview = await this.fetchAsOverview(asn);
+    return {
+      asn: `AS${asn}`,
+      org: overview?.holder,
+      country: overview?.country,
+    };
+  }
+
+  private guessHostFromPtr(ptr: string): string | undefined {
+    const p = ptr.toLowerCase();
+    const map: Array<[RegExp, string]> = [
+      [/secureserver\.net/, 'GoDaddy'],
+      [/cloudfront\.net|amazonaws\.com|aws/, 'Amazon Web Services'],
+      [/cloudflare/, 'Cloudflare'],
+      [/azure|microsoft\.com/, 'Microsoft Azure'],
+      [/googleusercontent|google\.com|1e100\.net/, 'Google Cloud'],
+      [/fastly/, 'Fastly'],
+      [/digitalocean/, 'DigitalOcean'],
+      [/linode|akamai/, 'Linode / Akamai'],
+      [/hetzner/, 'Hetzner'],
+      [/ovh/, 'OVH'],
+      [/wpengine/, 'WP Engine'],
+      [/kinsta/, 'Kinsta'],
+      [/siteground/, 'SiteGround'],
+      [/bluehost/, 'Bluehost'],
+      [/hostgator/, 'HostGator'],
+      [/dreamhost/, 'DreamHost'],
+      [/wix/, 'Wix'],
+      [/shopify/, 'Shopify'],
+      [/squarespace/, 'Squarespace'],
+      [/vercel/, 'Vercel'],
+      [/netlify/, 'Netlify'],
+      [/herokuapp/, 'Heroku'],
+    ];
+    for (const [re, label] of map) if (re.test(p)) return label;
+    return undefined;
+  }
+
+  private async fetchAsOverview(
+    asn: string,
+  ): Promise<{ holder?: string; country?: string } | null> {
     try {
       const res = await fetch(
-        `https://stat.ripe.net/data/as-overview.json?resource=AS${asn}`,
+        `https://stat.ripe.net/data/as-overview/data.json?resource=AS${asn}`,
         { signal: AbortSignal.timeout(6000) },
       );
-      if (!res.ok) return undefined;
-      const data = (await res.json()) as { data?: { holder?: string } };
-      return data.data?.holder;
+      if (!res.ok) return null;
+      const data = (await res.json()) as {
+        data?: { holder?: string; block?: { name?: string } };
+      };
+      return { holder: data.data?.holder };
     } catch {
-      return undefined;
+      return null;
     }
   }
 
