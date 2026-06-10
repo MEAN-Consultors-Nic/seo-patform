@@ -19,6 +19,7 @@ import { ClientServiceAreasTab } from './tabs/service-areas-tab.component';
 import { ClientAccessTab } from './tabs/access-tab.component';
 import { ClientEcommerceTab } from './tabs/ecommerce-tab.component';
 import { DomainInfoButtonComponent } from './domain-info-button.component';
+import { SchemaModelerButtonComponent } from './schema-modeler-button.component';
 
 type TabKey =
   | 'access'
@@ -63,6 +64,7 @@ interface TabDef {
     ClientAccessTab,
     ClientEcommerceTab,
     DomainInfoButtonComponent,
+    SchemaModelerButtonComponent,
   ],
   template: `
     @if (client(); as c) {
@@ -89,6 +91,7 @@ interface TabDef {
                 <span class="text-xs text-ink-300">·</span>
                 <a [href]="c.url" target="_blank" class="text-xs text-sky-500 hover:underline">{{ c.url }}</a>
                 <app-domain-info-button [url]="c.url" />
+                <app-schema-modeler-button [url]="c.url" />
               </div>
             </div>
           </div>

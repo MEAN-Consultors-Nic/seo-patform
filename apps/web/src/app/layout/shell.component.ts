@@ -4,6 +4,7 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { USER_ROLE_LABELS, UserRole } from '@seo/shared';
 import { AuthService } from '../core/auth.service';
 import { DomainInfoButtonComponent } from '../features/clients/domain-info-button.component';
+import { SchemaModelerButtonComponent } from '../features/clients/schema-modeler-button.component';
 
 interface NavItem {
   route: string;
@@ -22,6 +23,7 @@ interface NavItem {
     RouterLink,
     RouterLinkActive,
     DomainInfoButtonComponent,
+    SchemaModelerButtonComponent,
   ],
   template: `
     <div class="flex h-screen overflow-hidden bg-ink-50">
@@ -78,6 +80,9 @@ interface NavItem {
           </span>
           <app-domain-info-button
             label="Domain info"
+            buttonClass="h-8 text-xs font-semibold px-3 rounded-md border border-ink-200 text-ink-700 hover:border-ink-300 hover:bg-ink-50 inline-flex items-center gap-1.5 transition" />
+          <app-schema-modeler-button
+            label="Schema Modeler"
             buttonClass="h-8 text-xs font-semibold px-3 rounded-md border border-ink-200 text-ink-700 hover:border-ink-300 hover:bg-ink-50 inline-flex items-center gap-1.5 transition" />
         </header>
 

@@ -23,6 +23,7 @@ import { WorkingHoursModule } from '../modules/working-hours/working-hours.modul
 import { TimeBlocksModule } from '../modules/time-blocks/time-blocks.module';
 import { GoogleIntegrationsModule } from '../modules/google-integrations/google-integrations.module';
 import { DomainToolsModule } from '../modules/domain-tools/domain-tools.module';
+import { SchemaToolsModule } from '../modules/schema-tools/schema-tools.module';
 import { SeedModule } from '../seed/seed.module';
 
 @Module({
@@ -48,6 +49,7 @@ import { SeedModule } from '../seed/seed.module';
     TimeBlocksModule,
     GoogleIntegrationsModule,
     DomainToolsModule,
+    SchemaToolsModule,
     SeedModule,
   ],
   controllers: [AppController],
