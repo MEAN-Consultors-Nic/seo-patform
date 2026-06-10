@@ -163,6 +163,12 @@ export class Client {
   @Prop()
   gscSiteUrl?: string;
 
+  @Prop({ default: false })
+  isEcommerce?: boolean;
+
+  @Prop()
+  merchantCenterId?: string;
+
   @Prop({ type: [ServiceAreaSchemaDef], default: [] })
   serviceAreas?: ServiceArea[];
 }

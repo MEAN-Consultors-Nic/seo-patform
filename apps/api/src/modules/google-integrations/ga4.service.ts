@@ -14,6 +14,29 @@ export interface Ga4Kpis {
   bounceRate: number; // percentage
 }
 
+export interface Ga4EcommerceMetrics {
+  totalRevenue: number;
+  organicRevenue: number;
+  organicTransactions: number;
+  organicSessions: number;
+  organicAov: number;
+  organicConversionRate: number;
+  currency?: string;
+  topLandingPages: Array<{
+    landingPage: string;
+    sessions: number;
+    transactions: number;
+    revenue: number;
+  }>;
+  topProducts: Array<{
+    itemName: string;
+    quantity: number;
+    revenue: number;
+  }>;
+  rangeFrom: string;
+  rangeTo: string;
+}
+
 @Injectable()
 export class Ga4Service {
   private readonly logger = new Logger(Ga4Service.name);
@@ -104,6 +127,129 @@ export class Ga4Service {
       averageSessionDuration: num(6),
       bounceRate: num(7) * 100,
       organicSessions,
+    };
+  }
+
+  /**
+   * Returns ecommerce metrics for the property in the given date range.
+   * Pulls revenue + transactions overall and segmented to Organic Search,
+   * plus top-organic landing pages by revenue and top-purchased items.
+   * Requires the GA4 property to be tracking `purchase` events with item
+   * data — properties that aren't ecommerce will return zeros.
+   */
+  async ecommerceMetrics(
+    userId: string,
+    propertyId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<Ga4EcommerceMetrics> {
+    if (!propertyId) throw new BadRequestException('Missing GA4 propertyId');
+    const auth = await this.oauth.getAuthorizedClient(userId);
+    const data = google.analyticsdata({ version: 'v1beta', auth });
+    const property = `properties/${propertyId}`;
+    const dateRanges = [{ startDate, endDate }];
+
+    const organicFilter = {
+      filter: {
+        fieldName: 'sessionDefaultChannelGroup',
+        stringFilter: { matchType: 'EXACT' as const, value: 'Organic Search' },
+      },
+    };
+
+    const [overall, organicTotals, landings, products] = await Promise.all([
+      data.properties.runReport({
+        property,
+        requestBody: {
+          dateRanges,
+          metrics: [{ name: 'totalRevenue' }],
+        },
+      }),
+      data.properties.runReport({
+        property,
+        requestBody: {
+          dateRanges,
+          metrics: [
+            { name: 'totalRevenue' },
+            { name: 'transactions' },
+            { name: 'sessions' },
+          ],
+          dimensionFilter: organicFilter,
+        },
+      }),
+      data.properties.runReport({
+        property,
+        requestBody: {
+          dateRanges,
+          dimensions: [{ name: 'landingPage' }],
+          metrics: [
+            { name: 'sessions' },
+            { name: 'transactions' },
+            { name: 'totalRevenue' },
+          ],
+          dimensionFilter: organicFilter,
+          orderBys: [
+            { metric: { metricName: 'totalRevenue' }, desc: true },
+          ],
+          limit: '10',
+        },
+      }),
+      data.properties.runReport({
+        property,
+        requestBody: {
+          dateRanges,
+          dimensions: [{ name: 'itemName' }],
+          metrics: [
+            { name: 'itemsPurchased' },
+            { name: 'itemRevenue' },
+          ],
+          dimensionFilter: organicFilter,
+          orderBys: [
+            { metric: { metricName: 'itemRevenue' }, desc: true },
+          ],
+          limit: '10',
+        },
+      }).catch(() => null),
+    ]);
+
+    const totalRevenue = Number(
+      overall.data.rows?.[0]?.metricValues?.[0]?.value ?? 0,
+    );
+    const orgRow = organicTotals.data.rows?.[0]?.metricValues;
+    const organicRevenue = Number(orgRow?.[0]?.value ?? 0);
+    const organicTransactions = Number(orgRow?.[1]?.value ?? 0);
+    const organicSessions = Number(orgRow?.[2]?.value ?? 0);
+
+    const topLandingPages =
+      landings.data.rows?.map((r) => ({
+        landingPage: r.dimensionValues?.[0]?.value || '(not set)',
+        sessions: Number(r.metricValues?.[0]?.value ?? 0),
+        transactions: Number(r.metricValues?.[1]?.value ?? 0),
+        revenue: Number(r.metricValues?.[2]?.value ?? 0),
+      })) || [];
+
+    const topProducts =
+      products?.data.rows?.map((r) => ({
+        itemName: r.dimensionValues?.[0]?.value || '(not set)',
+        quantity: Number(r.metricValues?.[0]?.value ?? 0),
+        revenue: Number(r.metricValues?.[1]?.value ?? 0),
+      })) || [];
+
+    return {
+      totalRevenue,
+      organicRevenue,
+      organicTransactions,
+      organicSessions,
+      organicAov:
+        organicTransactions > 0 ? organicRevenue / organicTransactions : 0,
+      organicConversionRate:
+        organicSessions > 0
+          ? (organicTransactions / organicSessions) * 100
+          : 0,
+      currency: organicTotals.data.metadata?.currencyCode || undefined,
+      topLandingPages,
+      topProducts,
+      rangeFrom: startDate,
+      rangeTo: endDate,
     };
   }
 }

@@ -116,6 +116,8 @@ export class CreateClientDto {
   @IsOptional() @IsBoolean() active?: boolean;
   @IsOptional() @IsString() ga4PropertyId?: string;
   @IsOptional() @IsString() gscSiteUrl?: string;
+  @IsOptional() @IsBoolean() isEcommerce?: boolean;
+  @IsOptional() @IsString() merchantCenterId?: string;
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

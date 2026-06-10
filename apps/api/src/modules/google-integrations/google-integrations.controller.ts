@@ -135,4 +135,16 @@ export class GoogleIntegrationsController {
       throw new BadRequestException('clientId, from, to are required');
     return this.svc.gscBreakdown(clientId, user, from, to);
   }
+
+  @Get('ga4/ecommerce')
+  async ga4Ecommerce(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('clientId') clientId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+  ) {
+    if (!clientId || !from || !to)
+      throw new BadRequestException('clientId, from, to are required');
+    return this.svc.ecommerceForClient(clientId, user, from, to);
+  }
 }

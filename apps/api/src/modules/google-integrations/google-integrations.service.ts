@@ -4,6 +4,7 @@ import { ClientsService } from '../clients/clients.service';
 import { AuthenticatedUser } from '../auth/roles.guard';
 import { Ga4Service } from './ga4.service';
 import { GscService } from './gsc.service';
+import { MerchantCenterService } from './merchant-center.service';
 
 @Injectable()
 export class GoogleIntegrationsService {
@@ -11,6 +12,7 @@ export class GoogleIntegrationsService {
     private readonly clients: ClientsService,
     private readonly gsc: GscService,
     private readonly ga4: Ga4Service,
+    private readonly merchant: MerchantCenterService,
   ) {}
 
   /**
@@ -118,11 +120,32 @@ export class GoogleIntegrationsService {
     return { topPages, byDevice, byCountry, sitemapHealth, range: { from, to } };
   }
 
+  async ecommerceForClient(
+    clientId: string,
+    user: AuthenticatedUser,
+    from: string,
+    to: string,
+  ) {
+    const client = await this.clients.findOne(clientId, user);
+    if (!client.ga4PropertyId) {
+      throw new BadRequestException(
+        'GA4 property ID is not configured for this client.',
+      );
+    }
+    return this.ga4.ecommerceMetrics(
+      user.userId,
+      client.ga4PropertyId,
+      from,
+      to,
+    );
+  }
+
   async testClientConnections(clientId: string, user: AuthenticatedUser) {
     const client = await this.clients.findOne(clientId, user);
     const result: {
       gsc: { ok: boolean; message?: string };
       ga4: { ok: boolean; message?: string };
+      merchantCenter?: { ok: boolean; message?: string };
     } = {
       gsc: { ok: false },
       ga4: { ok: false },
@@ -157,6 +180,26 @@ export class GoogleIntegrationsService {
         result.ga4.message = 'GA4 connection OK.';
       } catch (err) {
         result.ga4.message = (err as Error).message;
+      }
+    }
+
+    if (client.isEcommerce) {
+      result.merchantCenter = { ok: false };
+      if (!client.merchantCenterId) {
+        result.merchantCenter.message = 'Merchant Center ID is not set.';
+      } else {
+        try {
+          const info = await this.merchant.verifyAccess(
+            user.userId,
+            client.merchantCenterId,
+          );
+          result.merchantCenter.ok = true;
+          result.merchantCenter.message = info.name
+            ? `Connected to "${info.name}".`
+            : 'Merchant Center connection OK.';
+        } catch (err) {
+          result.merchantCenter.message = (err as Error).message;
+        }
       }
     }
 

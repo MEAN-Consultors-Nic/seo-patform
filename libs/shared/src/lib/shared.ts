@@ -168,6 +168,8 @@ export interface Client {
   active: boolean;
   ga4PropertyId?: string;
   gscSiteUrl?: string;
+  isEcommerce?: boolean;
+  merchantCenterId?: string;
   serviceAreas?: ServiceArea[];
   createdAt?: Date;
   updatedAt?: Date;

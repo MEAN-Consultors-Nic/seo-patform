@@ -9,6 +9,7 @@ import {
 import { GoogleOAuthService } from './google-oauth.service';
 import { GscService } from './gsc.service';
 import { Ga4Service } from './ga4.service';
+import { MerchantCenterService } from './merchant-center.service';
 import { GoogleIntegrationsService } from './google-integrations.service';
 import { GoogleIntegrationsController } from './google-integrations.controller';
 import { ClientsModule } from '../clients/clients.module';
@@ -28,7 +29,19 @@ import { ClientsModule } from '../clients/clients.module';
     ClientsModule,
   ],
   controllers: [GoogleIntegrationsController],
-  providers: [GoogleOAuthService, GscService, Ga4Service, GoogleIntegrationsService],
-  exports: [GoogleIntegrationsService, GoogleOAuthService, GscService, Ga4Service],
+  providers: [
+    GoogleOAuthService,
+    GscService,
+    Ga4Service,
+    MerchantCenterService,
+    GoogleIntegrationsService,
+  ],
+  exports: [
+    GoogleIntegrationsService,
+    GoogleOAuthService,
+    GscService,
+    Ga4Service,
+    MerchantCenterService,
+  ],
 })
 export class GoogleIntegrationsModule {}

@@ -12,6 +12,30 @@ export interface GoogleKpisResult {
 export interface GoogleConnectionTest {
   gsc: { ok: boolean; message?: string };
   ga4: { ok: boolean; message?: string };
+  merchantCenter?: { ok: boolean; message?: string };
+}
+
+export interface Ga4EcommerceMetrics {
+  totalRevenue: number;
+  organicRevenue: number;
+  organicTransactions: number;
+  organicSessions: number;
+  organicAov: number;
+  organicConversionRate: number;
+  currency?: string;
+  topLandingPages: Array<{
+    landingPage: string;
+    sessions: number;
+    transactions: number;
+    revenue: number;
+  }>;
+  topProducts: Array<{
+    itemName: string;
+    quantity: number;
+    revenue: number;
+  }>;
+  rangeFrom: string;
+  rangeTo: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -54,6 +78,13 @@ export class GoogleIntegrationsService {
     const qs = new URLSearchParams({ clientId, from, to });
     return this.http.get<GscBreakdown>(
       `${this.base}/google/gsc/breakdown?${qs.toString()}`,
+    );
+  }
+
+  ga4Ecommerce(clientId: string, from: string, to: string): Observable<Ga4EcommerceMetrics> {
+    const qs = new URLSearchParams({ clientId, from, to });
+    return this.http.get<Ga4EcommerceMetrics>(
+      `${this.base}/google/ga4/ecommerce?${qs.toString()}`,
     );
   }
 }

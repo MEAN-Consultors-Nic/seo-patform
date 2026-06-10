@@ -45,6 +45,20 @@ import {
         </p>
       </div>
 
+      @if (client.isEcommerce) {
+        <div>
+          <label class="label">Google Merchant Center ID</label>
+          <input class="input" [(ngModel)]="form.merchantCenterId"
+                 placeholder="123456789" />
+          <p class="text-[11px] text-ink-400 mt-1">
+            Numeric account ID — find it in
+            <a href="https://merchants.google.com" target="_blank" rel="noopener"
+               class="text-brand-500 hover:underline">Merchant Center</a>
+            top-right (next to the account name).
+          </p>
+        </div>
+      }
+
       @if (saved()) {
         <div class="text-xs text-positive-500">✓ Saved</div>
       }
@@ -82,6 +96,19 @@ import {
               <div class="text-xs text-ink-500">{{ r.ga4.message || (r.ga4.ok ? 'OK' : 'Failed') }}</div>
             </div>
           </div>
+          @if (r.merchantCenter) {
+            <div class="flex items-start gap-2">
+              <span [class]="r.merchantCenter.ok ? 'text-positive-500' : 'text-danger-500'">
+                {{ r.merchantCenter.ok ? '✓' : '✗' }}
+              </span>
+              <div>
+                <div class="text-sm text-ink-900 font-medium">Merchant Center</div>
+                <div class="text-xs text-ink-500">
+                  {{ r.merchantCenter.message || (r.merchantCenter.ok ? 'OK' : 'Failed') }}
+                </div>
+              </div>
+            </div>
+          }
         </div>
       }
     </div>
@@ -93,7 +120,7 @@ export class ClientIntegrationsTab implements OnInit {
   private clientsSvc = inject(ClientsService);
   private google = inject(GoogleIntegrationsService);
 
-  form = { gscSiteUrl: '', ga4PropertyId: '' };
+  form = { gscSiteUrl: '', ga4PropertyId: '', merchantCenterId: '' };
   saving = signal(false);
   saved = signal(false);
   error = signal<string | null>(null);
@@ -103,10 +130,15 @@ export class ClientIntegrationsTab implements OnInit {
   ngOnInit() {
     this.form.gscSiteUrl = this.client.gscSiteUrl || '';
     this.form.ga4PropertyId = this.client.ga4PropertyId || '';
+    this.form.merchantCenterId = this.client.merchantCenterId || '';
   }
 
   canTest(): boolean {
-    return !!(this.form.gscSiteUrl || this.form.ga4PropertyId);
+    return !!(
+      this.form.gscSiteUrl ||
+      this.form.ga4PropertyId ||
+      (this.client.isEcommerce && this.form.merchantCenterId)
+    );
   }
 
   save() {
@@ -117,6 +149,7 @@ export class ClientIntegrationsTab implements OnInit {
       .update(this.client._id, {
         gscSiteUrl: this.form.gscSiteUrl?.trim() || undefined,
         ga4PropertyId: this.form.ga4PropertyId?.trim() || undefined,
+        merchantCenterId: this.form.merchantCenterId?.trim() || undefined,
       })
       .subscribe({
         next: () => {
@@ -141,6 +174,7 @@ export class ClientIntegrationsTab implements OnInit {
       .update(this.client._id, {
         gscSiteUrl: this.form.gscSiteUrl?.trim() || undefined,
         ga4PropertyId: this.form.ga4PropertyId?.trim() || undefined,
+        merchantCenterId: this.form.merchantCenterId?.trim() || undefined,
       })
       .subscribe({
         next: () => {

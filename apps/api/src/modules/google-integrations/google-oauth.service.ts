@@ -17,8 +17,9 @@ import {
 
 const GSC_SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly';
 const GA4_SCOPE = 'https://www.googleapis.com/auth/analytics.readonly';
+const MERCHANT_SCOPE = 'https://www.googleapis.com/auth/content';
 const PROFILE_SCOPES = ['openid', 'email', 'profile'];
-const SCOPES = [GSC_SCOPE, GA4_SCOPE, ...PROFILE_SCOPES];
+const SCOPES = [GSC_SCOPE, GA4_SCOPE, MERCHANT_SCOPE, ...PROFILE_SCOPES];
 
 interface OAuthStatePayload {
   userId: string;
@@ -155,11 +156,23 @@ export class GoogleOAuthService {
           connectedAt: (doc as unknown as { createdAt?: Date }).createdAt,
         }
       : { connected: false };
+    const hasMerchantScope = !!doc?.scopes?.some((s) =>
+      s.includes('auth/content'),
+    );
     return {
-      // GSC and GA4 share the same OAuth credentials — connecting Google
-      // once gives the platform access to both APIs.
+      // GSC, GA4, and Merchant Center share the same OAuth credentials —
+      // connecting Google once gives the platform access to all three APIs.
       gsc: linked,
       ga4: linked,
+      merchantCenter: doc
+        ? hasMerchantScope
+          ? linked
+          : {
+              connected: false,
+              needsReconnect: true,
+              email: doc.googleEmail,
+            }
+        : { connected: false },
     };
   }
 

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, HostListener, OnInit, inject, signal } from '@angular/core';
+import { Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Client } from '@seo/shared';
@@ -17,6 +17,7 @@ import { ClientIntegrationsTab } from './tabs/integrations-tab.component';
 import { ClientGscInsightsTab } from './tabs/gsc-insights-tab.component';
 import { ClientServiceAreasTab } from './tabs/service-areas-tab.component';
 import { ClientAccessTab } from './tabs/access-tab.component';
+import { ClientEcommerceTab } from './tabs/ecommerce-tab.component';
 import { DomainInfoButtonComponent } from './domain-info-button.component';
 
 type TabKey =
@@ -32,7 +33,8 @@ type TabKey =
   | 'kpis'
   | 'integrations'
   | 'gsc-insights'
-  | 'service-areas';
+  | 'service-areas'
+  | 'ecommerce';
 
 interface TabDef {
   key: TabKey;
@@ -59,6 +61,7 @@ interface TabDef {
     ClientGscInsightsTab,
     ClientServiceAreasTab,
     ClientAccessTab,
+    ClientEcommerceTab,
     DomainInfoButtonComponent,
   ],
   template: `
@@ -100,7 +103,7 @@ interface TabDef {
         </header>
 
         <nav class="tab-bar mb-6 flex items-center gap-0 relative">
-          @for (t of primaryTabs; track t.key) {
+          @for (t of primaryTabs(); track t.key) {
             <button
               (click)="activeTab.set(t.key)"
               [class]="'tab whitespace-nowrap ' + (activeTab() === t.key ? 'tab-active' : '')">
@@ -174,6 +177,9 @@ interface TabDef {
           @case ('service-areas') {
             <app-client-service-areas-tab [client]="c" />
           }
+          @case ('ecommerce') {
+            <app-client-ecommerce-tab [client]="c" />
+          }
         }
       </div>
 
@@ -240,6 +246,12 @@ interface TabDef {
                 <label class="label">Industry</label>
                 <input class="input" [(ngModel)]="form.industry" placeholder="e.g. Storage, Logistics" />
               </div>
+              <label class="inline-flex items-center gap-2 text-sm text-ink-700 cursor-pointer select-none pt-1">
+                <input type="checkbox" class="rounded border-ink-300 text-brand-500 focus:ring-brand-500"
+                       [(ngModel)]="form.isEcommerce" />
+                <span>🛒 <strong>Ecommerce client</strong></span>
+                <span class="text-xs text-ink-400">— enables the Ecommerce performance tab and the Google Merchant Center field in Integrations</span>
+              </label>
 
               @if (dataError()) {
                 <div class="text-xs text-danger-500">{{ dataError() }}</div>
@@ -269,16 +281,22 @@ export class ClientDetailComponent implements OnInit {
   activeTab = signal<TabKey>('tasks');
   logoPreviewOk = signal<boolean | null>(null);
 
-  primaryTabs: TabDef[] = [
-    { key: 'tasks', label: 'Tasks' },
-    { key: 'content', label: 'Content' },
-    { key: 'keywords', label: 'Keywords' },
-    { key: 'positions', label: 'Position Tracker' },
-    { key: 'competitors', label: 'Competitors' },
-    { key: 'backlinks', label: 'Backlinks' },
-    { key: 'kpis', label: 'KPI History' },
-    { key: 'gsc-insights', label: 'GSC Insights' },
-  ];
+  primaryTabs = computed<TabDef[]>(() => {
+    const base: TabDef[] = [
+      { key: 'tasks', label: 'Tasks' },
+      { key: 'content', label: 'Content' },
+      { key: 'keywords', label: 'Keywords' },
+      { key: 'positions', label: 'Position Tracker' },
+      { key: 'competitors', label: 'Competitors' },
+      { key: 'backlinks', label: 'Backlinks' },
+      { key: 'kpis', label: 'KPI History' },
+      { key: 'gsc-insights', label: 'GSC Insights' },
+    ];
+    if (this.client()?.isEcommerce) {
+      base.push({ key: 'ecommerce', label: '🛒 Ecommerce' });
+    }
+    return base;
+  });
 
   overflowTabs: TabDef[] = [
     { key: 'service-areas', label: 'Service Areas' },
@@ -322,6 +340,7 @@ export class ClientDetailComponent implements OnInit {
     industry: string;
     hoursPerCycle: number;
     active: boolean;
+    isEcommerce: boolean;
   } = {
     name: '',
     tier: 'C',
@@ -330,6 +349,7 @@ export class ClientDetailComponent implements OnInit {
     industry: '',
     hoursPerCycle: 0,
     active: true,
+    isEcommerce: false,
   };
   editOpen = signal(false);
   savingData = signal(false);
@@ -352,6 +372,7 @@ export class ClientDetailComponent implements OnInit {
     this.form.industry = c.industry || '';
     this.form.hoursPerCycle = c.hoursPerCycle ?? 0;
     this.form.active = c.active ?? true;
+    this.form.isEcommerce = !!c.isEcommerce;
     this.dataError.set(null);
     this.dataSaved.set(false);
     this.editOpen.set(true);
@@ -374,6 +395,7 @@ export class ClientDetailComponent implements OnInit {
       this.form.industry = c.industry || '';
       this.form.hoursPerCycle = c.hoursPerCycle ?? 0;
       this.form.active = c.active ?? true;
+      this.form.isEcommerce = !!c.isEcommerce;
     });
   }
 
@@ -398,6 +420,7 @@ export class ClientDetailComponent implements OnInit {
         industry: this.form.industry?.trim() || undefined,
         hoursPerCycle: Number(this.form.hoursPerCycle) || 0,
         active: !!this.form.active,
+        isEcommerce: !!this.form.isEcommerce,
       })
       .subscribe({
         next: (u) => {
