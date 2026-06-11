@@ -169,6 +169,12 @@ export class Client {
   @Prop()
   merchantCenterId?: string;
 
+  @Prop()
+  shopifyShopDomain?: string;
+
+  @Prop()
+  shopifyAccessToken?: string;
+
   @Prop({ type: [ServiceAreaSchemaDef], default: [] })
   serviceAreas?: ServiceArea[];
 }

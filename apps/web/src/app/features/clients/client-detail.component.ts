@@ -18,6 +18,7 @@ import { ClientGscInsightsTab } from './tabs/gsc-insights-tab.component';
 import { ClientServiceAreasTab } from './tabs/service-areas-tab.component';
 import { ClientAccessTab } from './tabs/access-tab.component';
 import { ClientEcommerceTab } from './tabs/ecommerce-tab.component';
+import { ClientShopifyTab } from './tabs/shopify-tab.component';
 import { DomainInfoButtonComponent } from './domain-info-button.component';
 import { SchemaModelerButtonComponent } from './schema-modeler-button.component';
 
@@ -35,7 +36,8 @@ type TabKey =
   | 'integrations'
   | 'gsc-insights'
   | 'service-areas'
-  | 'ecommerce';
+  | 'ecommerce'
+  | 'shopify';
 
 interface TabDef {
   key: TabKey;
@@ -63,6 +65,7 @@ interface TabDef {
     ClientServiceAreasTab,
     ClientAccessTab,
     ClientEcommerceTab,
+    ClientShopifyTab,
     DomainInfoButtonComponent,
     SchemaModelerButtonComponent,
   ],
@@ -183,6 +186,9 @@ interface TabDef {
           @case ('ecommerce') {
             <app-client-ecommerce-tab [client]="c" />
           }
+          @case ('shopify') {
+            <app-client-shopify-tab [client]="c" />
+          }
         }
       </div>
 
@@ -297,6 +303,7 @@ export class ClientDetailComponent implements OnInit {
     ];
     if (this.client()?.isEcommerce) {
       base.push({ key: 'ecommerce', label: '🛒 Ecommerce' });
+      base.push({ key: 'shopify', label: '🛍️ Shopify' });
     }
     return base;
   });

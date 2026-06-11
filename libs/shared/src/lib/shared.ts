@@ -170,6 +170,8 @@ export interface Client {
   gscSiteUrl?: string;
   isEcommerce?: boolean;
   merchantCenterId?: string;
+  shopifyShopDomain?: string;
+  shopifyAccessToken?: string;
   serviceAreas?: ServiceArea[];
   createdAt?: Date;
   updatedAt?: Date;
@@ -543,4 +545,52 @@ export interface PublicReportPayload {
       >;
     }
   >;
+}
+
+export type ShopifyResource = 'product' | 'collection' | 'page' | 'article';
+
+export interface ShopifyResourceItem {
+  id: string;
+  handle: string;
+  title: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  status?: string;
+  updatedAt?: string;
+  onlineStoreUrl?: string;
+}
+
+export interface ShopifyConnectionInfo {
+  connected: boolean;
+  shopDomain?: string;
+  shopName?: string;
+  primaryDomain?: string;
+  error?: string;
+}
+
+export interface ShopifySeoCsvRow {
+  handle: string;
+  seoTitle?: string;
+  seoDescription?: string;
+}
+
+export interface ShopifySeoPreviewRow {
+  handle: string;
+  matched: boolean;
+  id?: string;
+  title?: string;
+  currentSeoTitle?: string;
+  currentSeoDescription?: string;
+  newSeoTitle?: string;
+  newSeoDescription?: string;
+  titleChanged: boolean;
+  descriptionChanged: boolean;
+  error?: string;
+}
+
+export interface ShopifyApplyResultRow {
+  handle: string;
+  id?: string;
+  success: boolean;
+  error?: string;
 }

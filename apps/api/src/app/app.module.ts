@@ -24,6 +24,7 @@ import { TimeBlocksModule } from '../modules/time-blocks/time-blocks.module';
 import { GoogleIntegrationsModule } from '../modules/google-integrations/google-integrations.module';
 import { DomainToolsModule } from '../modules/domain-tools/domain-tools.module';
 import { SchemaToolsModule } from '../modules/schema-tools/schema-tools.module';
+import { ShopifyModule } from '../modules/shopify/shopify.module';
 import { SeedModule } from '../seed/seed.module';
 
 @Module({
@@ -50,6 +51,7 @@ import { SeedModule } from '../seed/seed.module';
     GoogleIntegrationsModule,
     DomainToolsModule,
     SchemaToolsModule,
+    ShopifyModule,
     SeedModule,
   ],
   controllers: [AppController],
