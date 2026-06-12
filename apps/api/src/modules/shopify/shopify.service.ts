@@ -414,7 +414,7 @@ export class ShopifyService {
         `query Collections($first: Int!, $after: String, $query: String) {
           collections(first: $first, after: $after, query: $query) {
             edges { cursor node {
-              id handle title updatedAt onlineStoreUrl
+              id handle title updatedAt
               seo { title description }
             } }
             pageInfo { hasNextPage endCursor }
