@@ -5,6 +5,18 @@ import { Router, RouterLink } from '@angular/router';
 import { ClientTier, ReportKpis } from '@seo/shared';
 import { ClientsService, ClientWithStats } from '../../core/clients.service';
 import { AuthService } from '../../core/auth.service';
+import { GoogleIntegrationsService } from '../../core/google-integrations.service';
+
+function todayIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function daysAgoIso(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 type KpiFieldKey = keyof ReportKpis;
 
@@ -199,7 +211,53 @@ interface KpiField {
               </button>
             </div>
 
-            <div class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 max-h-[60vh] overflow-y-auto pr-1">
+            <!-- Auto-fetch from Google -->
+            <div class="mt-4 p-3 rounded-md border border-ink-200 bg-ink-50/50">
+              <div class="flex items-start justify-between gap-3 flex-wrap">
+                <div class="min-w-0">
+                  <div class="text-xs font-semibold text-ink-900">
+                    ⚡ Auto-fetch from Google
+                  </div>
+                  <p class="text-[11px] text-ink-500 mt-0.5">
+                    Pull GSC + GA4 metrics for the chosen range. GBP fields
+                    stay manual.
+                  </p>
+                </div>
+                <div class="flex items-end gap-2 flex-wrap">
+                  <select class="input input-sm text-xs" [ngModel]="autoFetchPreset()"
+                          (ngModelChange)="setAutoFetchPreset($event)">
+                    <option value="last28">Last 28 days</option>
+                    <option value="last90">Last 90 days</option>
+                    <option value="last180">Last 180 days</option>
+                    <option value="last365">Last 365 days</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                  @if (autoFetchPreset() === 'custom') {
+                    <input type="date" class="input input-sm text-xs" [(ngModel)]="autoFetchFrom" />
+                    <input type="date" class="input input-sm text-xs" [(ngModel)]="autoFetchTo" />
+                  }
+                  <button class="btn-primary text-xs"
+                          (click)="fetchBaselineFromGoogle()"
+                          [disabled]="autoFetching()">
+                    {{ autoFetching() ? 'Fetching…' : '⚡ Fetch' }}
+                  </button>
+                </div>
+              </div>
+              @if (autoFetchWarnings().length) {
+                <div class="mt-2 text-[11px] text-warning-500">
+                  @for (w of autoFetchWarnings(); track w) {
+                    <div>⚠ {{ w }}</div>
+                  }
+                </div>
+              }
+              @if (autoFetchSummary()) {
+                <div class="mt-2 text-[11px] text-positive-500">
+                  ✓ {{ autoFetchSummary() }}
+                </div>
+              }
+            </div>
+
+            <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 max-h-[55vh] overflow-y-auto pr-1">
               @for (f of kpiFields; track f.key) {
                 <div>
                   <label class="label flex items-center justify-between">
@@ -251,6 +309,15 @@ export class ClientsListComponent implements OnInit {
   kpisForm: Partial<Record<KpiFieldKey, number | null>> = {};
   kpisSubmitting = signal(false);
   kpisError = signal<string | null>(null);
+
+  // Auto-fetch from Google state
+  private google = inject(GoogleIntegrationsService);
+  autoFetchPreset = signal<'last28' | 'last90' | 'last180' | 'last365' | 'custom'>('last90');
+  autoFetchFrom = daysAgoIso(90);
+  autoFetchTo = todayIso();
+  autoFetching = signal(false);
+  autoFetchWarnings = signal<string[]>([]);
+  autoFetchSummary = signal<string | null>(null);
   Math = Math;
 
   kpiFields: KpiField[] = [
@@ -334,7 +401,75 @@ export class ClientsListComponent implements OnInit {
       const v = baseline[f.key];
       this.kpisForm[f.key] = typeof v === 'number' ? v : null;
     }
+    // Reset auto-fetch UI to defaults so it doesn't bleed across clients.
+    this.autoFetchPreset.set('last90');
+    this.autoFetchFrom = daysAgoIso(90);
+    this.autoFetchTo = todayIso();
+    this.autoFetchWarnings.set([]);
+    this.autoFetchSummary.set(null);
     this.kpisModalClient.set(c);
+  }
+
+  setAutoFetchPreset(
+    p: 'last28' | 'last90' | 'last180' | 'last365' | 'custom',
+  ) {
+    this.autoFetchPreset.set(p);
+    if (p === 'last28') {
+      this.autoFetchFrom = daysAgoIso(28);
+      this.autoFetchTo = todayIso();
+    } else if (p === 'last90') {
+      this.autoFetchFrom = daysAgoIso(90);
+      this.autoFetchTo = todayIso();
+    } else if (p === 'last180') {
+      this.autoFetchFrom = daysAgoIso(180);
+      this.autoFetchTo = todayIso();
+    } else if (p === 'last365') {
+      this.autoFetchFrom = daysAgoIso(365);
+      this.autoFetchTo = todayIso();
+    }
+  }
+
+  fetchBaselineFromGoogle() {
+    const c = this.kpisModalClient();
+    if (!c?._id) return;
+    if (!this.autoFetchFrom || !this.autoFetchTo) {
+      this.autoFetchWarnings.set(['Pick a from and to date.']);
+      return;
+    }
+    this.autoFetching.set(true);
+    this.autoFetchWarnings.set([]);
+    this.autoFetchSummary.set(null);
+    this.google
+      .kpisForClient(c._id, this.autoFetchFrom, this.autoFetchTo)
+      .subscribe({
+        next: (r) => {
+          // Merge: keep manual GBP values, overwrite GSC+GA4 with fresh data
+          // even if the new value is 0 (so the user sees zeroed metrics).
+          const filled: string[] = [];
+          for (const f of this.kpiFields) {
+            const v = (r.kpis as Record<string, unknown>)[f.key];
+            if (typeof v === 'number') {
+              this.kpisForm[f.key] = v;
+              filled.push(f.label);
+            }
+          }
+          this.autoFetching.set(false);
+          this.autoFetchWarnings.set(r.sources?.warnings ?? []);
+          const src: string[] = [];
+          if (r.sources?.gsc) src.push('GSC');
+          if (r.sources?.ga4) src.push('GA4');
+          this.autoFetchSummary.set(
+            `Filled ${filled.length} fields from ${src.join(' + ') || 'no sources'} (${this.autoFetchFrom} → ${this.autoFetchTo}).`,
+          );
+        },
+        error: (err) => {
+          this.autoFetching.set(false);
+          const m = err?.error?.message;
+          this.autoFetchWarnings.set([
+            Array.isArray(m) ? m.join(', ') : m || 'Could not fetch KPIs.',
+          ]);
+        },
+      });
   }
 
   closeKpisModal() {
