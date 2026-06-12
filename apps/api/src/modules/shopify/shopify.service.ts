@@ -50,6 +50,10 @@ interface SeoObject {
   description?: string | null;
 }
 
+interface MetafieldValue {
+  value?: string | null;
+}
+
 interface ResourceNode {
   id: string;
   handle: string;
@@ -58,6 +62,10 @@ interface ResourceNode {
   updatedAt?: string;
   onlineStoreUrl?: string | null;
   seo?: SeoObject;
+  // Used by Page/Article (no direct `seo` field in the Admin API — SEO
+  // lives in metafields under namespace "global").
+  seoTitleMeta?: MetafieldValue | null;
+  seoDescriptionMeta?: MetafieldValue | null;
 }
 
 interface PaginatedResource {
@@ -432,7 +440,8 @@ export class ShopifyService {
           pages(first: $first, after: $after, query: $query) {
             edges { cursor node {
               id handle title updatedAt
-              seo { title description }
+              seoTitleMeta: metafield(namespace: "global", key: "title_tag") { value }
+              seoDescriptionMeta: metafield(namespace: "global", key: "description_tag") { value }
             } }
             pageInfo { hasNextPage endCursor }
           }
@@ -449,7 +458,8 @@ export class ShopifyService {
           articles(first: $first, after: $after, query: $query) {
             edges { cursor node {
               id handle title updatedAt
-              seo { title description }
+              seoTitleMeta: metafield(namespace: "global", key: "title_tag") { value }
+              seoDescriptionMeta: metafield(namespace: "global", key: "description_tag") { value }
             } }
             pageInfo { hasNextPage endCursor }
           }
@@ -474,8 +484,14 @@ export class ShopifyService {
         status: e.node.status,
         updatedAt: e.node.updatedAt,
         onlineStoreUrl: e.node.onlineStoreUrl ?? undefined,
-        seoTitle: e.node.seo?.title ?? undefined,
-        seoDescription: e.node.seo?.description ?? undefined,
+        seoTitle:
+          e.node.seo?.title ??
+          e.node.seoTitleMeta?.value ??
+          undefined,
+        seoDescription:
+          e.node.seo?.description ??
+          e.node.seoDescriptionMeta?.value ??
+          undefined,
       })),
       hasNextPage: p.pageInfo.hasNextPage,
       endCursor: p.pageInfo.endCursor,
@@ -523,7 +539,11 @@ export class ShopifyService {
         accessToken,
         `query($q: String!) {
           pages(first: 1, query: $q) {
-            edges { node { id handle title seo { title description } } }
+            edges { node {
+              id handle title
+              seoTitleMeta: metafield(namespace: "global", key: "title_tag") { value }
+              seoDescriptionMeta: metafield(namespace: "global", key: "description_tag") { value }
+            } }
           }
         }`,
         { q: `handle:${handle}` },
@@ -536,7 +556,11 @@ export class ShopifyService {
         accessToken,
         `query($q: String!) {
           articles(first: 1, query: $q) {
-            edges { node { id handle title seo { title description } } }
+            edges { node {
+              id handle title
+              seoTitleMeta: metafield(namespace: "global", key: "title_tag") { value }
+              seoDescriptionMeta: metafield(namespace: "global", key: "description_tag") { value }
+            } }
           }
         }`,
         { q: `handle:${handle}` },
@@ -583,29 +607,58 @@ export class ShopifyService {
     };
     const cfg = mutationMap[resource];
 
-    // Pages and Articles use the newer signature: ($id: ID!, $input: XInput!)
+    // Pages and Articles have no direct `seo` field — their SEO data lives in
+    // the `global.title_tag` and `global.description_tag` metafields. We use
+    // the resource-agnostic `metafieldsSet` mutation to set them at once.
     if (resource === 'page' || resource === 'article') {
-      const query = `mutation Update($id: ID!, $input: ${cfg.inputType}!) {
-        ${cfg.name}(id: $id, ${cfg.field}: $input) {
-          ${cfg.field} { id }
-          userErrors { field message }
+      const metafields: Array<{
+        ownerId: string;
+        namespace: string;
+        key: string;
+        type: string;
+        value: string;
+      }> = [];
+      if (typeof seoTitle === 'string') {
+        metafields.push({
+          ownerId: id,
+          namespace: 'global',
+          key: 'title_tag',
+          type: 'single_line_text_field',
+          value: seoTitle,
+        });
+      }
+      if (typeof seoDescription === 'string') {
+        metafields.push({
+          ownerId: id,
+          namespace: 'global',
+          key: 'description_tag',
+          type: 'single_line_text_field',
+          value: seoDescription,
+        });
+      }
+      if (!metafields.length) {
+        return { error: 'Nothing to update' };
+      }
+      const query = `mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
+        metafieldsSet(metafields: $metafields) {
+          metafields { id }
+          userErrors { field message code }
         }
       }`;
-      const data = await this.gql<
-        Record<
-          string,
-          {
-            userErrors: Array<{ field: string[]; message: string }>;
-          } & Record<string, { id: string } | undefined>
-        >
-      >(shopDomain, accessToken, query, { id, input: { seo } });
-      const result = data[cfg.name];
-      if (result.userErrors?.length) {
-        return { error: result.userErrors.map((e) => e.message).join('; ') };
+      const data = await this.gql<{
+        metafieldsSet: {
+          metafields: Array<{ id: string }>;
+          userErrors: Array<{ field: string[]; message: string; code?: string }>;
+        };
+      }>(shopDomain, accessToken, query, { metafields });
+      if (data.metafieldsSet.userErrors?.length) {
+        return {
+          error: data.metafieldsSet.userErrors
+            .map((e) => e.message)
+            .join('; '),
+        };
       }
-      const ret = result[cfg.field] as { id: string } | undefined;
-      if (!ret?.id) return { error: 'Shopify returned empty result' };
-      return { id: ret.id };
+      return { id };
     }
 
     // Products and Collections use ($input: XInput!) with input.id
@@ -772,8 +825,10 @@ export class ShopifyService {
           });
           continue;
         }
-        const currentTitle = node.seo?.title ?? '';
-        const currentDesc = node.seo?.description ?? '';
+        const currentTitle =
+          node.seo?.title ?? node.seoTitleMeta?.value ?? '';
+        const currentDesc =
+          node.seo?.description ?? node.seoDescriptionMeta?.value ?? '';
         const newTitle = row.seoTitle;
         const newDesc = row.seoDescription;
         out.push({
