@@ -25,6 +25,7 @@ interface PublicPayload {
   report: {
     kpis: Record<string, number>;
     kpisPrevious?: Record<string, number>;
+    kpisPreviousSource?: 'previous' | 'baseline' | null;
     coverImageUrl?: string;
     executiveSummary: string | string[];
     findings: string;
@@ -320,7 +321,8 @@ interface PublicPayload {
                               </div>
                               <span class="text-[10px] text-ink-300">·</span>
                               <div class="text-[10px] text-ink-500 truncate">
-                                vs <span class="font-semibold text-ink-700">{{ formatNum(k.previous) }}</span>
+                                {{ previousLabel() }}
+                                <span class="font-semibold text-ink-700">{{ formatNum(k.previous) }}</span>
                               </div>
                             </div>
                           } @else {
@@ -1379,6 +1381,11 @@ export class PublicReportComponent implements OnInit {
     const d = this.data();
     if (!d) return false;
     return Object.values(d.report.kpis || {}).some((v) => typeof v === 'number');
+  }
+
+  previousLabel(): string {
+    const src = this.data()?.report.kpisPreviousSource;
+    return src === 'baseline' ? 'vs baseline' : 'vs';
   }
 
   kpiCards() {

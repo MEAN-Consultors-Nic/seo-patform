@@ -433,6 +433,14 @@ export interface Report {
   cycleId: string;
   kpis: ReportKpis;
   kpisPrevious?: ReportKpis;
+  /**
+   * Origin of `kpisPrevious`:
+   *  - 'previous': the KPI snapshot from the prior cycle's report
+   *  - 'baseline': the client's `baselineKpis` (used for first-period reports)
+   *  - null: no comparison data available
+   * Surfaced by getPublicPayload, not persisted on the report doc.
+   */
+  kpisPreviousSource?: 'previous' | 'baseline' | null;
   coverImageUrl?: string;
   executiveSummary: string;
   findings: string;

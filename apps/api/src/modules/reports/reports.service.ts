@@ -348,8 +348,15 @@ export class ReportsService {
         this.backlinks.summary(report.clientId.toString()),
         this.kpiHistory(report.clientId.toString(), 12),
       ]);
+
+    // If kpisPrevious is empty (typical for first-period reports created
+    // before a baseline was set), fall back to client.baselineKpis on the
+    // fly so the public report can show real deltas instead of "no previous
+    // period". We tag the source so the UI labels deltas appropriately.
+    const reportOut = this.applyKpisPreviousFallback(report, client);
+
     return {
-      report,
+      report: reportOut,
       client: {
         name: client.name,
         tier: client.tier,
@@ -536,6 +543,42 @@ export class ReportsService {
       .exec();
   }
 
+  /**
+   * Lazy fallback: when a report doc was created before the client baseline
+   * was set (so kpisPrevious is empty), surface client.baselineKpis as the
+   * comparison series on read. Stamps `kpisPreviousSource` so consumers can
+   * label the deltas as "vs baseline" instead of "vs previous period".
+   */
+  private applyKpisPreviousFallback<
+    R extends {
+      kpis?: Record<string, number>;
+      kpisPrevious?: Record<string, number>;
+    },
+  >(
+    report: R,
+    client: { baselineKpis?: Record<string, number> | unknown },
+  ): R & { kpisPreviousSource?: 'previous' | 'baseline' | null } {
+    const out = report as R & {
+      kpisPreviousSource?: 'previous' | 'baseline' | null;
+    };
+    const hasExplicitPrev =
+      out.kpisPrevious && Object.keys(out.kpisPrevious).length > 0;
+    if (hasExplicitPrev) {
+      out.kpisPreviousSource = 'previous';
+      return out;
+    }
+    const baseline = client.baselineKpis as
+      | Record<string, number>
+      | undefined;
+    if (baseline && Object.keys(baseline).length > 0) {
+      out.kpisPrevious = baseline;
+      out.kpisPreviousSource = 'baseline';
+    } else {
+      out.kpisPreviousSource = null;
+    }
+    return out;
+  }
+
   private async derivePreviousKpis(
     clientId: string,
     cycleId: string,
@@ -686,10 +729,14 @@ export class ReportsService {
       throw new NotFoundException(
         'Report for that client/cycle does not exist yet. Save it first.',
       );
+    const reportForPdf = this.applyKpisPreviousFallback(
+      report as { kpis?: Record<string, number>; kpisPrevious?: Record<string, number> },
+      client as { baselineKpis?: Record<string, number> | unknown },
+    );
     return this.pdf.generate(
       client as unknown as ClientType,
       cycle as unknown as CycleType,
-      report as unknown as ReportType,
+      reportForPdf as unknown as ReportType,
       {
         tasks: tasks as unknown as Array<{
           title: string;
