@@ -122,6 +122,18 @@ export class CreateClientDto {
   @IsOptional() @IsString() shopifyClientId?: string;
   @IsOptional() @IsString() shopifyClientSecret?: string;
   @IsOptional() @IsString() shopifyAccessToken?: string;
+  @IsOptional() @IsEnum(['shopify', 'wordpress', 'custom']) websitePlatform?:
+    | 'shopify'
+    | 'wordpress'
+    | 'custom';
+  @IsOptional() @IsString() wordpressSiteUrl?: string;
+  @IsOptional() @IsString() wordpressUsername?: string;
+  @IsOptional() @IsString() wordpressAppPassword?: string;
+  @IsOptional() @IsEnum(['yoast', 'rankmath', 'aioseo', 'native']) wordpressSeoPlugin?:
+    | 'yoast'
+    | 'rankmath'
+    | 'aioseo'
+    | 'native';
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

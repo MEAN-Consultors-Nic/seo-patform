@@ -181,6 +181,27 @@ export class Client {
   @Prop()
   shopifyAccessToken?: string;
 
+  @Prop({
+    type: String,
+    enum: ['shopify', 'wordpress', 'custom'],
+  })
+  websitePlatform?: 'shopify' | 'wordpress' | 'custom';
+
+  @Prop()
+  wordpressSiteUrl?: string;
+
+  @Prop()
+  wordpressUsername?: string;
+
+  @Prop()
+  wordpressAppPassword?: string;
+
+  @Prop({
+    type: String,
+    enum: ['yoast', 'rankmath', 'aioseo', 'native'],
+  })
+  wordpressSeoPlugin?: 'yoast' | 'rankmath' | 'aioseo' | 'native';
+
   @Prop({ type: [ServiceAreaSchemaDef], default: [] })
   serviceAreas?: ServiceArea[];
 }

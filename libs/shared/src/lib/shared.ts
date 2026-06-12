@@ -174,6 +174,11 @@ export interface Client {
   shopifyClientId?: string;
   shopifyClientSecret?: string;
   shopifyAccessToken?: string;
+  websitePlatform?: WebsitePlatform;
+  wordpressSiteUrl?: string;
+  wordpressUsername?: string;
+  wordpressAppPassword?: string;
+  wordpressSeoPlugin?: WordpressSeoPlugin;
   serviceAreas?: ServiceArea[];
   createdAt?: Date;
   updatedAt?: Date;
@@ -560,6 +565,66 @@ export interface ShopifyResourceItem {
   status?: string;
   updatedAt?: string;
   onlineStoreUrl?: string;
+}
+
+export type WebsitePlatform = 'shopify' | 'wordpress' | 'custom';
+
+export type WordpressSeoPlugin = 'yoast' | 'rankmath' | 'aioseo' | 'native';
+
+export interface WordpressPostType {
+  slug: string;
+  name: string;
+  restBase: string;
+  hierarchical?: boolean;
+  builtin?: boolean;
+}
+
+export interface WordpressResourceItem {
+  id: number;
+  slug: string;
+  title: string;
+  link?: string;
+  status?: string;
+  modified?: string;
+  postType: string;
+  seoTitle?: string;
+  seoDescription?: string;
+}
+
+export interface WordpressConnectionInfo {
+  connected: boolean;
+  siteUrl?: string;
+  siteName?: string;
+  user?: string;
+  seoPlugin?: WordpressSeoPlugin;
+  error?: string;
+}
+
+export interface WordpressSeoCsvRow {
+  slug: string;
+  seoTitle?: string;
+  seoDescription?: string;
+}
+
+export interface WordpressSeoPreviewRow {
+  slug: string;
+  matched: boolean;
+  id?: number;
+  title?: string;
+  currentSeoTitle?: string;
+  currentSeoDescription?: string;
+  newSeoTitle?: string;
+  newSeoDescription?: string;
+  titleChanged: boolean;
+  descriptionChanged: boolean;
+  error?: string;
+}
+
+export interface WordpressApplyResultRow {
+  slug: string;
+  id?: number;
+  success: boolean;
+  error?: string;
 }
 
 export type ShopifyAuthMode = 'oauth-client-credentials' | 'legacy-token';

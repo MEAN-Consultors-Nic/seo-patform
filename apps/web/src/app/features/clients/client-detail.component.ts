@@ -19,6 +19,7 @@ import { ClientServiceAreasTab } from './tabs/service-areas-tab.component';
 import { ClientAccessTab } from './tabs/access-tab.component';
 import { ClientEcommerceTab } from './tabs/ecommerce-tab.component';
 import { ClientShopifyTab } from './tabs/shopify-tab.component';
+import { ClientWordpressTab } from './tabs/wordpress-tab.component';
 import { DomainInfoButtonComponent } from './domain-info-button.component';
 import { SchemaModelerButtonComponent } from './schema-modeler-button.component';
 
@@ -37,7 +38,8 @@ type TabKey =
   | 'gsc-insights'
   | 'service-areas'
   | 'ecommerce'
-  | 'shopify';
+  | 'shopify'
+  | 'wordpress';
 
 interface TabDef {
   key: TabKey;
@@ -66,6 +68,7 @@ interface TabDef {
     ClientAccessTab,
     ClientEcommerceTab,
     ClientShopifyTab,
+    ClientWordpressTab,
     DomainInfoButtonComponent,
     SchemaModelerButtonComponent,
   ],
@@ -189,6 +192,9 @@ interface TabDef {
           @case ('shopify') {
             <app-client-shopify-tab [client]="c" />
           }
+          @case ('wordpress') {
+            <app-client-wordpress-tab [client]="c" />
+          }
         }
       </div>
 
@@ -255,6 +261,20 @@ interface TabDef {
                 <label class="label">Industry</label>
                 <input class="input" [(ngModel)]="form.industry" placeholder="e.g. Storage, Logistics" />
               </div>
+              <div>
+                <label class="label">Website platform</label>
+                <select class="input" [(ngModel)]="form.websitePlatform">
+                  <option value="">— Unspecified —</option>
+                  <option value="shopify">🛍️ Shopify</option>
+                  <option value="wordpress">📝 WordPress</option>
+                  <option value="custom">⚙️ Custom / Other</option>
+                </select>
+                <p class="text-[11px] text-ink-400 mt-1">
+                  Enables the platform-specific tab (Shopify or WordPress) with
+                  page browsing and bulk meta tag updates. "Custom / Other" is
+                  informational only.
+                </p>
+              </div>
               <label class="inline-flex items-center gap-2 text-sm text-ink-700 cursor-pointer select-none pt-1">
                 <input type="checkbox" class="rounded border-ink-300 text-brand-500 focus:ring-brand-500"
                        [(ngModel)]="form.isEcommerce" />
@@ -301,9 +321,20 @@ export class ClientDetailComponent implements OnInit {
       { key: 'kpis', label: 'KPI History' },
       { key: 'gsc-insights', label: 'GSC Insights' },
     ];
-    if (this.client()?.isEcommerce) {
+    const c = this.client();
+    if (c?.isEcommerce) {
       base.push({ key: 'ecommerce', label: '🛒 Ecommerce' });
+    }
+    // Platform-specific tab appears based on the websitePlatform field. We
+    // also fall back to the legacy `isEcommerce` flag so existing ecommerce
+    // clients still see the Shopify tab without needing to set the platform.
+    if (
+      c?.websitePlatform === 'shopify' ||
+      (!c?.websitePlatform && c?.isEcommerce)
+    ) {
       base.push({ key: 'shopify', label: '🛍️ Shopify' });
+    } else if (c?.websitePlatform === 'wordpress') {
+      base.push({ key: 'wordpress', label: '📝 WordPress' });
     }
     return base;
   });
@@ -351,6 +382,7 @@ export class ClientDetailComponent implements OnInit {
     hoursPerCycle: number;
     active: boolean;
     isEcommerce: boolean;
+    websitePlatform: '' | 'shopify' | 'wordpress' | 'custom';
   } = {
     name: '',
     tier: 'C',
@@ -360,6 +392,7 @@ export class ClientDetailComponent implements OnInit {
     hoursPerCycle: 0,
     active: true,
     isEcommerce: false,
+    websitePlatform: '',
   };
   editOpen = signal(false);
   savingData = signal(false);
@@ -383,6 +416,7 @@ export class ClientDetailComponent implements OnInit {
     this.form.hoursPerCycle = c.hoursPerCycle ?? 0;
     this.form.active = c.active ?? true;
     this.form.isEcommerce = !!c.isEcommerce;
+    this.form.websitePlatform = (c.websitePlatform as '' | 'shopify' | 'wordpress' | 'custom') || '';
     this.dataError.set(null);
     this.dataSaved.set(false);
     this.editOpen.set(true);
@@ -406,6 +440,7 @@ export class ClientDetailComponent implements OnInit {
       this.form.hoursPerCycle = c.hoursPerCycle ?? 0;
       this.form.active = c.active ?? true;
       this.form.isEcommerce = !!c.isEcommerce;
+      this.form.websitePlatform = (c.websitePlatform as '' | 'shopify' | 'wordpress' | 'custom') || '';
     });
   }
 
@@ -431,6 +466,7 @@ export class ClientDetailComponent implements OnInit {
         hoursPerCycle: Number(this.form.hoursPerCycle) || 0,
         active: !!this.form.active,
         isEcommerce: !!this.form.isEcommerce,
+        websitePlatform: this.form.websitePlatform || undefined,
       })
       .subscribe({
         next: (u) => {

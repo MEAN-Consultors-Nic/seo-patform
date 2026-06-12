@@ -10,38 +10,30 @@ import {
 import { FormsModule } from '@angular/forms';
 import {
   Client,
-  ShopifyApplyResultRow,
-  ShopifyAuthMode,
-  ShopifyConnectionInfo,
-  ShopifyResource,
-  ShopifyResourceItem,
-  ShopifySeoPreviewRow,
   Task,
   TaskStatus,
+  WordpressApplyResultRow,
+  WordpressConnectionInfo,
+  WordpressPostType,
+  WordpressResourceItem,
+  WordpressSeoPlugin,
+  WordpressSeoPreviewRow,
 } from '@seo/shared';
 import { ClientsService } from '../../../core/clients.service';
-import { ShopifyService } from '../../../core/shopify.service';
 import { TasksService } from '../../../core/tasks.service';
-
-type ResourceTabKey = ShopifyResource;
-
-interface ResourceTabDef {
-  key: ResourceTabKey;
-  label: string;
-}
+import { WordpressService } from '../../../core/wordpress.service';
 
 type HealthKey = 'good' | 'partial' | 'empty';
-
 type CharHealth = 'good' | 'warn' | 'neutral';
 
 interface TrackContext {
-  item: ShopifyResourceItem;
+  item: WordpressResourceItem;
   pageUrl: string;
   subtaskTitle: string;
 }
 
 @Component({
-  selector: 'app-client-shopify-tab',
+  selector: 'app-client-wordpress-tab',
   standalone: true,
   imports: [CommonModule, FormsModule, DecimalPipe],
   template: `
@@ -50,11 +42,11 @@ interface TrackContext {
       <div class="card">
         <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
           <div>
-            <h2 class="text-base font-semibold text-ink-900">🛍️ Shopify</h2>
+            <h2 class="text-base font-semibold text-ink-900">📝 WordPress</h2>
             <p class="text-xs text-ink-500 mt-0.5 max-w-2xl">
-              Connect this client's Shopify store via a Custom App access token.
-              Lets us read product/collection/page/article SEO and apply bulk
-              meta tag updates from a CSV.
+              Read &amp; update meta tags on pages, posts, and custom post
+              types via the WordPress REST API. Authentication uses
+              Application Passwords (built in to WordPress 5.6+).
             </p>
           </div>
           <div class="flex items-center gap-2">
@@ -84,90 +76,55 @@ interface TrackContext {
         @if (settingsOpen()) {
           <div class="mt-4 border-t border-ink-100 pt-4 space-y-3">
             <div>
-              <label class="label">Shop domain</label>
+              <label class="label">Site URL</label>
               <input class="input"
-                     [(ngModel)]="settingsForm.shopDomain"
-                     placeholder="acme-store.myshopify.com" />
+                     [(ngModel)]="settingsForm.siteUrl"
+                     placeholder="https://example.com" />
               <p class="text-[11px] text-ink-400 mt-1">
-                The <code class="bg-ink-100 px-1 rounded">*.myshopify.com</code>
-                domain (not the storefront domain).
+                The site's WordPress root. REST API must be reachable at
+                <code class="bg-ink-100 px-1 rounded">{{ '{site}/wp-json' }}</code>.
               </p>
             </div>
 
-            <!-- Mode tabs -->
-            <div class="flex items-center gap-1 border-b border-ink-100">
-              <button type="button"
-                      class="px-3 py-1.5 text-xs font-semibold border-b-2 transition"
-                      [class.border-brand-500]="authMode() === 'oauth-client-credentials'"
-                      [class.text-brand-500]="authMode() === 'oauth-client-credentials'"
-                      [class.border-transparent]="authMode() !== 'oauth-client-credentials'"
-                      [class.text-ink-500]="authMode() !== 'oauth-client-credentials'"
-                      (click)="authMode.set('oauth-client-credentials')">
-                Dev Dashboard (recommended)
-              </button>
-              <button type="button"
-                      class="px-3 py-1.5 text-xs font-semibold border-b-2 transition"
-                      [class.border-brand-500]="authMode() === 'legacy-token'"
-                      [class.text-brand-500]="authMode() === 'legacy-token'"
-                      [class.border-transparent]="authMode() !== 'legacy-token'"
-                      [class.text-ink-500]="authMode() !== 'legacy-token'"
-                      (click)="authMode.set('legacy-token')">
-                Legacy token
-              </button>
-            </div>
-
-            @if (authMode() === 'oauth-client-credentials') {
-              <div class="bg-ink-50 border border-ink-200 rounded p-3 text-[11px] text-ink-600">
-                Shopify deprecated legacy Custom Apps on Jan 1, 2026. New apps are
-                built in <strong>Dev Dashboard</strong> and authenticate via OAuth
-                client credentials. The platform exchanges
-                <code class="bg-ink-100 px-1 rounded">client_id</code> +
-                <code class="bg-ink-100 px-1 rounded">client_secret</code> for a
-                24h access token automatically and refreshes it on demand.
-                <br /><br />
-                ⚠ <strong>Same organization required:</strong> the app and the store
-                must belong to the same Shopify organization in Dev Dashboard.
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label class="label">Client ID</label>
-                  <input class="input font-mono text-xs"
-                         autocomplete="off"
-                         [(ngModel)]="settingsForm.clientId"
-                         placeholder="8cca07893f13fc65e5f23727a5b2b288" />
-                  <p class="text-[11px] text-ink-400 mt-1">
-                    Dev Dashboard → your app → <em>Settings</em> → Credentials.
-                  </p>
-                </div>
-                <div>
-                  <label class="label">Client Secret</label>
-                  <input class="input font-mono text-xs"
-                         type="password"
-                         autocomplete="off"
-                         [(ngModel)]="settingsForm.clientSecret"
-                         placeholder="••••••••••••" />
-                  <p class="text-[11px] text-ink-400 mt-1">
-                    Required scopes (configure in the app):
-                    <code class="bg-ink-100 px-1 rounded">read_products write_products read_content write_content</code>.
-                  </p>
-                </div>
-              </div>
-            } @else {
-              <div class="bg-warning-50 border border-warning-500/40 rounded p-3 text-[11px] text-ink-700">
-                Use this only if the store has an <strong>existing</strong>
-                legacy custom app with a <code class="bg-ink-100 px-1 rounded">shpat_</code>
-                token. Shopify no longer lets you create new ones (deprecated
-                Jan 1, 2026).
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="label">Username</label>
+                <input class="input"
+                       autocomplete="off"
+                       [(ngModel)]="settingsForm.username"
+                       placeholder="admin" />
+                <p class="text-[11px] text-ink-400 mt-1">
+                  A WP user with Editor+ role on the target post types.
+                </p>
               </div>
               <div>
-                <label class="label">Admin API access token</label>
+                <label class="label">Application Password</label>
                 <input class="input font-mono text-xs"
                        type="password"
                        autocomplete="off"
-                       [(ngModel)]="settingsForm.accessToken"
-                       placeholder="shpat_••••••••••••" />
+                       [(ngModel)]="settingsForm.appPassword"
+                       placeholder="AbCd EfGh IjKl MnOp QrSt UvWx" />
+                <p class="text-[11px] text-ink-400 mt-1">
+                  Generated in <em>WP Admin → Users → Profile → Application
+                  Passwords</em>. Spaces are OK.
+                </p>
               </div>
-            }
+            </div>
+
+            <div>
+              <label class="label">SEO plugin</label>
+              <select class="input" [(ngModel)]="settingsForm.seoPlugin">
+                <option value="yoast">Yoast SEO</option>
+                <option value="rankmath">Rank Math</option>
+                <option value="aioseo">All-in-One SEO (AIOSEO)</option>
+                <option value="native">None (WP native — read only)</option>
+              </select>
+              <p class="text-[11px] text-ink-400 mt-1">
+                Tells the platform where to read &amp; write the SEO title and
+                meta description. The plugin must register its meta in REST
+                (Yoast/RankMath/AIOSEO recent versions all do this).
+              </p>
+            </div>
 
             @if (settingsError()) {
               <div class="text-xs text-danger-500">{{ settingsError() }}</div>
@@ -175,13 +132,10 @@ interface TrackContext {
             @if (rawTestResult(); as r) {
               @if (r.connected) {
                 <div class="text-xs text-positive-500">
-                  ✓ Connection test passed —
-                  <strong>{{ r.shopName }}</strong>
-                  ({{ r.shopDomain }})
-                  @if (r.primaryDomain) { · {{ r.primaryDomain }} }
-                  @if (r.authMode === 'oauth-client-credentials') {
-                    · <span class="text-ink-500">OAuth token refreshes every 24h</span>
-                  }
+                  ✓ Connection test passed
+                  @if (r.siteName) { — <strong>{{ r.siteName }}</strong> }
+                  @if (r.user) { · user <strong>{{ r.user }}</strong> }
+                  @if (r.seoPlugin) { · plugin <strong>{{ r.seoPlugin }}</strong> }
                 </div>
               } @else {
                 <div class="text-xs text-danger-500">✗ {{ r.error }}</div>
@@ -203,14 +157,9 @@ interface TrackContext {
         @if (connStatus(); as cs) {
           @if (cs.connected) {
             <div class="mt-3 text-xs text-ink-500">
-              Connected to <strong>{{ cs.shopName }}</strong>
-              · myshopify: <code>{{ cs.shopDomain }}</code>
-              @if (cs.primaryDomain) { · primary: <code>{{ cs.primaryDomain }}</code> }
-              @if (cs.authMode === 'oauth-client-credentials') {
-                · <span class="text-positive-500">Dev Dashboard OAuth</span>
-              } @else if (cs.authMode === 'legacy-token') {
-                · <span class="text-warning-500">legacy token</span>
-              }
+              Connected to <strong>{{ cs.siteName || cs.siteUrl }}</strong>
+              @if (cs.user) { · user <code>{{ cs.user }}</code> }
+              @if (cs.seoPlugin) { · plugin <code>{{ cs.seoPlugin }}</code> }
             </div>
           } @else if (cs.error) {
             <div class="mt-3 text-xs text-danger-500">⚠ {{ cs.error }}</div>
@@ -220,24 +169,27 @@ interface TrackContext {
 
       @if (!hasAnyCredentials() || !connStatus()?.connected) {
         <div class="card text-center py-10 text-ink-400 italic text-sm">
-          Configure and test the Shopify credentials above to enable browsing
-          and bulk SEO updates.
+          Configure and test the WordPress credentials above to enable
+          browsing and bulk SEO updates.
         </div>
       } @else {
-        <!-- Resource tabs + list + bulk action -->
         <div class="card">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-ink-100 pb-3 mb-3">
             <div class="flex flex-wrap items-center gap-1">
-              @for (t of resourceTabs; track t.key) {
-                <button
-                  class="px-3 py-1.5 text-xs font-semibold rounded transition"
-                  [class.bg-brand-500]="activeResource() === t.key"
-                  [class.text-white]="activeResource() === t.key"
-                  [class.bg-ink-100]="activeResource() !== t.key"
-                  [class.text-ink-700]="activeResource() !== t.key"
-                  (click)="selectResource(t.key)">
-                  {{ t.label }}
-                </button>
+              @if (loadingTypes()) {
+                <span class="text-xs text-ink-400 italic">Loading post types…</span>
+              } @else {
+                @for (t of postTypes(); track t.slug) {
+                  <button
+                    class="px-3 py-1.5 text-xs font-semibold rounded transition"
+                    [class.bg-brand-500]="activePostType() === t.slug"
+                    [class.text-white]="activePostType() === t.slug"
+                    [class.bg-ink-100]="activePostType() !== t.slug"
+                    [class.text-ink-700]="activePostType() !== t.slug"
+                    (click)="selectPostType(t.slug)">
+                    {{ typeLabel(t) }}
+                  </button>
+                }
               }
             </div>
             <div class="flex items-center gap-2">
@@ -246,17 +198,26 @@ interface TrackContext {
                      [(ngModel)]="searchTerm"
                      (keyup.enter)="reload()" />
               <button class="btn-secondary text-xs" (click)="reload()"
-                      [disabled]="loadingList()">
+                      [disabled]="loadingList() || !activePostType()">
                 {{ loadingList() ? 'Loading…' : '⚡ Refresh' }}
               </button>
-              <button class="btn-primary text-xs" (click)="openCsv()">
+              <button class="btn-primary text-xs" (click)="openCsv()"
+                      [disabled]="!activePostType() || pluginIsNative()">
                 📤 Upload CSV
               </button>
             </div>
           </div>
 
+          @if (pluginIsNative()) {
+            <div class="mb-3 p-3 rounded bg-warning-50 border border-warning-500/40 text-[11px] text-ink-700">
+              SEO plugin is set to <strong>None (native WP)</strong> — you
+              can browse posts but meta tag editing is disabled. Install
+              Yoast, RankMath, or AIOSEO and update the plugin selector.
+            </div>
+          }
+
           <!-- Health filter chips -->
-          @if (items().length > 0) {
+          @if (items().length > 0 && !pluginIsNative()) {
             <div class="flex flex-wrap items-center gap-1 mb-3">
               <span class="text-[10px] uppercase tracking-wider text-ink-500 font-bold mr-1">
                 Filter:
@@ -292,21 +253,21 @@ interface TrackContext {
           @if (loadingList()) {
             <div class="text-center py-10 text-ink-400 italic text-sm">
               <div class="inline-block animate-spin mr-2">⏳</div>
-              Loading {{ activeResource() }}s from Shopify…
+              Loading {{ activePostType() }}s from WordPress…
             </div>
           } @else if (items().length === 0) {
             <div class="text-center py-10 text-ink-400 italic text-sm">
-              No {{ activeResource() }}s found.
+              No items found.
             </div>
           } @else if (filteredItems().length === 0) {
             <div class="text-center py-10 text-ink-400 italic text-sm">
-              No {{ activeResource() }}s match the selected health filters.
+              No items match the selected health filters.
             </div>
           } @else {
             <table class="w-full text-sm">
               <thead class="border-b border-ink-100">
                 <tr class="text-left text-[10px] uppercase tracking-wider text-ink-500">
-                  <th class="py-2 pr-2 font-bold">Title / handle</th>
+                  <th class="py-2 pr-2 font-bold">Title / slug</th>
                   <th class="py-2 px-2 font-bold">SEO title</th>
                   <th class="py-2 px-2 font-bold">SEO description</th>
                   <th class="py-2 px-2 font-bold">Health</th>
@@ -320,7 +281,7 @@ interface TrackContext {
                       <div class="text-ink-900 font-medium truncate max-w-[260px]"
                            [title]="item.title">{{ item.title }}</div>
                       <div class="font-mono text-[11px] text-ink-400 truncate max-w-[260px]"
-                           [title]="item.handle">{{ item.handle }}</div>
+                           [title]="item.slug">{{ item.slug }}</div>
                     </td>
                     <td class="py-2 px-2 align-top">
                       @if (item.seoTitle) {
@@ -355,6 +316,7 @@ interface TrackContext {
                         🔍 Test
                       </button>
                       <button class="btn-secondary text-[11px] !py-1 !px-2"
+                              [disabled]="pluginIsNative()"
                               (click)="openEdit(item)">
                         ✎ Edit
                       </button>
@@ -369,8 +331,9 @@ interface TrackContext {
                 {{ filteredItems().length }} shown
                 @if (activeHealth().size > 0) { · of {{ items().length }} loaded }
                 @if (activeHealth().size === 0) { · {{ items().length }} loaded }
+                @if (totalPages() > 1) { · page {{ currentPage() }} / {{ totalPages() }} }
               </span>
-              @if (hasNextPage()) {
+              @if (currentPage() < totalPages()) {
                 <button class="btn-secondary text-xs" (click)="loadMore()"
                         [disabled]="loadingList()">
                   Load more →
@@ -391,18 +354,16 @@ interface TrackContext {
           <div class="flex items-start justify-between mb-4">
             <div>
               <h2 class="text-lg font-bold text-ink-900">
-                Bulk SEO update — {{ activeResource() }}s
+                Bulk SEO update — {{ activePostType() }}
               </h2>
               <p class="text-xs text-ink-500 mt-0.5">
-                CSV with header row: <code class="bg-ink-100 px-1 rounded">handle, seo_title, seo_description</code>.
-                Empty cells skip that field.
+                CSV with header row: <code class="bg-ink-100 px-1 rounded">slug, seo_title, seo_description</code>.
               </p>
             </div>
             <button type="button" (click)="closeCsv()"
                     class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
           </div>
 
-          <!-- Step 1: upload -->
           @if (csvStep() === 'upload') {
             <div class="space-y-3">
               <div class="border-2 border-dashed border-ink-200 rounded-lg p-6 text-center">
@@ -425,7 +386,7 @@ interface TrackContext {
                 <label class="label">Or paste CSV here</label>
                 <textarea class="input font-mono text-xs h-40"
                           [(ngModel)]="csvText"
-                          placeholder="handle,seo_title,seo_description&#10;my-product-1,New SEO title,New SEO description"></textarea>
+                          placeholder="slug,seo_title,seo_description&#10;my-page,New SEO title,New SEO description"></textarea>
               </div>
               @if (csvError()) {
                 <div class="text-xs text-danger-500">{{ csvError() }}</div>
@@ -440,32 +401,23 @@ interface TrackContext {
             </div>
           }
 
-          <!-- Step 2: preview/diff -->
           @if (csvStep() === 'preview') {
             <div class="space-y-3">
               <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div class="card !p-3">
-                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-0.5">
-                    Total rows
-                  </div>
+                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-0.5">Total rows</div>
                   <div class="text-xl font-black text-ink-900">{{ preview().length }}</div>
                 </div>
                 <div class="card !p-3">
-                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-0.5">
-                    Matched
-                  </div>
+                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-0.5">Matched</div>
                   <div class="text-xl font-black text-positive-500">{{ matchedCount() }}</div>
                 </div>
                 <div class="card !p-3">
-                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-0.5">
-                    Not found
-                  </div>
+                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-0.5">Not found</div>
                   <div class="text-xl font-black text-danger-500">{{ notFoundCount() }}</div>
                 </div>
                 <div class="card !p-3">
-                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-0.5">
-                    Will change
-                  </div>
+                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-0.5">Will change</div>
                   <div class="text-xl font-black text-ink-900">{{ willChangeCount() }}</div>
                 </div>
               </div>
@@ -486,28 +438,27 @@ interface TrackContext {
                                (change)="toggleAll($event)"
                                class="rounded border-ink-300 text-brand-500 focus:ring-brand-500" />
                       </th>
-                      <th class="py-1.5 px-2 font-bold">Handle</th>
+                      <th class="py-1.5 px-2 font-bold">Slug</th>
                       <th class="py-1.5 px-2 font-bold">Current → New title</th>
                       <th class="py-1.5 px-2 font-bold">Current → New description</th>
                       <th class="py-1.5 px-2 font-bold">Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    @for (row of filteredPreview(); track row.handle) {
+                    @for (row of filteredPreview(); track row.slug) {
                       <tr class="border-t border-ink-100"
                           [class.bg-danger-50]="!row.matched">
                         <td class="py-1.5 px-2 align-top">
                           <input type="checkbox"
                                  [disabled]="!row.matched || (!row.titleChanged && !row.descriptionChanged)"
-                                 [checked]="selected().has(row.handle)"
-                                 (change)="toggleRow(row.handle, $event)"
+                                 [checked]="selected().has(row.slug)"
+                                 (change)="toggleRow(row.slug, $event)"
                                  class="rounded border-ink-300 text-brand-500 focus:ring-brand-500" />
                         </td>
                         <td class="py-1.5 px-2 font-mono text-[11px] text-ink-700 align-top">
-                          {{ row.handle }}
+                          {{ row.slug }}
                           @if (row.title) {
-                            <div class="text-ink-400 text-[10px] mt-0.5"
-                                 [title]="row.title">
+                            <div class="text-ink-400 text-[10px] mt-0.5" [title]="row.title">
                               {{ truncate(row.title, 30) }}
                             </div>
                           }
@@ -558,13 +509,9 @@ interface TrackContext {
               </div>
 
               <div class="flex justify-between items-center pt-2 border-t border-ink-100">
-                <button class="btn-secondary text-xs" (click)="csvStep.set('upload')">
-                  ← Back
-                </button>
+                <button class="btn-secondary text-xs" (click)="csvStep.set('upload')">← Back</button>
                 <div class="flex items-center gap-3">
-                  <span class="text-xs text-ink-500">
-                    {{ selected().size }} selected
-                  </span>
+                  <span class="text-xs text-ink-500">{{ selected().size }} selected</span>
                   <button class="btn-primary"
                           (click)="runApply()"
                           [disabled]="applying() || selected().size === 0">
@@ -575,44 +522,35 @@ interface TrackContext {
             </div>
           }
 
-          <!-- Step 3: results -->
           @if (csvStep() === 'results') {
             <div class="space-y-3">
               <div class="grid grid-cols-3 gap-3">
                 <div class="card !p-3">
-                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-0.5">
-                    Total
-                  </div>
+                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-0.5">Total</div>
                   <div class="text-xl font-black text-ink-900">{{ results().length }}</div>
                 </div>
                 <div class="card !p-3">
-                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-0.5">
-                    Success
-                  </div>
+                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-0.5">Success</div>
                   <div class="text-xl font-black text-positive-500">{{ successCount() }}</div>
                 </div>
                 <div class="card !p-3">
-                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-0.5">
-                    Failed
-                  </div>
+                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-0.5">Failed</div>
                   <div class="text-xl font-black text-danger-500">{{ failedCount() }}</div>
                 </div>
               </div>
-
               <div class="border border-ink-200 rounded overflow-hidden max-h-[50vh] overflow-y-auto">
                 <table class="w-full text-xs">
                   <thead class="bg-ink-50 sticky top-0">
                     <tr class="text-left text-[10px] uppercase tracking-wider text-ink-500">
-                      <th class="py-1.5 px-2 font-bold">Handle</th>
+                      <th class="py-1.5 px-2 font-bold">Slug</th>
                       <th class="py-1.5 px-2 font-bold">Result</th>
                       <th class="py-1.5 px-2 font-bold">Details</th>
                     </tr>
                   </thead>
                   <tbody>
-                    @for (r of results(); track r.handle) {
-                      <tr class="border-t border-ink-100"
-                          [class.bg-danger-50]="!r.success">
-                        <td class="py-1.5 px-2 font-mono text-[11px]">{{ r.handle }}</td>
+                    @for (r of results(); track r.slug) {
+                      <tr class="border-t border-ink-100" [class.bg-danger-50]="!r.success">
+                        <td class="py-1.5 px-2 font-mono text-[11px]">{{ r.slug }}</td>
                         <td class="py-1.5 px-2">
                           @if (r.success) {
                             <span class="text-positive-500 font-semibold">✓ updated</span>
@@ -626,14 +564,9 @@ interface TrackContext {
                   </tbody>
                 </table>
               </div>
-
               <div class="flex justify-end gap-2 pt-2 border-t border-ink-100">
-                <button class="btn-secondary" (click)="restartCsv()">
-                  Run another batch
-                </button>
-                <button class="btn-primary" (click)="closeCsv(); reload()">
-                  Done
-                </button>
+                <button class="btn-secondary" (click)="restartCsv()">Run another batch</button>
+                <button class="btn-primary" (click)="closeCsv(); reload()">Done</button>
               </div>
             </div>
           }
@@ -650,15 +583,13 @@ interface TrackContext {
           <div class="flex items-start justify-between mb-4">
             <div>
               <h2 class="text-lg font-bold text-ink-900">
-                Edit meta tags — {{ activeResource() }}
+                Edit meta tags — {{ activePostType() }}
               </h2>
-              <p class="text-xs text-ink-500 mt-0.5">
-                {{ item.title }}
-              </p>
+              <p class="text-xs text-ink-500 mt-0.5">{{ item.title }}</p>
               <p class="font-mono text-[11px] text-ink-400 mt-0.5">
-                {{ item.handle }}
-                @if (item.onlineStoreUrl) {
-                  · <a [href]="item.onlineStoreUrl" target="_blank" rel="noopener"
+                {{ item.slug }}
+                @if (item.link) {
+                  · <a [href]="item.link" target="_blank" rel="noopener"
                        class="text-brand-500 hover:underline">View live ↗</a>
                 }
               </p>
@@ -676,9 +607,7 @@ interface TrackContext {
                       [class.text-warning-500]="editTitleHealth() === 'warn'"
                       [class.text-ink-400]="editTitleHealth() === 'neutral'">
                   {{ editForm.seoTitle.length }} chars
-                  @if (editTitleHealth() === 'warn') {
-                    · target 30–60
-                  }
+                  @if (editTitleHealth() === 'warn') { · target 30–60 }
                 </span>
               </div>
               <input class="input" [(ngModel)]="editForm.seoTitle"
@@ -698,9 +627,7 @@ interface TrackContext {
                       [class.text-warning-500]="editDescHealth() === 'warn'"
                       [class.text-ink-400]="editDescHealth() === 'neutral'">
                   {{ editForm.seoDescription.length }} chars
-                  @if (editDescHealth() === 'warn') {
-                    · target 120–160
-                  }
+                  @if (editDescHealth() === 'warn') { · target 120–160 }
                 </span>
               </div>
               <textarea class="input h-20"
@@ -719,7 +646,7 @@ interface TrackContext {
 
             <div class="bg-ink-50 border border-ink-200 rounded p-3 text-[11px] text-ink-600">
               💡 After saving, you'll be prompted to log this change as a
-              subtask on one of this client's tasks for audit trail.
+              subtask on one of this client's tasks.
             </div>
           </div>
 
@@ -727,7 +654,7 @@ interface TrackContext {
             <button class="btn-secondary" (click)="closeEdit()">Cancel</button>
             <button class="btn-primary" (click)="saveEdit()"
                     [disabled]="savingEdit() || !editHasChanges()">
-              {{ savingEdit() ? 'Saving…' : 'Save to Shopify →' }}
+              {{ savingEdit() ? 'Saving…' : 'Save to WordPress →' }}
             </button>
           </div>
         </div>
@@ -742,12 +669,8 @@ interface TrackContext {
              (click)="$event.stopPropagation()">
           <div class="flex items-start justify-between mb-3">
             <div>
-              <h2 class="text-lg font-bold text-ink-900">
-                ✓ Saved to Shopify
-              </h2>
-              <p class="text-xs text-ink-500 mt-0.5">
-                Track this change as a subtask?
-              </p>
+              <h2 class="text-lg font-bold text-ink-900">✓ Saved to WordPress</h2>
+              <p class="text-xs text-ink-500 mt-0.5">Track this change as a subtask?</p>
             </div>
             <button type="button" (click)="dismissTrack()"
                     class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
@@ -766,7 +689,7 @@ interface TrackContext {
               <div class="text-xs text-ink-400 italic py-2">Loading tasks…</div>
             } @else if (clientTasks().length === 0) {
               <div class="text-xs text-warning-500 py-2">
-                No tasks exist for this client yet. Create a task first from the Tasks tab.
+                No tasks exist for this client yet. Create a task from the Tasks tab first.
               </div>
             } @else {
               <select class="input" [(ngModel)]="selectedTaskId">
@@ -807,19 +730,43 @@ interface TrackContext {
     }
   `,
 })
-export class ClientShopifyTab implements OnChanges {
+export class ClientWordpressTab implements OnChanges {
   @Input({ required: true }) client!: Client;
 
-  private shopify = inject(ShopifyService);
+  private wp = inject(WordpressService);
   private clients = inject(ClientsService);
   private tasksSvc = inject(TasksService);
 
-  resourceTabs: ResourceTabDef[] = [
-    { key: 'product', label: '🛒 Products' },
-    { key: 'collection', label: '📁 Collections' },
-    { key: 'page', label: '📄 Pages' },
-    { key: 'article', label: '📰 Articles' },
-  ];
+  // Settings form
+  settingsOpen = signal(false);
+  settingsForm: {
+    siteUrl: string;
+    username: string;
+    appPassword: string;
+    seoPlugin: WordpressSeoPlugin;
+  } = {
+    siteUrl: '',
+    username: '',
+    appPassword: '',
+    seoPlugin: 'yoast',
+  };
+  testing = signal(false);
+  testingRaw = signal(false);
+  savingSettings = signal(false);
+  settingsError = signal<string | null>(null);
+  rawTestResult = signal<WordpressConnectionInfo | null>(null);
+  connStatus = signal<WordpressConnectionInfo | null>(null);
+
+  // Post types + list
+  postTypes = signal<WordpressPostType[]>([]);
+  loadingTypes = signal(false);
+  activePostType = signal<string>('');
+  items = signal<WordpressResourceItem[]>([]);
+  currentPage = signal(1);
+  totalPages = signal(1);
+  loadingList = signal(false);
+  listError = signal<string | null>(null);
+  searchTerm = '';
 
   // Health filters
   healthFilters: Array<{ key: HealthKey; label: string }> = [
@@ -830,51 +777,43 @@ export class ClientShopifyTab implements OnChanges {
   emptySet: Set<HealthKey> = new Set();
   activeHealth = signal<Set<HealthKey>>(new Set());
 
-  // Connection state
-  settingsOpen = signal(false);
-  authMode = signal<ShopifyAuthMode>('oauth-client-credentials');
-  settingsForm: {
-    shopDomain: string;
-    clientId: string;
-    clientSecret: string;
-    accessToken: string;
-  } = {
-    shopDomain: '',
-    clientId: '',
-    clientSecret: '',
-    accessToken: '',
-  };
-  testing = signal(false);
-  testingRaw = signal(false);
-  savingSettings = signal(false);
-  settingsError = signal<string | null>(null);
-  rawTestResult = signal<ShopifyConnectionInfo | null>(null);
-  connStatus = signal<ShopifyConnectionInfo | null>(null);
-
-  // List state
-  activeResource = signal<ResourceTabKey>('product');
-  items = signal<ShopifyResourceItem[]>([]);
-  hasNextPage = signal(false);
-  endCursor = signal<string | undefined>(undefined);
-  loadingList = signal(false);
-  listError = signal<string | null>(null);
-  searchTerm = '';
-
-  // CSV state
+  // CSV bulk
   csvOpen = signal(false);
   csvStep = signal<'upload' | 'preview' | 'results'>('upload');
   csvFileName = signal<string | null>(null);
   csvText = signal('');
   csvError = signal<string | null>(null);
   previewing = signal(false);
-  preview = signal<ShopifySeoPreviewRow[]>([]);
+  preview = signal<WordpressSeoPreviewRow[]>([]);
   selected = signal<Set<string>>(new Set());
   onlyChanged = true;
   applying = signal(false);
-  results = signal<ShopifyApplyResultRow[]>([]);
+  results = signal<WordpressApplyResultRow[]>([]);
 
+  // Inline edit
+  editOpen = signal<WordpressResourceItem | null>(null);
+  editOriginal = signal<WordpressResourceItem | null>(null);
+  editForm: { seoTitle: string; seoDescription: string } = {
+    seoTitle: '',
+    seoDescription: '',
+  };
+  savingEdit = signal(false);
+  editError = signal<string | null>(null);
+
+  // Track-in-task
+  trackOpen = signal<TrackContext | null>(null);
+  clientTasks = signal<Task[]>([]);
+  loadingTasks = signal(false);
+  selectedTaskId: string | null = null;
+  trackingSave = signal(false);
+  trackError = signal<string | null>(null);
+  trackSaved = signal(false);
+
+  // Computed
   matchedCount = computed(() => this.preview().filter((r) => r.matched).length);
-  notFoundCount = computed(() => this.preview().filter((r) => !r.matched).length);
+  notFoundCount = computed(
+    () => this.preview().filter((r) => !r.matched).length,
+  );
   willChangeCount = computed(
     () =>
       this.preview().filter(
@@ -884,39 +823,35 @@ export class ClientShopifyTab implements OnChanges {
   filteredPreview = computed(() => {
     const p = this.preview();
     if (!this.onlyChanged) return p;
-    return p.filter(
-      (r) => !r.matched || r.titleChanged || r.descriptionChanged,
-    );
+    return p.filter((r) => !r.matched || r.titleChanged || r.descriptionChanged);
   });
   allSelected = computed(() => {
     const eligible = this.preview().filter(
       (r) => r.matched && (r.titleChanged || r.descriptionChanged),
     );
-    if (eligible.length === 0) return false;
+    if (!eligible.length) return false;
     const sel = this.selected();
-    return eligible.every((r) => sel.has(r.handle));
+    return eligible.every((r) => sel.has(r.slug));
   });
   successCount = computed(() => this.results().filter((r) => r.success).length);
   failedCount = computed(() => this.results().filter((r) => !r.success).length);
 
+  filteredItems = computed(() => {
+    const filters = this.activeHealth();
+    if (filters.size === 0) return this.items();
+    return this.items().filter((i) => filters.has(this.healthKey(i)));
+  });
+
   ngOnChanges() {
     this.settingsForm = {
-      shopDomain: this.client.shopifyShopDomain ?? '',
-      clientId: this.client.shopifyClientId ?? '',
-      clientSecret: this.client.shopifyClientSecret ?? '',
-      accessToken: this.client.shopifyAccessToken ?? '',
+      siteUrl: this.client.wordpressSiteUrl ?? '',
+      username: this.client.wordpressUsername ?? '',
+      appPassword: this.client.wordpressAppPassword ?? '',
+      seoPlugin: (this.client.wordpressSeoPlugin as WordpressSeoPlugin) ?? 'yoast',
     };
-    // Pick the active mode based on which credentials the client has.
-    if (this.client.shopifyClientId && this.client.shopifyClientSecret) {
-      this.authMode.set('oauth-client-credentials');
-    } else if (this.client.shopifyAccessToken) {
-      this.authMode.set('legacy-token');
-    } else {
-      this.authMode.set('oauth-client-credentials');
-    }
     this.items.set([]);
-    this.endCursor.set(undefined);
-    this.hasNextPage.set(false);
+    this.postTypes.set([]);
+    this.activePostType.set('');
     this.connStatus.set(null);
     this.rawTestResult.set(null);
     if (this.hasAnyCredentials()) {
@@ -926,18 +861,25 @@ export class ClientShopifyTab implements OnChanges {
 
   hasAnyCredentials(): boolean {
     return !!(
-      this.client.shopifyShopDomain &&
-      ((this.client.shopifyClientId && this.client.shopifyClientSecret) ||
-        this.client.shopifyAccessToken)
+      this.client.wordpressSiteUrl &&
+      this.client.wordpressUsername &&
+      this.client.wordpressAppPassword
     );
   }
 
   canTestRaw(): boolean {
-    if (!this.settingsForm.shopDomain) return false;
-    if (this.authMode() === 'oauth-client-credentials') {
-      return !!(this.settingsForm.clientId && this.settingsForm.clientSecret);
-    }
-    return !!this.settingsForm.accessToken;
+    return !!(
+      this.settingsForm.siteUrl &&
+      this.settingsForm.username &&
+      this.settingsForm.appPassword
+    );
+  }
+
+  pluginIsNative(): boolean {
+    return (
+      this.connStatus()?.seoPlugin === 'native' ||
+      this.client.wordpressSeoPlugin === 'native'
+    );
   }
 
   toggleSettings() {
@@ -949,11 +891,11 @@ export class ClientShopifyTab implements OnChanges {
   testConnection() {
     if (!this.client?._id) return;
     this.testing.set(true);
-    this.shopify.test(this.client._id).subscribe({
+    this.wp.test(this.client._id).subscribe({
       next: (r) => {
         this.connStatus.set(r);
         this.testing.set(false);
-        if (r.connected) this.reload();
+        if (r.connected) this.loadPostTypes();
       },
       error: (err) => {
         this.testing.set(false);
@@ -968,13 +910,12 @@ export class ClientShopifyTab implements OnChanges {
   testRaw() {
     this.testingRaw.set(true);
     this.settingsError.set(null);
-    const isOauth = this.authMode() === 'oauth-client-credentials';
-    this.shopify
+    this.wp
       .testRaw({
-        shopDomain: this.settingsForm.shopDomain.trim(),
-        clientId: isOauth ? this.settingsForm.clientId.trim() : undefined,
-        clientSecret: isOauth ? this.settingsForm.clientSecret.trim() : undefined,
-        accessToken: !isOauth ? this.settingsForm.accessToken.trim() : undefined,
+        siteUrl: this.settingsForm.siteUrl.trim(),
+        username: this.settingsForm.username.trim(),
+        appPassword: this.settingsForm.appPassword.trim(),
+        seoPlugin: this.settingsForm.seoPlugin,
       })
       .subscribe({
         next: (r) => {
@@ -995,89 +936,114 @@ export class ClientShopifyTab implements OnChanges {
     if (!this.client?._id) return;
     this.savingSettings.set(true);
     this.settingsError.set(null);
-    const isOauth = this.authMode() === 'oauth-client-credentials';
-    // Saving in OAuth mode clears any legacy token (and vice versa) so we
-    // don't ship contradictory state.
-    const patch: Partial<Client> = {
-      shopifyShopDomain: this.settingsForm.shopDomain.trim() || undefined,
-      shopifyClientId: isOauth
-        ? this.settingsForm.clientId.trim() || undefined
-        : undefined,
-      shopifyClientSecret: isOauth
-        ? this.settingsForm.clientSecret.trim() || undefined
-        : undefined,
-      shopifyAccessToken: !isOauth
-        ? this.settingsForm.accessToken.trim() || undefined
-        : undefined,
-    };
-    this.clients.update(this.client._id, patch).subscribe({
-      next: (c) => {
-        this.client = c;
-        this.savingSettings.set(false);
-        this.settingsOpen.set(false);
-        this.testConnection();
+    this.clients
+      .update(this.client._id, {
+        wordpressSiteUrl: this.settingsForm.siteUrl.trim() || undefined,
+        wordpressUsername: this.settingsForm.username.trim() || undefined,
+        wordpressAppPassword:
+          this.settingsForm.appPassword.trim() || undefined,
+        wordpressSeoPlugin: this.settingsForm.seoPlugin,
+      })
+      .subscribe({
+        next: (c) => {
+          this.client = c;
+          this.savingSettings.set(false);
+          this.settingsOpen.set(false);
+          this.testConnection();
+        },
+        error: (err) => {
+          this.savingSettings.set(false);
+          const m = err?.error?.message;
+          this.settingsError.set(
+            Array.isArray(m) ? m.join(', ') : m || 'Could not save credentials',
+          );
+        },
+      });
+  }
+
+  loadPostTypes() {
+    if (!this.client?._id) return;
+    this.loadingTypes.set(true);
+    this.wp.postTypes(this.client._id).subscribe({
+      next: (types) => {
+        // Surface page/post first, then everything else alphabetically.
+        const priority: Record<string, number> = { page: 0, post: 1 };
+        const sorted = [...types].sort((a, b) => {
+          const pa = priority[a.slug] ?? 10;
+          const pb = priority[b.slug] ?? 10;
+          return pa - pb || a.name.localeCompare(b.name);
+        });
+        this.postTypes.set(sorted);
+        this.loadingTypes.set(false);
+        if (sorted.length && !this.activePostType()) {
+          this.selectPostType(sorted[0].slug);
+        }
       },
       error: (err) => {
-        this.savingSettings.set(false);
+        this.loadingTypes.set(false);
         const m = err?.error?.message;
-        this.settingsError.set(
-          Array.isArray(m) ? m.join(', ') : m || 'Could not save credentials',
+        this.listError.set(
+          Array.isArray(m) ? m.join(', ') : m || 'Could not load post types',
         );
       },
     });
   }
 
-  selectResource(r: ResourceTabKey) {
-    if (r === this.activeResource()) return;
-    this.activeResource.set(r);
+  selectPostType(slug: string) {
+    if (slug === this.activePostType()) return;
+    this.activePostType.set(slug);
     this.items.set([]);
-    this.endCursor.set(undefined);
-    this.hasNextPage.set(false);
+    this.currentPage.set(1);
+    this.totalPages.set(1);
     this.reload();
   }
 
   reload() {
-    if (!this.client?._id || !this.connStatus()?.connected) return;
+    const pt = this.activePostType();
+    if (!this.client?._id || !pt) return;
     this.loadingList.set(true);
     this.listError.set(null);
     this.items.set([]);
-    this.endCursor.set(undefined);
-    this.shopify
-      .list(this.client._id, this.activeResource(), {
-        limit: 50,
-        q: this.searchTerm.trim() || undefined,
+    this.currentPage.set(1);
+    this.wp
+      .list(this.client._id, pt, {
+        page: 1,
+        perPage: 50,
+        search: this.searchTerm.trim() || undefined,
       })
       .subscribe({
         next: (r) => {
           this.items.set(r.items);
-          this.hasNextPage.set(r.hasNextPage);
-          this.endCursor.set(r.endCursor);
+          this.totalPages.set(r.totalPages);
+          this.currentPage.set(r.page);
           this.loadingList.set(false);
         },
         error: (err) => {
           this.loadingList.set(false);
           const m = err?.error?.message;
           this.listError.set(
-            Array.isArray(m) ? m.join(', ') : m || 'Could not load list',
+            Array.isArray(m) ? m.join(', ') : m || 'Could not load',
           );
         },
       });
   }
 
   loadMore() {
-    if (!this.client?._id || !this.endCursor()) return;
+    const pt = this.activePostType();
+    if (!this.client?._id || !pt) return;
     this.loadingList.set(true);
-    this.shopify
-      .list(this.client._id, this.activeResource(), {
-        limit: 50,
-        cursor: this.endCursor(),
-        q: this.searchTerm.trim() || undefined,
+    const nextPage = this.currentPage() + 1;
+    this.wp
+      .list(this.client._id, pt, {
+        page: nextPage,
+        perPage: 50,
+        search: this.searchTerm.trim() || undefined,
       })
       .subscribe({
         next: (r) => {
           this.items.update((cur) => [...cur, ...r.items]);
-          this.hasNextPage.set(r.hasNextPage);
-          this.endCursor.set(r.endCursor);
+          this.totalPages.set(r.totalPages);
+          this.currentPage.set(r.page);
           this.loadingList.set(false);
         },
         error: (err) => {
@@ -1090,7 +1056,49 @@ export class ClientShopifyTab implements OnChanges {
       });
   }
 
-  // CSV flow
+  toggleHealth(key: HealthKey) {
+    this.activeHealth.update((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  healthCount(key: HealthKey): number {
+    return this.items().filter((i) => this.healthKey(i) === key).length;
+  }
+
+  healthKey(item: WordpressResourceItem): HealthKey {
+    if (!item.seoTitle && !item.seoDescription) return 'empty';
+    if (!item.seoTitle || !item.seoDescription) return 'partial';
+    const tLen = item.seoTitle.length;
+    const dLen = item.seoDescription.length;
+    if (tLen > 70 || dLen > 160 || tLen < 20 || dLen < 60) return 'partial';
+    return 'good';
+  }
+
+  healthBadge(item: WordpressResourceItem): string {
+    const key = this.healthKey(item);
+    if (key === 'good') return '🟢 good';
+    if (key === 'empty') return '🔴 empty';
+    if (!item.seoTitle || !item.seoDescription) return '🟡 partial';
+    const tLen = item.seoTitle?.length ?? 0;
+    const dLen = item.seoDescription?.length ?? 0;
+    if (tLen > 70 || dLen > 160) return '🟡 over';
+    if (tLen < 20 || dLen < 60) return '🟡 short';
+    return '🟡 partial';
+  }
+
+  healthBadgeClass(item: WordpressResourceItem): string {
+    const key = this.healthKey(item);
+    if (key === 'good') return 'text-[10px] font-semibold text-positive-500';
+    if (key === 'partial') return 'text-[10px] font-semibold text-warning-500';
+    return 'text-[10px] font-semibold text-danger-500';
+  }
+
+  // CSV flow ---------------------------------------------------------------
+
   openCsv() {
     this.csvOpen.set(true);
     this.csvStep.set('upload');
@@ -1122,31 +1130,27 @@ export class ClientShopifyTab implements OnChanges {
     if (!file) return;
     this.csvFileName.set(file.name);
     const reader = new FileReader();
-    reader.onload = () => {
-      this.csvText.set(String(reader.result || ''));
-    };
+    reader.onload = () => this.csvText.set(String(reader.result || ''));
     reader.readAsText(file);
   }
 
   runPreview() {
     if (!this.client?._id) return;
-    const text = this.csvText().trim();
-    if (!text) {
+    if (!this.csvText().trim()) {
       this.csvError.set('CSV is empty');
       return;
     }
     this.previewing.set(true);
     this.csvError.set(null);
-    this.shopify
-      .preview(this.client._id, this.activeResource(), this.csvText())
+    this.wp
+      .preview(this.client._id, this.activePostType(), this.csvText())
       .subscribe({
         next: (rows) => {
           this.preview.set(rows);
-          // Default: select every row that will actually change.
           const pre = new Set<string>();
           for (const r of rows) {
             if (r.matched && (r.titleChanged || r.descriptionChanged)) {
-              pre.add(r.handle);
+              pre.add(r.slug);
             }
           }
           this.selected.set(pre);
@@ -1163,12 +1167,12 @@ export class ClientShopifyTab implements OnChanges {
       });
   }
 
-  toggleRow(handle: string, ev: Event) {
+  toggleRow(slug: string, ev: Event) {
     const checked = (ev.target as HTMLInputElement).checked;
     this.selected.update((cur) => {
       const next = new Set(cur);
-      if (checked) next.add(handle);
-      else next.delete(handle);
+      if (checked) next.add(slug);
+      else next.delete(slug);
       return next;
     });
   }
@@ -1182,23 +1186,23 @@ export class ClientShopifyTab implements OnChanges {
     const eligible = this.preview().filter(
       (r) => r.matched && (r.titleChanged || r.descriptionChanged),
     );
-    this.selected.set(new Set(eligible.map((r) => r.handle)));
+    this.selected.set(new Set(eligible.map((r) => r.slug)));
   }
 
   runApply() {
     if (!this.client?._id) return;
     const sel = this.selected();
     const rows = this.preview()
-      .filter((r) => sel.has(r.handle) && r.matched && r.id)
+      .filter((r) => sel.has(r.slug) && r.matched && r.id !== undefined)
       .map((r) => ({
-        handle: r.handle,
-        id: r.id!,
+        slug: r.slug,
+        id: r.id as number,
         newSeoTitle: r.titleChanged ? r.newSeoTitle : undefined,
         newSeoDescription: r.descriptionChanged ? r.newSeoDescription : undefined,
       }));
     if (!rows.length) return;
     this.applying.set(true);
-    this.shopify.apply(this.client._id, this.activeResource(), rows).subscribe({
+    this.wp.apply(this.client._id, this.activePostType(), rows).subscribe({
       next: (res) => {
         this.results.set(res);
         this.applying.set(false);
@@ -1214,76 +1218,25 @@ export class ClientShopifyTab implements OnChanges {
     });
   }
 
-  truncate(s: string, n: number): string {
-    if (!s) return '';
-    return s.length <= n ? s : s.slice(0, n - 1) + '…';
+  // Inline edit ------------------------------------------------------------
+
+  openEdit(item: WordpressResourceItem) {
+    if (this.pluginIsNative()) return;
+    this.editOriginal.set(item);
+    this.editOpen.set(item);
+    this.editForm = {
+      seoTitle: item.seoTitle ?? '',
+      seoDescription: item.seoDescription ?? '',
+    };
+    this.editError.set(null);
   }
 
-  healthKey(item: ShopifyResourceItem): HealthKey {
-    if (!item.seoTitle && !item.seoDescription) return 'empty';
-    if (!item.seoTitle || !item.seoDescription) return 'partial';
-    const tLen = item.seoTitle.length;
-    const dLen = item.seoDescription.length;
-    // Same heuristics as healthBadge: out-of-range counts as "partial" since
-    // the row needs attention but isn't fully empty.
-    if (tLen > 70 || dLen > 160 || tLen < 20 || dLen < 60) return 'partial';
-    return 'good';
+  closeEdit() {
+    this.editOpen.set(null);
+    this.editOriginal.set(null);
+    this.editError.set(null);
   }
 
-  healthBadge(item: ShopifyResourceItem): string {
-    const key = this.healthKey(item);
-    if (key === 'good') return '🟢 good';
-    if (key === 'empty') return '🔴 empty';
-    if (!item.seoTitle || !item.seoDescription) return '🟡 partial';
-    const tLen = item.seoTitle?.length ?? 0;
-    const dLen = item.seoDescription?.length ?? 0;
-    if (tLen > 70 || dLen > 160) return '🟡 over';
-    if (tLen < 20 || dLen < 60) return '🟡 short';
-    return '🟡 partial';
-  }
-
-  healthBadgeClass(item: ShopifyResourceItem): string {
-    const key = this.healthKey(item);
-    if (key === 'good') return 'text-[10px] font-semibold text-positive-500';
-    if (key === 'partial') return 'text-[10px] font-semibold text-warning-500';
-    return 'text-[10px] font-semibold text-danger-500';
-  }
-
-  toggleHealth(key: HealthKey) {
-    this.activeHealth.update((cur) => {
-      const next = new Set(cur);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
-
-  healthCount(key: HealthKey): number {
-    return this.items().filter((i) => this.healthKey(i) === key).length;
-  }
-
-  // --- Inline edit + track-in-task ---------------------------------------
-
-  editOpen = signal<ShopifyResourceItem | null>(null);
-  editOriginal = signal<ShopifyResourceItem | null>(null);
-  editForm: { seoTitle: string; seoDescription: string } = {
-    seoTitle: '',
-    seoDescription: '',
-  };
-  savingEdit = signal(false);
-  editError = signal<string | null>(null);
-
-  trackOpen = signal<TrackContext | null>(null);
-  clientTasks = signal<Task[]>([]);
-  loadingTasks = signal(false);
-  selectedTaskId: string | null = null;
-  trackingSave = signal(false);
-  trackError = signal<string | null>(null);
-  trackSaved = signal(false);
-
-  // These are plain methods (not `computed`) because `editForm` is a plain
-  // object — signals only track other signals. Re-evaluation runs on every
-  // change-detection tick triggered by ngModel.
   editHasChanges(): boolean {
     const orig = this.editOriginal();
     if (!orig) return false;
@@ -1306,22 +1259,6 @@ export class ClientShopifyTab implements OnChanges {
     return 'warn';
   }
 
-  openEdit(item: ShopifyResourceItem) {
-    this.editOriginal.set(item);
-    this.editOpen.set(item);
-    this.editForm = {
-      seoTitle: item.seoTitle ?? '',
-      seoDescription: item.seoDescription ?? '',
-    };
-    this.editError.set(null);
-  }
-
-  closeEdit() {
-    this.editOpen.set(null);
-    this.editOriginal.set(null);
-    this.editError.set(null);
-  }
-
   saveEdit() {
     const item = this.editOpen();
     const orig = this.editOriginal();
@@ -1337,10 +1274,10 @@ export class ClientShopifyTab implements OnChanges {
 
     this.savingEdit.set(true);
     this.editError.set(null);
-    this.shopify
-      .apply(this.client._id, this.activeResource(), [
+    this.wp
+      .apply(this.client._id, this.activePostType(), [
         {
-          handle: item.handle,
+          slug: item.slug,
           id: item.id,
           newSeoTitle: titleChanged ? newTitle : undefined,
           newSeoDescription: descChanged ? newDesc : undefined,
@@ -1354,7 +1291,6 @@ export class ClientShopifyTab implements OnChanges {
             this.editError.set(result?.error || 'Update failed');
             return;
           }
-          // Optimistically reflect the new SEO in the visible list.
           this.items.update((cur) =>
             cur.map((i) =>
               i.id === item.id
@@ -1379,8 +1315,10 @@ export class ClientShopifyTab implements OnChanges {
       });
   }
 
-  private openTrackDialog(item: ShopifyResourceItem) {
-    const pageUrl = this.derivePageUrl(item);
+  // Track-in-task ----------------------------------------------------------
+
+  private openTrackDialog(item: WordpressResourceItem) {
+    const pageUrl = item.link || `${this.connStatus()?.siteUrl}/${item.slug}`;
     const ctx: TrackContext = {
       item,
       pageUrl,
@@ -1393,34 +1331,12 @@ export class ClientShopifyTab implements OnChanges {
     this.loadClientTasks();
   }
 
-  private derivePageUrl(item: ShopifyResourceItem): string {
-    if (item.onlineStoreUrl) return item.onlineStoreUrl;
-    const primary =
-      this.connStatus()?.primaryDomain || `https://${this.connStatus()?.shopDomain}`;
-    if (!primary) return item.handle;
-    const root = primary.replace(/\/$/, '');
-    switch (this.activeResource()) {
-      case 'product':
-        return `${root}/products/${item.handle}`;
-      case 'collection':
-        return `${root}/collections/${item.handle}`;
-      case 'page':
-        return `${root}/pages/${item.handle}`;
-      case 'article':
-        return `${root}/blogs/news/${item.handle}`;
-      default:
-        return `${root}/${item.handle}`;
-    }
-  }
-
   private loadClientTasks() {
     if (!this.client?._id) return;
     this.loadingTasks.set(true);
     this.clientTasks.set([]);
     this.tasksSvc.list({ clientId: this.client._id }).subscribe({
       next: (tasks) => {
-        // Filter out completed tasks so the user sees actionable buckets first,
-        // but keep them queryable if the user really wants to backfill.
         const order: Record<TaskStatus, number> = {
           in_progress: 0,
           pending: 1,
@@ -1435,9 +1351,7 @@ export class ClientShopifyTab implements OnChanges {
         this.clientTasks.set(sorted);
         this.loadingTasks.set(false);
       },
-      error: () => {
-        this.loadingTasks.set(false);
-      },
+      error: () => this.loadingTasks.set(false),
     });
   }
 
@@ -1449,18 +1363,18 @@ export class ClientShopifyTab implements OnChanges {
     this.tasksSvc
       .addSubtask(this.selectedTaskId, ctx.subtaskTitle, true)
       .subscribe({
-      next: () => {
-        this.trackingSave.set(false);
-        this.trackSaved.set(true);
-      },
-      error: (err) => {
-        this.trackingSave.set(false);
-        const m = err?.error?.message;
-        this.trackError.set(
-          Array.isArray(m) ? m.join(', ') : m || 'Could not add subtask',
-        );
-      },
-    });
+        next: () => {
+          this.trackingSave.set(false);
+          this.trackSaved.set(true);
+        },
+        error: (err) => {
+          this.trackingSave.set(false);
+          const m = err?.error?.message;
+          this.trackError.set(
+            Array.isArray(m) ? m.join(', ') : m || 'Could not add subtask',
+          );
+        },
+      });
   }
 
   dismissTrack() {
@@ -1476,18 +1390,33 @@ export class ClientShopifyTab implements OnChanges {
     return '○';
   }
 
-  filteredItems = computed(() => {
-    const filters = this.activeHealth();
-    if (filters.size === 0) return this.items();
-    return this.items().filter((i) => filters.has(this.healthKey(i)));
-  });
+  // Rich Results Test ------------------------------------------------------
 
-  openRichResults(item: ShopifyResourceItem) {
-    const url = this.derivePageUrl(item);
+  openRichResults(item: WordpressResourceItem) {
+    const url = item.link || `${this.connStatus()?.siteUrl}/${item.slug}`;
     window.open(
       `https://search.google.com/test/rich-results?url=${encodeURIComponent(url)}`,
       '_blank',
       'noopener',
     );
+  }
+
+  // Helpers ----------------------------------------------------------------
+
+  typeLabel(t: WordpressPostType): string {
+    const icon =
+      t.slug === 'page'
+        ? '📄'
+        : t.slug === 'post'
+          ? '📝'
+          : t.hierarchical
+            ? '📁'
+            : '📰';
+    return `${icon} ${t.name}`;
+  }
+
+  truncate(s: string, n: number): string {
+    if (!s) return '';
+    return s.length <= n ? s : s.slice(0, n - 1) + '…';
   }
 }
