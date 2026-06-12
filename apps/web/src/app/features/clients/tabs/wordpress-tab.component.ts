@@ -120,10 +120,24 @@ interface TrackContext {
                 <option value="native">None (WP native — read only)</option>
               </select>
               <p class="text-[11px] text-ink-400 mt-1">
-                Tells the platform where to read &amp; write the SEO title and
-                meta description. The plugin must register its meta in REST
-                (Yoast/RankMath/AIOSEO recent versions all do this).
+                Tells the platform which post meta keys to read &amp; write.
               </p>
+              @if (settingsForm.seoPlugin === 'rankmath') {
+                <div class="mt-2 p-2 rounded bg-warning-50 border border-warning-500/40 text-[11px] text-ink-700">
+                  ⚠ <strong>Rank Math:</strong> doesn't expose its meta
+                  fields in REST by default. For best results enable
+                  <em>WP Admin → Rank Math SEO → General Settings →
+                  Others → Headless CMS Support</em>. Without it the platform
+                  falls back to parsing the rendered HTML on the live URL
+                  (works for published pages only, no draft preview).
+                </div>
+              } @else if (settingsForm.seoPlugin === 'aioseo') {
+                <div class="mt-2 p-2 rounded bg-warning-50 border border-warning-500/40 text-[11px] text-ink-700">
+                  ⚠ <strong>AIOSEO:</strong> If meta tags read as empty,
+                  the platform falls back to parsing the rendered HTML.
+                  Drafts and private posts may not be readable.
+                </div>
+              }
             </div>
 
             @if (settingsError()) {

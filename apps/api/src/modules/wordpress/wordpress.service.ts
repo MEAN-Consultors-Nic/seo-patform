@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import * as cheerio from 'cheerio';
 import {
   WordpressApplyResultRow,
   WordpressConnectionInfo,
@@ -349,11 +350,73 @@ export class WordpressService {
     const totalPages = parseInt(res.headers.get('X-WP-TotalPages') ?? '1', 10);
     const raw = (await res.json()) as WpPostRaw[];
 
+    const items = raw.map((p) => this.mapPost(p, creds.plugin, postType));
+    // Fallback: SEO plugins like RankMath don't always register their post
+    // meta with show_in_rest, so the meta object can come back empty even
+    // when the page does have meta tags rendered on the live site. For any
+    // published item missing seoTitle/seoDescription, fetch the rendered HTML
+    // and parse <title> + <meta name="description"> as a last resort.
+    await this.hydrateMissingMetaFromHtml(items);
+
     return {
-      items: raw.map((p) => this.mapPost(p, creds.plugin, postType)),
+      items,
       totalPages: isNaN(totalPages) ? 1 : totalPages,
       page,
     };
+  }
+
+  private async hydrateMissingMetaFromHtml(
+    items: WordpressResourceItem[],
+  ): Promise<void> {
+    const candidates = items.filter(
+      (i) =>
+        (i.status === 'publish' || !i.status) &&
+        !!i.link &&
+        (!i.seoTitle || !i.seoDescription),
+    );
+    if (!candidates.length) return;
+    const CONCURRENCY = 5;
+    for (let i = 0; i < candidates.length; i += CONCURRENCY) {
+      const batch = candidates.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        batch.map(async (item) => {
+          const meta = await this.fetchRenderedMeta(item.link as string);
+          if (!item.seoTitle && meta.title) item.seoTitle = meta.title;
+          if (!item.seoDescription && meta.description)
+            item.seoDescription = meta.description;
+        }),
+      );
+    }
+  }
+
+  private async fetchRenderedMeta(
+    url: string,
+  ): Promise<{ title?: string; description?: string }> {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (compatible; MediaSpearheadSEOBot/1.0; +https://mediaspearhead.com)',
+          Accept: 'text/html',
+        },
+        signal: AbortSignal.timeout(8000),
+        redirect: 'follow',
+      });
+      if (!res.ok) return {};
+      const html = await res.text();
+      const $ = cheerio.load(html);
+      const title =
+        $('meta[property="og:title"]').first().attr('content')?.trim() ||
+        $('title').first().text().trim() ||
+        undefined;
+      const description =
+        $('meta[name="description"]').first().attr('content')?.trim() ||
+        $('meta[property="og:description"]').first().attr('content')?.trim() ||
+        undefined;
+      return { title, description };
+    } catch {
+      return {};
+    }
   }
 
   private async resolveRestBase(
@@ -630,6 +693,14 @@ export class WordpressService {
           continue;
         }
         const item = this.mapPost(node, creds.plugin, postType);
+        // Same HTML-rendered fallback used by `list` so the diff is honest
+        // even when RankMath/AIOSEO don't expose meta via REST.
+        if ((!item.seoTitle || !item.seoDescription) && item.link) {
+          const rendered = await this.fetchRenderedMeta(item.link);
+          if (!item.seoTitle && rendered.title) item.seoTitle = rendered.title;
+          if (!item.seoDescription && rendered.description)
+            item.seoDescription = rendered.description;
+        }
         const currentTitle = item.seoTitle ?? '';
         const currentDesc = item.seoDescription ?? '';
         out.push({
