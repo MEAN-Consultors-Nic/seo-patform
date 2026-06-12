@@ -9,6 +9,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { NgApexchartsModule } from 'ng-apexcharts';
 import type { ApexOptions } from 'ng-apexcharts';
+import { DEFAULT_REPORT_LAYOUT, ReportSectionKey } from '@seo/shared';
 import { ReportsService } from '../../core/reports.service';
 import { SanitizerService } from '../../core/sanitizer.service';
 
@@ -99,6 +100,7 @@ interface PublicPayload {
       rangeTo: string;
     };
   }>;
+  layout?: Array<{ key: ReportSectionKey; visible: boolean }>;
 }
 
 @Component({
@@ -266,11 +268,56 @@ interface PublicPayload {
         }
 
         <main class="max-w-6xl mx-auto px-8 py-12 space-y-12">
+          <!--
+            Sections are rendered in the order configured in
+            Settings → Report layout. The original section blocks below
+            are wrapped in <ng-template> definitions further down so they
+            can be outlet'd here by key. New sections must be added to
+            both the @switch and the corresponding template.
+          -->
+          @for (key of orderedVisibleSections(); track key) {
+            @switch (key) {
+              @case ('executive-summary') {
+                <ng-container [ngTemplateOutlet]="execSummaryTpl"></ng-container>
+              }
+              @case ('key-metrics') {
+                <ng-container [ngTemplateOutlet]="keyMetricsTpl"></ng-container>
+              }
+              @case ('locations-performance') {
+                <ng-container [ngTemplateOutlet]="locationsTpl"></ng-container>
+              }
+              @case ('search-rankings') {
+                <ng-container [ngTemplateOutlet]="rankingsTpl"></ng-container>
+              }
+              @case ('actions-taken') {
+                <ng-container [ngTemplateOutlet]="actionsTpl"></ng-container>
+              }
+              @case ('next-period-plan') {
+                <ng-container [ngTemplateOutlet]="nextPeriodTpl"></ng-container>
+              }
+              @case ('backlinks-profile') {
+                <ng-container [ngTemplateOutlet]="backlinksTpl"></ng-container>
+              }
+              @case ('client-blockers') {
+                <ng-container [ngTemplateOutlet]="blockersTpl"></ng-container>
+              }
+              @case ('final-considerations') {
+                <ng-container [ngTemplateOutlet]="finalConsiderationsTpl"></ng-container>
+              }
+            }
+          }
+        </main>
+
+        <!-- ============================================================ -->
+        <!--      Section templates — rendered above via ngTemplateOutlet  -->
+        <!-- ============================================================ -->
+
+        <ng-template #execSummaryTpl>
           <!-- Executive Summary / Intro -->
           @if (sanitizer.hasVisibleContent(introHtml())) {
             <section>
               <div class="flex items-center gap-3 mb-5">
-                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">01</span>
+                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">{{ sectionNumber('executive-summary') }}</span>
                 <h2 class="text-3xl font-bold text-ink-900">Executive Summary</h2>
               </div>
               <div class="bg-white rounded-xl border-l-4 border-brand-500 border-y border-r border-ink-200 shadow-card p-7 md:p-8">
@@ -278,12 +325,14 @@ interface PublicPayload {
               </div>
             </section>
           }
+        </ng-template>
 
+        <ng-template #keyMetricsTpl>
           <!-- KPIs -->
           @if (hasKpis()) {
             <section>
               <div class="flex items-center gap-3 mb-5">
-                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">02</span>
+                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">{{ sectionNumber('key-metrics') }}</span>
                 <h2 class="text-3xl font-bold text-ink-900">Key Metrics</h2>
               </div>
 
@@ -389,12 +438,14 @@ interface PublicPayload {
               }
             </section>
           }
+        </ng-template>
 
+        <ng-template #locationsTpl>
           <!-- Locations performance -->
           @if (d.serviceAreas && d.serviceAreas.length > 0) {
             <section>
               <div class="flex items-center gap-3 mb-5">
-                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">03</span>
+                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">{{ sectionNumber('locations-performance') }}</span>
                 <h2 class="text-3xl font-bold text-ink-900">Locations Performance</h2>
               </div>
               <p class="text-sm text-ink-500 mb-5">
@@ -524,12 +575,14 @@ interface PublicPayload {
               }
             </section>
           }
+        </ng-template>
 
+        <ng-template #rankingsTpl>
           <!-- Keywords / Position Tracker -->
           @if (d.keywords.length > 0) {
             <section>
               <div class="flex items-center gap-3 mb-5">
-                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">04</span>
+                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">{{ sectionNumber('search-rankings') }}</span>
                 <h2 class="text-3xl font-bold text-ink-900">Search Rankings</h2>
               </div>
 
@@ -647,12 +700,14 @@ interface PublicPayload {
               </div>
             </section>
           }
+        </ng-template>
 
+        <ng-template #actionsTpl>
           <!-- Actions taken -->
           @if (completedTasks().length > 0) {
             <section>
               <div class="flex items-center gap-3 mb-5">
-                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">05</span>
+                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">{{ sectionNumber('actions-taken') }}</span>
                 <h2 class="text-3xl font-bold text-ink-900">Actions Taken</h2>
               </div>
               <p class="text-ink-500 mb-5">
@@ -713,12 +768,14 @@ interface PublicPayload {
               </div>
             </section>
           }
+        </ng-template>
 
+        <ng-template #nextPeriodTpl>
           <!-- Next period plan -->
           @if (plannedTasks().length > 0) {
             <section>
               <div class="flex items-center gap-3 mb-5">
-                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">06</span>
+                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">{{ sectionNumber('next-period-plan') }}</span>
                 <h2 class="text-3xl font-bold text-ink-900">Next Period Plan</h2>
               </div>
               <div class="space-y-2">
@@ -738,12 +795,14 @@ interface PublicPayload {
               </div>
             </section>
           }
+        </ng-template>
 
+        <ng-template #backlinksTpl>
           <!-- Backlinks -->
           @if (d.backlinks.total > 0) {
             <section>
               <div class="flex items-center gap-3 mb-5">
-                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">07</span>
+                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">{{ sectionNumber('backlinks-profile') }}</span>
                 <h2 class="text-3xl font-bold text-ink-900">Backlinks Profile</h2>
               </div>
               <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -769,12 +828,14 @@ interface PublicPayload {
               </div>
             </section>
           }
+        </ng-template>
 
+        <ng-template #blockersTpl>
           <!-- Pending from client -->
           @if (sanitizer.hasVisibleContent(d.report.clientBlockers)) {
             <section>
               <div class="flex items-center gap-3 mb-5">
-                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">08</span>
+                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">{{ sectionNumber('client-blockers') }}</span>
                 <h2 class="text-3xl font-bold text-ink-900">Pending from your side</h2>
               </div>
               <div class="bg-warning-100 border-l-4 border-warning-500 rounded-xl p-6">
@@ -782,12 +843,14 @@ interface PublicPayload {
               </div>
             </section>
           }
+        </ng-template>
 
+        <ng-template #finalConsiderationsTpl>
           <!-- Final Considerations -->
           @if (sanitizer.hasVisibleContent(d.report.finalConsiderations)) {
             <section>
               <div class="flex items-center gap-3 mb-5">
-                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">09</span>
+                <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">{{ sectionNumber('final-considerations') }}</span>
                 <h2 class="text-3xl font-bold text-ink-900">Final considerations</h2>
               </div>
               <div class="bg-white rounded-xl border border-ink-200 shadow-card p-7 md:p-8">
@@ -795,7 +858,7 @@ interface PublicPayload {
               </div>
             </section>
           }
-        </main>
+        </ng-template>
 
         <!-- Public lightbox for task attachments -->
         @if (publicLightbox(); as a) {
@@ -1391,6 +1454,39 @@ export class PublicReportComponent implements OnInit {
 
   showComparisons(): boolean {
     return this.data()?.report.comparePeriods !== false;
+  }
+
+  /**
+   * Active layout for this report. Falls back to defaults if the payload
+   * doesn't carry one (older API server, or first load before the
+   * app-settings doc exists).
+   */
+  private resolvedLayout(): Array<{ key: ReportSectionKey; visible: boolean }> {
+    const layout = this.data()?.layout;
+    if (layout && layout.length) return layout;
+    return DEFAULT_REPORT_LAYOUT;
+  }
+
+  isSectionVisible(key: ReportSectionKey): boolean {
+    return this.resolvedLayout().some((s) => s.key === key && s.visible);
+  }
+
+  /** Two-digit numeric prefix reflecting position among visible sections. */
+  sectionNumber(key: ReportSectionKey): string {
+    const layout = this.resolvedLayout();
+    let pos = 0;
+    for (const s of layout) {
+      if (!s.visible) continue;
+      pos++;
+      if (s.key === key) return String(pos).padStart(2, '0');
+    }
+    return '00';
+  }
+
+  orderedVisibleSections(): ReportSectionKey[] {
+    return this.resolvedLayout()
+      .filter((s) => s.visible)
+      .map((s) => s.key);
   }
 
   kpiCards() {

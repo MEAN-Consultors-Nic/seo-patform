@@ -34,6 +34,9 @@ const WEEKDAYS = [
         <a routerLink="/settings/integrations" routerLinkActive="tab-active" class="tab">
           Integrations
         </a>
+        <a routerLink="/settings/report-layout" routerLinkActive="tab-active" class="tab">
+          Report layout
+        </a>
       </nav>
 
       <div class="mb-4">

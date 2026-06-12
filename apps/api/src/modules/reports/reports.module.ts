@@ -10,6 +10,7 @@ import { CyclesModule } from '../cycles/cycles.module';
 import { TasksModule } from '../tasks/tasks.module';
 import { KeywordsModule } from '../keywords/keywords.module';
 import { BacklinksModule } from '../backlinks/backlinks.module';
+import { AppSettingsModule } from '../app-settings/app-settings.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { BacklinksModule } from '../backlinks/backlinks.module';
     TasksModule,
     KeywordsModule,
     BacklinksModule,
+    AppSettingsModule,
   ],
   controllers: [ReportsController, PublicReportsController],
   providers: [ReportsService, PdfService],

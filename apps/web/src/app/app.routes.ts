@@ -64,6 +64,13 @@ export const appRoutes: Route[] = [
           ),
       },
       {
+        path: 'settings/report-layout',
+        loadComponent: () =>
+          import('./features/settings/report-layout-settings.component').then(
+            (m) => m.ReportLayoutSettingsComponent,
+          ),
+      },
+      {
         path: 'users',
         canActivate: [roleGuard('root')],
         loadComponent: () =>

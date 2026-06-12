@@ -26,6 +26,7 @@ import { TasksService } from '../tasks/tasks.service';
 import { KeywordsService } from '../keywords/keywords.service';
 import { BacklinksService } from '../backlinks/backlinks.service';
 import { MailService } from '../mail/mail.service';
+import { AppSettingsService } from '../app-settings/app-settings.service';
 
 const MAX_PIN_ATTEMPTS = 5;
 const PIN_LOCK_MINUTES = 15;
@@ -44,6 +45,7 @@ export class ReportsService {
     private readonly pdf: PdfService,
     private readonly jwt: JwtService,
     private readonly mail: MailService,
+    private readonly appSettings: AppSettingsService,
     private readonly configSvc: ConfigService,
   ) {}
 
@@ -340,7 +342,7 @@ export class ReportsService {
 
   async getPublicPayload(token: string) {
     const report = await this.findByShareToken(token);
-    const [client, cycle, tasks, keywords, movements, backlinksSummary, history] =
+    const [client, cycle, tasks, keywords, movements, backlinksSummary, history, layout] =
       await Promise.all([
         this.clients.findOne(report.clientId.toString()),
         this.cycles.findOne(report.cycleId.toString()),
@@ -352,6 +354,7 @@ export class ReportsService {
         this.keywords.movements(report.clientId.toString()),
         this.backlinks.summary(report.clientId.toString()),
         this.kpiHistory(report.clientId.toString(), 12),
+        this.appSettings.getReportLayout(),
       ]);
 
     // Recompute the "previous" comparison series at read time so changes
@@ -417,6 +420,7 @@ export class ReportsService {
       backlinks: backlinksSummary,
       kpiHistory: history,
       serviceAreas: await this.buildPublicServiceAreas(report),
+      layout,
     };
   }
 

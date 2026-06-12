@@ -577,6 +577,80 @@ export interface ShopifyResourceItem {
   onlineStoreUrl?: string;
 }
 
+export type ReportSectionKey =
+  | 'executive-summary'
+  | 'key-metrics'
+  | 'locations-performance'
+  | 'search-rankings'
+  | 'actions-taken'
+  | 'next-period-plan'
+  | 'backlinks-profile'
+  | 'client-blockers'
+  | 'final-considerations';
+
+export interface ReportSectionConfig {
+  key: ReportSectionKey;
+  visible: boolean;
+}
+
+export const DEFAULT_REPORT_LAYOUT: ReportSectionConfig[] = [
+  { key: 'executive-summary', visible: true },
+  { key: 'key-metrics', visible: true },
+  { key: 'locations-performance', visible: true },
+  { key: 'search-rankings', visible: true },
+  { key: 'actions-taken', visible: true },
+  { key: 'next-period-plan', visible: true },
+  { key: 'backlinks-profile', visible: true },
+  { key: 'client-blockers', visible: true },
+  { key: 'final-considerations', visible: true },
+];
+
+export const REPORT_SECTION_META: Record<
+  ReportSectionKey,
+  { label: string; description: string }
+> = {
+  'executive-summary': {
+    label: 'Executive Summary',
+    description: 'Bullet-point recap of the period for the client.',
+  },
+  'key-metrics': {
+    label: 'Key Metrics',
+    description: 'GSC + GA4 KPI cards with deltas.',
+  },
+  'locations-performance': {
+    label: 'Locations Performance',
+    description: 'Per-city service area performance (shown only if enabled on the report).',
+  },
+  'search-rankings': {
+    label: 'Search Rankings',
+    description: 'Keywords, movements, gainers/losers.',
+  },
+  'actions-taken': {
+    label: 'Actions Taken',
+    description: 'Tasks completed during the period with attachments.',
+  },
+  'next-period-plan': {
+    label: 'Next Period Plan',
+    description: 'Forward-looking action plan.',
+  },
+  'backlinks-profile': {
+    label: 'Backlinks Profile',
+    description: 'Total / dofollow / status breakdown.',
+  },
+  'client-blockers': {
+    label: 'Pending from your side',
+    description: "Items that require client action.",
+  },
+  'final-considerations': {
+    label: 'Final Considerations',
+    description: 'Closing notes for the client.',
+  },
+};
+
+export interface AppSettings {
+  reportLayout?: ReportSectionConfig[];
+}
+
 export type WebsitePlatform = 'shopify' | 'wordpress' | 'custom';
 
 export type WordpressSeoPlugin = 'yoast' | 'rankmath' | 'aioseo' | 'native';
