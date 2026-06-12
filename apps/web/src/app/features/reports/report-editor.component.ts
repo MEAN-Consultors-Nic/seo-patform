@@ -577,14 +577,15 @@ interface KpiGroup {
             </div>
 
             @if (includeServiceAreas) {
-              <div class="mb-3 flex items-center gap-3 rounded-md border border-ink-200 bg-ink-50/50 px-3 py-2">
-                <div class="flex-1 min-w-0">
+              <div class="mb-3 rounded-md border border-ink-200 bg-ink-50/50 px-3 py-2 flex flex-wrap items-center justify-between gap-3">
+                <div class="min-w-0">
                   <div class="text-xs font-semibold text-ink-900">Sort locations by</div>
                   <p class="text-[11px] text-ink-500 mt-0.5">
                     Best performance appears first. Hubs stay grouped on top.
                   </p>
                 </div>
-                <select class="input input-sm text-xs" [(ngModel)]="locationsSort">
+                <select class="input input-sm text-xs w-auto min-w-[220px] flex-shrink-0"
+                        [(ngModel)]="locationsSort">
                   @for (opt of locationsSortOptions; track opt.key) {
                     <option [value]="opt.key">{{ opt.label }}</option>
                   }
