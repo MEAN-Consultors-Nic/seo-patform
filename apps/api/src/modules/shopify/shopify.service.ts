@@ -9,6 +9,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
   ShopifyApplyResultRow,
+  ShopifyAuthMode,
   ShopifyConnectionInfo,
   ShopifyResource,
   ShopifyResourceItem,
@@ -20,6 +21,9 @@ import { AuthenticatedUser } from '../auth/roles.guard';
 import { ClientsService } from '../clients/clients.service';
 
 const SHOPIFY_API_VERSION = '2025-01';
+// Shopify Dev Dashboard tokens are valid for 86399s. We refresh 60s early
+// so an in-flight request never lands on an expired token.
+const TOKEN_REFRESH_BUFFER_MS = 60 * 1000;
 
 interface ShopifyGraphqlError {
   message: string;
@@ -61,30 +65,165 @@ interface PaginatedResource {
   pageInfo: { hasNextPage: boolean; endCursor?: string };
 }
 
+interface CachedToken {
+  token: string;
+  expiresAt: number; // epoch ms
+}
+
+interface ResolvedAuth {
+  shopDomain: string;
+  accessToken: string;
+  authMode: ShopifyAuthMode;
+  tokenExpiresAt?: number;
+}
+
 @Injectable()
 export class ShopifyService {
   private readonly logger = new Logger(ShopifyService.name);
+
+  // Per-process cache, keyed by `${shopDomain}:${clientId}`.
+  // We're OK with multiple Heroku dynos each minting their own token —
+  // at worst we exchange a couple of extra times within 24h, no correctness
+  // problem because Shopify lets multiple tokens coexist.
+  private readonly tokenCache = new Map<string, CachedToken>();
 
   constructor(
     @InjectModel(Client.name) private readonly clientModel: Model<ClientDocument>,
     private readonly clients: ClientsService,
   ) {}
 
-  private async getCredentials(
+  private async loadClient(
     clientId: string,
     user?: AuthenticatedUser,
-  ): Promise<{ shopDomain: string; accessToken: string }> {
+  ): Promise<Client> {
     if (user) await this.clients.assertAccess(clientId, user);
     const client = await this.clientModel.findById(clientId).lean().exec();
     if (!client) throw new NotFoundException(`Client ${clientId} not found`);
+    return client;
+  }
+
+  /**
+   * Resolves a usable Shopify Admin API access token for the client.
+   * Auth modes (in priority order):
+   *   1. Dev Dashboard OAuth — uses client_id + client_secret via
+   *      client_credentials grant. Token cached 24h - 60s.
+   *   2. Legacy static token — uses a pre-existing `shpat_…` token.
+   */
+  private async resolveAuth(
+    clientId: string,
+    user?: AuthenticatedUser,
+  ): Promise<ResolvedAuth> {
+    const client = await this.loadClient(clientId, user);
+    return this.resolveAuthFromClient(client);
+  }
+
+  private async resolveAuthFromClient(client: Client): Promise<ResolvedAuth> {
     const shopDomain = (client.shopifyShopDomain ?? '').trim();
-    const accessToken = (client.shopifyAccessToken ?? '').trim();
-    if (!shopDomain || !accessToken) {
-      throw new BadRequestException(
-        'Client is missing shopifyShopDomain or shopifyAccessToken',
+    if (!shopDomain) {
+      throw new BadRequestException('Client is missing shopifyShopDomain');
+    }
+    const dom = this.normalizeShop(shopDomain);
+
+    const cid = (client.shopifyClientId ?? '').trim();
+    const csec = (client.shopifyClientSecret ?? '').trim();
+    if (cid && csec) {
+      const cached = await this.getOrMintOauthToken(dom, cid, csec);
+      return {
+        shopDomain: dom,
+        accessToken: cached.token,
+        authMode: 'oauth-client-credentials',
+        tokenExpiresAt: cached.expiresAt,
+      };
+    }
+
+    const legacy = (client.shopifyAccessToken ?? '').trim();
+    if (legacy) {
+      return {
+        shopDomain: dom,
+        accessToken: legacy,
+        authMode: 'legacy-token',
+      };
+    }
+
+    throw new BadRequestException(
+      'Client has no Shopify auth configured. Provide either shopifyClientId + shopifyClientSecret (Dev Dashboard) or a legacy shopifyAccessToken.',
+    );
+  }
+
+  private async getOrMintOauthToken(
+    shopDomain: string,
+    clientId: string,
+    clientSecret: string,
+  ): Promise<CachedToken> {
+    const key = `${shopDomain}:${clientId}`;
+    const cached = this.tokenCache.get(key);
+    if (cached && cached.expiresAt - Date.now() > TOKEN_REFRESH_BUFFER_MS) {
+      return cached;
+    }
+    return this.mintOauthToken(shopDomain, clientId, clientSecret);
+  }
+
+  private async mintOauthToken(
+    shopDomain: string,
+    clientId: string,
+    clientSecret: string,
+  ): Promise<CachedToken> {
+    const url = `https://${shopDomain}/admin/oauth/access_token`;
+    const body = new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: clientId,
+      client_secret: clientSecret,
+    });
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        body: body.toString(),
+      });
+    } catch (err) {
+      throw new InternalServerErrorException(
+        `Shopify OAuth network error: ${(err as Error).message}`,
       );
     }
-    return { shopDomain: this.normalizeShop(shopDomain), accessToken };
+
+    const text = await res.text();
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        throw new BadRequestException(
+          `Shopify OAuth ${res.status}: invalid client_id/client_secret, or the app and store are not in the same Shopify organization.`,
+        );
+      }
+      throw new InternalServerErrorException(
+        `Shopify OAuth HTTP ${res.status}: ${text.slice(0, 300)}`,
+      );
+    }
+
+    let parsed: { access_token?: string; expires_in?: number; scope?: string };
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new InternalServerErrorException(
+        `Shopify OAuth returned non-JSON: ${text.slice(0, 200)}`,
+      );
+    }
+    if (!parsed.access_token) {
+      throw new InternalServerErrorException(
+        `Shopify OAuth response missing access_token: ${text.slice(0, 200)}`,
+      );
+    }
+
+    const expiresMs = (parsed.expires_in ?? 86399) * 1000;
+    const cached: CachedToken = {
+      token: parsed.access_token,
+      expiresAt: Date.now() + expiresMs,
+    };
+    this.tokenCache.set(`${shopDomain}:${clientId}`, cached);
+    return cached;
   }
 
   private normalizeShop(input: string): string {
@@ -157,20 +296,21 @@ export class ShopifyService {
     user?: AuthenticatedUser,
   ): Promise<ShopifyConnectionInfo> {
     try {
-      const { shopDomain, accessToken } = await this.getCredentials(
-        clientId,
-        user,
-      );
+      const auth = await this.resolveAuth(clientId, user);
       const data = await this.gql<ShopConnection>(
-        shopDomain,
-        accessToken,
+        auth.shopDomain,
+        auth.accessToken,
         `query { shop { name myshopifyDomain primaryDomain { url } } }`,
       );
       return {
         connected: true,
-        shopDomain,
+        shopDomain: auth.shopDomain,
         shopName: data.shop.name,
         primaryDomain: data.shop.primaryDomain?.url,
+        authMode: auth.authMode,
+        tokenExpiresAt: auth.tokenExpiresAt
+          ? new Date(auth.tokenExpiresAt).toISOString()
+          : undefined,
       };
     } catch (err) {
       return {
@@ -181,18 +321,43 @@ export class ShopifyService {
   }
 
   /**
-   * Verify a domain+token pair without persisting them. Used for the
-   * "Test before saving" UX in the connection settings panel.
+   * Verify a connection candidate without persisting it. Accepts either
+   * (shopDomain + clientId + clientSecret) for the Dev Dashboard OAuth flow,
+   * or (shopDomain + accessToken) for legacy custom apps.
    */
-  async verifyRaw(shopDomain: string, accessToken: string): Promise<ShopifyConnectionInfo> {
-    if (!shopDomain || !accessToken) {
-      return { connected: false, error: 'shopDomain and accessToken are required' };
+  async verifyRaw(input: {
+    shopDomain?: string;
+    clientId?: string;
+    clientSecret?: string;
+    accessToken?: string;
+  }): Promise<ShopifyConnectionInfo> {
+    const shopDomain = (input.shopDomain ?? '').trim();
+    if (!shopDomain) {
+      return { connected: false, error: 'shopDomain is required' };
+    }
+    const cid = (input.clientId ?? '').trim();
+    const csec = (input.clientSecret ?? '').trim();
+    const accessToken = (input.accessToken ?? '').trim();
+    if (!accessToken && !(cid && csec)) {
+      return {
+        connected: false,
+        error: 'Provide either clientId + clientSecret (Dev Dashboard) or a legacy accessToken.',
+      };
     }
     try {
       const dom = this.normalizeShop(shopDomain);
+      let token = accessToken;
+      let authMode: ShopifyAuthMode = 'legacy-token';
+      let tokenExpiresAt: number | undefined;
+      if (cid && csec) {
+        const minted = await this.mintOauthToken(dom, cid, csec);
+        token = minted.token;
+        tokenExpiresAt = minted.expiresAt;
+        authMode = 'oauth-client-credentials';
+      }
       const data = await this.gql<ShopConnection>(
         dom,
-        accessToken,
+        token,
         `query { shop { name myshopifyDomain primaryDomain { url } } }`,
       );
       return {
@@ -200,6 +365,10 @@ export class ShopifyService {
         shopDomain: dom,
         shopName: data.shop.name,
         primaryDomain: data.shop.primaryDomain?.url,
+        authMode,
+        tokenExpiresAt: tokenExpiresAt
+          ? new Date(tokenExpiresAt).toISOString()
+          : undefined,
       };
     } catch (err) {
       return { connected: false, error: (err as Error).message };
@@ -218,7 +387,7 @@ export class ShopifyService {
     hasNextPage: boolean;
     endCursor?: string;
   }> {
-    const { shopDomain, accessToken } = await this.getCredentials(clientId, user);
+    const { shopDomain, accessToken } = await this.resolveAuth(clientId, user);
     const limit = Math.min(Math.max(opts.limit ?? 25, 1), 100);
 
     if (resource === 'product') {
@@ -578,7 +747,7 @@ export class ShopifyService {
     csvText: string,
     user?: AuthenticatedUser,
   ): Promise<ShopifySeoPreviewRow[]> {
-    const { shopDomain, accessToken } = await this.getCredentials(clientId, user);
+    const { shopDomain, accessToken } = await this.resolveAuth(clientId, user);
     const rows = this.parseCsv(csvText);
     if (!rows.length) throw new BadRequestException('CSV has no data rows');
 
@@ -644,7 +813,7 @@ export class ShopifyService {
     }>,
     user?: AuthenticatedUser,
   ): Promise<ShopifyApplyResultRow[]> {
-    const { shopDomain, accessToken } = await this.getCredentials(clientId, user);
+    const { shopDomain, accessToken } = await this.resolveAuth(clientId, user);
     if (!rows.length) throw new BadRequestException('No rows to apply');
 
     const results: ShopifyApplyResultRow[] = [];

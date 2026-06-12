@@ -41,11 +41,25 @@ export class ShopifyController {
   }
 
   @Post('test-raw')
-  testRaw(@Body() body: { shopDomain?: string; accessToken?: string }) {
-    if (!body?.shopDomain || !body?.accessToken) {
-      throw new BadRequestException('shopDomain and accessToken are required');
+  testRaw(
+    @Body()
+    body: {
+      shopDomain?: string;
+      clientId?: string;
+      clientSecret?: string;
+      accessToken?: string;
+    },
+  ) {
+    if (!body?.shopDomain) {
+      throw new BadRequestException('shopDomain is required');
     }
-    return this.svc.verifyRaw(body.shopDomain, body.accessToken);
+    const hasOauth = body.clientId && body.clientSecret;
+    if (!hasOauth && !body.accessToken) {
+      throw new BadRequestException(
+        'Provide either clientId + clientSecret or a legacy accessToken',
+      );
+    }
+    return this.svc.verifyRaw(body);
   }
 
   @Get('list')

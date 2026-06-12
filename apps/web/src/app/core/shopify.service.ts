@@ -28,11 +28,16 @@ export class ShopifyService {
     });
   }
 
-  testRaw(shopDomain: string, accessToken: string): Observable<ShopifyConnectionInfo> {
-    return this.http.post<ShopifyConnectionInfo>(`${this.base}/shopify/test-raw`, {
-      shopDomain,
-      accessToken,
-    });
+  testRaw(input: {
+    shopDomain: string;
+    clientId?: string;
+    clientSecret?: string;
+    accessToken?: string;
+  }): Observable<ShopifyConnectionInfo> {
+    return this.http.post<ShopifyConnectionInfo>(
+      `${this.base}/shopify/test-raw`,
+      input,
+    );
   }
 
   list(

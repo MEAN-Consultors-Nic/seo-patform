@@ -119,6 +119,8 @@ export class CreateClientDto {
   @IsOptional() @IsBoolean() isEcommerce?: boolean;
   @IsOptional() @IsString() merchantCenterId?: string;
   @IsOptional() @IsString() shopifyShopDomain?: string;
+  @IsOptional() @IsString() shopifyClientId?: string;
+  @IsOptional() @IsString() shopifyClientSecret?: string;
   @IsOptional() @IsString() shopifyAccessToken?: string;
   @IsOptional()
   @IsArray()

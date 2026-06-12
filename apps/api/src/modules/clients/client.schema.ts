@@ -173,6 +173,12 @@ export class Client {
   shopifyShopDomain?: string;
 
   @Prop()
+  shopifyClientId?: string;
+
+  @Prop()
+  shopifyClientSecret?: string;
+
+  @Prop()
   shopifyAccessToken?: string;
 
   @Prop({ type: [ServiceAreaSchemaDef], default: [] })

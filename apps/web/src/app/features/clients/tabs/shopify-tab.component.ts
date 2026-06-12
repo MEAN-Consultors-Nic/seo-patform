@@ -11,6 +11,7 @@ import { FormsModule } from '@angular/forms';
 import {
   Client,
   ShopifyApplyResultRow,
+  ShopifyAuthMode,
   ShopifyConnectionInfo,
   ShopifyResource,
   ShopifyResourceItem,
@@ -48,7 +49,7 @@ interface ResourceTabDef {
               <span class="px-2 py-1 rounded bg-positive-50 text-positive-500 text-[11px] font-semibold">
                 ✓ Connected
               </span>
-            } @else if (client.shopifyShopDomain) {
+            } @else if (hasAnyCredentials()) {
               <span class="px-2 py-1 rounded bg-warning-50 text-warning-500 text-[11px] font-semibold">
                 ⚠ Not connected
               </span>
@@ -58,7 +59,7 @@ interface ResourceTabDef {
               </span>
             }
             <button class="btn-secondary text-xs" (click)="testConnection()"
-                    [disabled]="testing() || !client.shopifyShopDomain">
+                    [disabled]="testing() || !hasAnyCredentials()">
               {{ testing() ? 'Testing…' : '⚡ Test' }}
             </button>
             <button class="btn-secondary text-xs" (click)="toggleSettings()">
@@ -69,16 +70,81 @@ interface ResourceTabDef {
 
         @if (settingsOpen()) {
           <div class="mt-4 border-t border-ink-100 pt-4 space-y-3">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label class="label">Shop domain</label>
-                <input class="input"
-                       [(ngModel)]="settingsForm.shopDomain"
-                       placeholder="acme-store.myshopify.com" />
-                <p class="text-[11px] text-ink-400 mt-1">
-                  The <code class="bg-ink-100 px-1 rounded">*.myshopify.com</code>
-                  domain (not the storefront domain).
-                </p>
+            <div>
+              <label class="label">Shop domain</label>
+              <input class="input"
+                     [(ngModel)]="settingsForm.shopDomain"
+                     placeholder="acme-store.myshopify.com" />
+              <p class="text-[11px] text-ink-400 mt-1">
+                The <code class="bg-ink-100 px-1 rounded">*.myshopify.com</code>
+                domain (not the storefront domain).
+              </p>
+            </div>
+
+            <!-- Mode tabs -->
+            <div class="flex items-center gap-1 border-b border-ink-100">
+              <button type="button"
+                      class="px-3 py-1.5 text-xs font-semibold border-b-2 transition"
+                      [class.border-brand-500]="authMode() === 'oauth-client-credentials'"
+                      [class.text-brand-500]="authMode() === 'oauth-client-credentials'"
+                      [class.border-transparent]="authMode() !== 'oauth-client-credentials'"
+                      [class.text-ink-500]="authMode() !== 'oauth-client-credentials'"
+                      (click)="authMode.set('oauth-client-credentials')">
+                Dev Dashboard (recommended)
+              </button>
+              <button type="button"
+                      class="px-3 py-1.5 text-xs font-semibold border-b-2 transition"
+                      [class.border-brand-500]="authMode() === 'legacy-token'"
+                      [class.text-brand-500]="authMode() === 'legacy-token'"
+                      [class.border-transparent]="authMode() !== 'legacy-token'"
+                      [class.text-ink-500]="authMode() !== 'legacy-token'"
+                      (click)="authMode.set('legacy-token')">
+                Legacy token
+              </button>
+            </div>
+
+            @if (authMode() === 'oauth-client-credentials') {
+              <div class="bg-ink-50 border border-ink-200 rounded p-3 text-[11px] text-ink-600">
+                Shopify deprecated legacy Custom Apps on Jan 1, 2026. New apps are
+                built in <strong>Dev Dashboard</strong> and authenticate via OAuth
+                client credentials. The platform exchanges
+                <code class="bg-ink-100 px-1 rounded">client_id</code> +
+                <code class="bg-ink-100 px-1 rounded">client_secret</code> for a
+                24h access token automatically and refreshes it on demand.
+                <br /><br />
+                ⚠ <strong>Same organization required:</strong> the app and the store
+                must belong to the same Shopify organization in Dev Dashboard.
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label class="label">Client ID</label>
+                  <input class="input font-mono text-xs"
+                         autocomplete="off"
+                         [(ngModel)]="settingsForm.clientId"
+                         placeholder="8cca07893f13fc65e5f23727a5b2b288" />
+                  <p class="text-[11px] text-ink-400 mt-1">
+                    Dev Dashboard → your app → <em>Settings</em> → Credentials.
+                  </p>
+                </div>
+                <div>
+                  <label class="label">Client Secret</label>
+                  <input class="input font-mono text-xs"
+                         type="password"
+                         autocomplete="off"
+                         [(ngModel)]="settingsForm.clientSecret"
+                         placeholder="••••••••••••" />
+                  <p class="text-[11px] text-ink-400 mt-1">
+                    Required scopes (configure in the app):
+                    <code class="bg-ink-100 px-1 rounded">read_products write_products read_content write_content</code>.
+                  </p>
+                </div>
+              </div>
+            } @else {
+              <div class="bg-warning-50 border border-warning-500/40 rounded p-3 text-[11px] text-ink-700">
+                Use this only if the store has an <strong>existing</strong>
+                legacy custom app with a <code class="bg-ink-100 px-1 rounded">shpat_</code>
+                token. Shopify no longer lets you create new ones (deprecated
+                Jan 1, 2026).
               </div>
               <div>
                 <label class="label">Admin API access token</label>
@@ -87,14 +153,9 @@ interface ResourceTabDef {
                        autocomplete="off"
                        [(ngModel)]="settingsForm.accessToken"
                        placeholder="shpat_••••••••••••" />
-                <p class="text-[11px] text-ink-400 mt-1">
-                  Generated in <em>Settings → Apps → Develop apps →
-                  [your app] → API credentials</em>. Required scopes:
-                  <code class="bg-ink-100 px-1 rounded">read_products write_products</code>,
-                  <code class="bg-ink-100 px-1 rounded">read_content write_content</code>.
-                </p>
               </div>
-            </div>
+            }
+
             @if (settingsError()) {
               <div class="text-xs text-danger-500">{{ settingsError() }}</div>
             }
@@ -105,6 +166,9 @@ interface ResourceTabDef {
                   <strong>{{ r.shopName }}</strong>
                   ({{ r.shopDomain }})
                   @if (r.primaryDomain) { · {{ r.primaryDomain }} }
+                  @if (r.authMode === 'oauth-client-credentials') {
+                    · <span class="text-ink-500">OAuth token refreshes every 24h</span>
+                  }
                 </div>
               } @else {
                 <div class="text-xs text-danger-500">✗ {{ r.error }}</div>
@@ -112,7 +176,7 @@ interface ResourceTabDef {
             }
             <div class="flex justify-end gap-2">
               <button class="btn-secondary text-xs" (click)="testRaw()"
-                      [disabled]="testingRaw() || !settingsForm.shopDomain || !settingsForm.accessToken">
+                      [disabled]="testingRaw() || !canTestRaw()">
                 {{ testingRaw() ? 'Testing…' : 'Test before saving' }}
               </button>
               <button class="btn-primary text-xs" (click)="saveSettings()"
@@ -129,6 +193,11 @@ interface ResourceTabDef {
               Connected to <strong>{{ cs.shopName }}</strong>
               · myshopify: <code>{{ cs.shopDomain }}</code>
               @if (cs.primaryDomain) { · primary: <code>{{ cs.primaryDomain }}</code> }
+              @if (cs.authMode === 'oauth-client-credentials') {
+                · <span class="text-positive-500">Dev Dashboard OAuth</span>
+              } @else if (cs.authMode === 'legacy-token') {
+                · <span class="text-warning-500">legacy token</span>
+              }
             </div>
           } @else if (cs.error) {
             <div class="mt-3 text-xs text-danger-500">⚠ {{ cs.error }}</div>
@@ -136,7 +205,7 @@ interface ResourceTabDef {
         }
       </div>
 
-      @if (!client.shopifyShopDomain || !connStatus()?.connected) {
+      @if (!hasAnyCredentials() || !connStatus()?.connected) {
         <div class="card text-center py-10 text-ink-400 italic text-sm">
           Configure and test the Shopify credentials above to enable browsing
           and bulk SEO updates.
@@ -526,8 +595,16 @@ export class ClientShopifyTab implements OnChanges {
 
   // Connection state
   settingsOpen = signal(false);
-  settingsForm: { shopDomain: string; accessToken: string } = {
+  authMode = signal<ShopifyAuthMode>('oauth-client-credentials');
+  settingsForm: {
+    shopDomain: string;
+    clientId: string;
+    clientSecret: string;
+    accessToken: string;
+  } = {
     shopDomain: '',
+    clientId: '',
+    clientSecret: '',
     accessToken: '',
   };
   testing = signal(false);
@@ -588,16 +665,42 @@ export class ClientShopifyTab implements OnChanges {
   ngOnChanges() {
     this.settingsForm = {
       shopDomain: this.client.shopifyShopDomain ?? '',
+      clientId: this.client.shopifyClientId ?? '',
+      clientSecret: this.client.shopifyClientSecret ?? '',
       accessToken: this.client.shopifyAccessToken ?? '',
     };
+    // Pick the active mode based on which credentials the client has.
+    if (this.client.shopifyClientId && this.client.shopifyClientSecret) {
+      this.authMode.set('oauth-client-credentials');
+    } else if (this.client.shopifyAccessToken) {
+      this.authMode.set('legacy-token');
+    } else {
+      this.authMode.set('oauth-client-credentials');
+    }
     this.items.set([]);
     this.endCursor.set(undefined);
     this.hasNextPage.set(false);
     this.connStatus.set(null);
     this.rawTestResult.set(null);
-    if (this.client.shopifyShopDomain && this.client.shopifyAccessToken) {
+    if (this.hasAnyCredentials()) {
       this.testConnection();
     }
+  }
+
+  hasAnyCredentials(): boolean {
+    return !!(
+      this.client.shopifyShopDomain &&
+      ((this.client.shopifyClientId && this.client.shopifyClientSecret) ||
+        this.client.shopifyAccessToken)
+    );
+  }
+
+  canTestRaw(): boolean {
+    if (!this.settingsForm.shopDomain) return false;
+    if (this.authMode() === 'oauth-client-credentials') {
+      return !!(this.settingsForm.clientId && this.settingsForm.clientSecret);
+    }
+    return !!this.settingsForm.accessToken;
   }
 
   toggleSettings() {
@@ -628,8 +731,14 @@ export class ClientShopifyTab implements OnChanges {
   testRaw() {
     this.testingRaw.set(true);
     this.settingsError.set(null);
+    const isOauth = this.authMode() === 'oauth-client-credentials';
     this.shopify
-      .testRaw(this.settingsForm.shopDomain, this.settingsForm.accessToken)
+      .testRaw({
+        shopDomain: this.settingsForm.shopDomain.trim(),
+        clientId: isOauth ? this.settingsForm.clientId.trim() : undefined,
+        clientSecret: isOauth ? this.settingsForm.clientSecret.trim() : undefined,
+        accessToken: !isOauth ? this.settingsForm.accessToken.trim() : undefined,
+      })
       .subscribe({
         next: (r) => {
           this.rawTestResult.set(r);
@@ -649,26 +758,36 @@ export class ClientShopifyTab implements OnChanges {
     if (!this.client?._id) return;
     this.savingSettings.set(true);
     this.settingsError.set(null);
-    this.clients
-      .update(this.client._id, {
-        shopifyShopDomain: this.settingsForm.shopDomain.trim() || undefined,
-        shopifyAccessToken: this.settingsForm.accessToken.trim() || undefined,
-      })
-      .subscribe({
-        next: (c) => {
-          this.client = c;
-          this.savingSettings.set(false);
-          this.settingsOpen.set(false);
-          this.testConnection();
-        },
-        error: (err) => {
-          this.savingSettings.set(false);
-          const m = err?.error?.message;
-          this.settingsError.set(
-            Array.isArray(m) ? m.join(', ') : m || 'Could not save credentials',
-          );
-        },
-      });
+    const isOauth = this.authMode() === 'oauth-client-credentials';
+    // Saving in OAuth mode clears any legacy token (and vice versa) so we
+    // don't ship contradictory state.
+    const patch: Partial<Client> = {
+      shopifyShopDomain: this.settingsForm.shopDomain.trim() || undefined,
+      shopifyClientId: isOauth
+        ? this.settingsForm.clientId.trim() || undefined
+        : undefined,
+      shopifyClientSecret: isOauth
+        ? this.settingsForm.clientSecret.trim() || undefined
+        : undefined,
+      shopifyAccessToken: !isOauth
+        ? this.settingsForm.accessToken.trim() || undefined
+        : undefined,
+    };
+    this.clients.update(this.client._id, patch).subscribe({
+      next: (c) => {
+        this.client = c;
+        this.savingSettings.set(false);
+        this.settingsOpen.set(false);
+        this.testConnection();
+      },
+      error: (err) => {
+        this.savingSettings.set(false);
+        const m = err?.error?.message;
+        this.settingsError.set(
+          Array.isArray(m) ? m.join(', ') : m || 'Could not save credentials',
+        );
+      },
+    });
   }
 
   selectResource(r: ResourceTabKey) {

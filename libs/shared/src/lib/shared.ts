@@ -171,6 +171,8 @@ export interface Client {
   isEcommerce?: boolean;
   merchantCenterId?: string;
   shopifyShopDomain?: string;
+  shopifyClientId?: string;
+  shopifyClientSecret?: string;
   shopifyAccessToken?: string;
   serviceAreas?: ServiceArea[];
   createdAt?: Date;
@@ -560,11 +562,15 @@ export interface ShopifyResourceItem {
   onlineStoreUrl?: string;
 }
 
+export type ShopifyAuthMode = 'oauth-client-credentials' | 'legacy-token';
+
 export interface ShopifyConnectionInfo {
   connected: boolean;
   shopDomain?: string;
   shopName?: string;
   primaryDomain?: string;
+  authMode?: ShopifyAuthMode;
+  tokenExpiresAt?: string;
   error?: string;
 }
 
