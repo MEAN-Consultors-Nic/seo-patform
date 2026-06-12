@@ -797,20 +797,14 @@ interface PublicPayload {
                           <th class="py-2.5 px-4 font-bold">Piece title</th>
                           <th class="py-2.5 px-4 font-bold">Target keyword</th>
                           <th class="py-2.5 px-4 font-bold">Published</th>
+                          <th class="py-2.5 px-4 font-bold text-right">Link</th>
                         </tr>
                       </thead>
                       <tbody>
                         @for (p of contentPublished(); track p.title) {
                           <tr class="border-b border-ink-100 last:border-0">
                             <td class="py-2.5 px-4 text-ink-900 font-medium">
-                              @if (p.publishedUrl) {
-                                <a [href]="p.publishedUrl" target="_blank" rel="noopener"
-                                   class="text-brand-500 hover:underline">
-                                  {{ p.title }} ↗
-                                </a>
-                              } @else {
-                                {{ p.title }}
-                              }
+                              {{ p.title }}
                             </td>
                             <td class="py-2.5 px-4 text-ink-700">
                               @if (p.targetKeyword) {
@@ -821,6 +815,16 @@ interface PublicPayload {
                             </td>
                             <td class="py-2.5 px-4 text-ink-500 text-xs whitespace-nowrap">
                               {{ p.publishedAt ? (p.publishedAt | date: 'MMM d, y') : '—' }}
+                            </td>
+                            <td class="py-2.5 px-4 text-right whitespace-nowrap">
+                              @if (p.publishedUrl) {
+                                <a [href]="p.publishedUrl" target="_blank" rel="noopener"
+                                   class="inline-flex items-center gap-1 text-brand-500 hover:text-brand-600 hover:underline text-xs font-semibold">
+                                  Open ↗
+                                </a>
+                              } @else {
+                                <span class="text-ink-300 italic text-xs">—</span>
+                              }
                             </td>
                           </tr>
                         }
