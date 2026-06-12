@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -99,5 +100,21 @@ export class TasksController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.tasks.removeAttachment(id, body.publicId, user);
+  }
+
+  @Post(':id/subtasks')
+  addSubtask(
+    @Param('id') id: string,
+    @Body() body: { title?: string; done?: boolean },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    if (!body?.title || !body.title.trim()) {
+      throw new BadRequestException('subtask title is required');
+    }
+    return this.tasks.addSubtask(
+      id,
+      { title: body.title.trim(), done: !!body.done },
+      user,
+    );
   }
 }

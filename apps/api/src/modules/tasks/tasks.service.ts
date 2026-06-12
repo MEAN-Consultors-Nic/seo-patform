@@ -109,6 +109,24 @@ export class TasksService {
     return { deleted: true };
   }
 
+  async addSubtask(
+    id: string,
+    subtask: { title: string; done?: boolean },
+    user?: AuthenticatedUser,
+  ) {
+    await this.ensureAccessToTask(id, user);
+    const updated = await this.model
+      .findByIdAndUpdate(
+        id,
+        { $push: { subtasks: { title: subtask.title, done: !!subtask.done } } },
+        { new: true },
+      )
+      .lean()
+      .exec();
+    if (!updated) throw new NotFoundException(`Task ${id} not found`);
+    return updated;
+  }
+
   async addAttachment(
     id: string,
     attachment: Partial<TaskAttachment>,

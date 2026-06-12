@@ -16,15 +16,28 @@ import {
   ShopifyResource,
   ShopifyResourceItem,
   ShopifySeoPreviewRow,
+  Task,
+  TaskStatus,
 } from '@seo/shared';
 import { ClientsService } from '../../../core/clients.service';
 import { ShopifyService } from '../../../core/shopify.service';
+import { TasksService } from '../../../core/tasks.service';
 
 type ResourceTabKey = ShopifyResource;
 
 interface ResourceTabDef {
   key: ResourceTabKey;
   label: string;
+}
+
+type HealthKey = 'good' | 'partial' | 'empty';
+
+type CharHealth = 'good' | 'warn' | 'neutral';
+
+interface TrackContext {
+  item: ShopifyResourceItem;
+  pageUrl: string;
+  subtaskTitle: string;
 }
 
 @Component({
@@ -242,6 +255,36 @@ interface ResourceTabDef {
             </div>
           </div>
 
+          <!-- Health filter chips -->
+          @if (items().length > 0) {
+            <div class="flex flex-wrap items-center gap-1 mb-3">
+              <span class="text-[10px] uppercase tracking-wider text-ink-500 font-bold mr-1">
+                Filter:
+              </span>
+              @for (f of healthFilters; track f.key) {
+                <button
+                  type="button"
+                  class="px-2 py-1 text-[11px] font-semibold rounded transition border"
+                  [class.bg-brand-50]="activeHealth().has(f.key)"
+                  [class.text-brand-500]="activeHealth().has(f.key)"
+                  [class.border-brand-500]="activeHealth().has(f.key)"
+                  [class.bg-white]="!activeHealth().has(f.key)"
+                  [class.text-ink-500]="!activeHealth().has(f.key)"
+                  [class.border-ink-200]="!activeHealth().has(f.key)"
+                  (click)="toggleHealth(f.key)">
+                  {{ f.label }}
+                  <span class="ml-1 opacity-70">({{ healthCount(f.key) }})</span>
+                </button>
+              }
+              @if (activeHealth().size > 0) {
+                <button class="text-[11px] text-ink-400 hover:text-ink-900 ml-1 underline"
+                        (click)="activeHealth.set(emptySet)">
+                  Clear
+                </button>
+              }
+            </div>
+          }
+
           @if (listError()) {
             <div class="mb-3 text-xs text-danger-500">{{ listError() }}</div>
           }
@@ -255,6 +298,10 @@ interface ResourceTabDef {
             <div class="text-center py-10 text-ink-400 italic text-sm">
               No {{ activeResource() }}s found.
             </div>
+          } @else if (filteredItems().length === 0) {
+            <div class="text-center py-10 text-ink-400 italic text-sm">
+              No {{ activeResource() }}s match the selected health filters.
+            </div>
           } @else {
             <table class="w-full text-sm">
               <thead class="border-b border-ink-100">
@@ -262,11 +309,12 @@ interface ResourceTabDef {
                   <th class="py-2 pr-2 font-bold">Title / handle</th>
                   <th class="py-2 px-2 font-bold">SEO title</th>
                   <th class="py-2 px-2 font-bold">SEO description</th>
-                  <th class="py-2 pl-2 font-bold text-right">Health</th>
+                  <th class="py-2 px-2 font-bold">Health</th>
+                  <th class="py-2 pl-2 font-bold text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                @for (item of items(); track item.id) {
+                @for (item of filteredItems(); track item.id) {
                   <tr class="border-b border-ink-100 last:border-0 hover:bg-ink-50/40">
                     <td class="py-2 pr-2 align-top">
                       <div class="text-ink-900 font-medium truncate max-w-[260px]"
@@ -296,10 +344,16 @@ interface ResourceTabDef {
                         <span class="text-[11px] text-warning-500 italic">— missing</span>
                       }
                     </td>
-                    <td class="py-2 pl-2 align-top text-right">
+                    <td class="py-2 px-2 align-top">
                       <span [class]="healthBadgeClass(item)">
                         {{ healthBadge(item) }}
                       </span>
+                    </td>
+                    <td class="py-2 pl-2 align-top text-right">
+                      <button class="btn-secondary text-[11px] !py-1 !px-2"
+                              (click)="openEdit(item)">
+                        ✎ Edit
+                      </button>
                     </td>
                   </tr>
                 }
@@ -307,7 +361,11 @@ interface ResourceTabDef {
             </table>
 
             <div class="flex items-center justify-between mt-3 text-[11px] text-ink-500">
-              <span>{{ items().length }} loaded</span>
+              <span>
+                {{ filteredItems().length }} shown
+                @if (activeHealth().size > 0) { · of {{ items().length }} loaded }
+                @if (activeHealth().size === 0) { · {{ items().length }} loaded }
+              </span>
               @if (hasNextPage()) {
                 <button class="btn-secondary text-xs" (click)="loadMore()"
                         [disabled]="loadingList()">
@@ -578,6 +636,171 @@ interface ResourceTabDef {
         </div>
       </div>
     }
+
+    <!-- Inline edit modal -->
+    @if (editOpen(); as item) {
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+           (click)="closeEdit()">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto"
+             (click)="$event.stopPropagation()">
+          <div class="flex items-start justify-between mb-4">
+            <div>
+              <h2 class="text-lg font-bold text-ink-900">
+                Edit meta tags — {{ activeResource() }}
+              </h2>
+              <p class="text-xs text-ink-500 mt-0.5">
+                {{ item.title }}
+              </p>
+              <p class="font-mono text-[11px] text-ink-400 mt-0.5">
+                {{ item.handle }}
+                @if (item.onlineStoreUrl) {
+                  · <a [href]="item.onlineStoreUrl" target="_blank" rel="noopener"
+                       class="text-brand-500 hover:underline">View live ↗</a>
+                }
+              </p>
+            </div>
+            <button type="button" (click)="closeEdit()"
+                    class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <div class="flex items-baseline justify-between">
+                <label class="label">SEO title</label>
+                <span class="text-[11px]"
+                      [class.text-positive-500]="editTitleHealth() === 'good'"
+                      [class.text-warning-500]="editTitleHealth() === 'warn'"
+                      [class.text-ink-400]="editTitleHealth() === 'neutral'">
+                  {{ editForm.seoTitle.length }} chars
+                  @if (editTitleHealth() === 'warn') {
+                    · target 30–60
+                  }
+                </span>
+              </div>
+              <input class="input" [(ngModel)]="editForm.seoTitle"
+                     placeholder="Page title shown in Google results" />
+              @if (editOriginal()?.seoTitle) {
+                <div class="text-[10px] text-ink-400 mt-1">
+                  Current: <span class="line-through">{{ editOriginal()?.seoTitle }}</span>
+                </div>
+              }
+            </div>
+
+            <div>
+              <div class="flex items-baseline justify-between">
+                <label class="label">SEO description</label>
+                <span class="text-[11px]"
+                      [class.text-positive-500]="editDescHealth() === 'good'"
+                      [class.text-warning-500]="editDescHealth() === 'warn'"
+                      [class.text-ink-400]="editDescHealth() === 'neutral'">
+                  {{ editForm.seoDescription.length }} chars
+                  @if (editDescHealth() === 'warn') {
+                    · target 120–160
+                  }
+                </span>
+              </div>
+              <textarea class="input h-20"
+                        [(ngModel)]="editForm.seoDescription"
+                        placeholder="Snippet shown in Google results"></textarea>
+              @if (editOriginal()?.seoDescription) {
+                <div class="text-[10px] text-ink-400 mt-1">
+                  Current: <span class="line-through">{{ editOriginal()?.seoDescription }}</span>
+                </div>
+              }
+            </div>
+
+            @if (editError()) {
+              <div class="text-xs text-danger-500">{{ editError() }}</div>
+            }
+
+            <div class="bg-ink-50 border border-ink-200 rounded p-3 text-[11px] text-ink-600">
+              💡 After saving, you'll be prompted to log this change as a
+              subtask on one of this client's tasks for audit trail.
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-ink-100">
+            <button class="btn-secondary" (click)="closeEdit()">Cancel</button>
+            <button class="btn-primary" (click)="saveEdit()"
+                    [disabled]="savingEdit() || !editHasChanges()">
+              {{ savingEdit() ? 'Saving…' : 'Save to Shopify →' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Track-in-task dialog -->
+    @if (trackOpen(); as ctx) {
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+           (click)="dismissTrack()">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-xl p-6"
+             (click)="$event.stopPropagation()">
+          <div class="flex items-start justify-between mb-3">
+            <div>
+              <h2 class="text-lg font-bold text-ink-900">
+                ✓ Saved to Shopify
+              </h2>
+              <p class="text-xs text-ink-500 mt-0.5">
+                Track this change as a subtask?
+              </p>
+            </div>
+            <button type="button" (click)="dismissTrack()"
+                    class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
+          </div>
+
+          <div class="bg-ink-50 border border-ink-200 rounded p-3 mb-4 text-xs">
+            <div class="text-ink-500 text-[10px] uppercase tracking-wider font-bold mb-1">
+              Subtask title
+            </div>
+            <div class="font-medium text-ink-900">{{ ctx.subtaskTitle }}</div>
+          </div>
+
+          <div>
+            <label class="label">Add it to which task?</label>
+            @if (loadingTasks()) {
+              <div class="text-xs text-ink-400 italic py-2">Loading tasks…</div>
+            } @else if (clientTasks().length === 0) {
+              <div class="text-xs text-warning-500 py-2">
+                No tasks exist for this client yet. Create a task first from the Tasks tab.
+              </div>
+            } @else {
+              <select class="input" [(ngModel)]="selectedTaskId">
+                <option [ngValue]="null" disabled>— Select a task —</option>
+                @for (t of clientTasks(); track t._id) {
+                  <option [ngValue]="t._id">
+                    {{ statusEmoji(t.status) }} {{ t.title }}
+                    @if (t.category) { · {{ t.category }} }
+                  </option>
+                }
+              </select>
+            }
+          </div>
+
+          @if (trackError()) {
+            <div class="text-xs text-danger-500 mt-2">{{ trackError() }}</div>
+          }
+          @if (trackSaved()) {
+            <div class="text-xs text-positive-500 mt-2">
+              ✓ Subtask added — visible on the Tasks tab.
+            </div>
+          }
+
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-ink-100">
+            <button class="btn-secondary" (click)="dismissTrack()">
+              {{ trackSaved() ? 'Done' : 'Skip' }}
+            </button>
+            @if (!trackSaved()) {
+              <button class="btn-primary"
+                      (click)="confirmTrack()"
+                      [disabled]="!selectedTaskId || trackingSave()">
+                {{ trackingSave() ? 'Adding…' : 'Add as subtask' }}
+              </button>
+            }
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class ClientShopifyTab implements OnChanges {
@@ -585,6 +808,7 @@ export class ClientShopifyTab implements OnChanges {
 
   private shopify = inject(ShopifyService);
   private clients = inject(ClientsService);
+  private tasksSvc = inject(TasksService);
 
   resourceTabs: ResourceTabDef[] = [
     { key: 'product', label: '🛒 Products' },
@@ -592,6 +816,15 @@ export class ClientShopifyTab implements OnChanges {
     { key: 'page', label: '📄 Pages' },
     { key: 'article', label: '📰 Articles' },
   ];
+
+  // Health filters
+  healthFilters: Array<{ key: HealthKey; label: string }> = [
+    { key: 'good', label: '🟢 Good' },
+    { key: 'partial', label: '🟡 Partial' },
+    { key: 'empty', label: '🔴 Empty' },
+  ];
+  emptySet: Set<HealthKey> = new Set();
+  activeHealth = signal<Set<HealthKey>>(new Set());
 
   // Connection state
   settingsOpen = signal(false);
@@ -982,20 +1215,261 @@ export class ClientShopifyTab implements OnChanges {
     return s.length <= n ? s : s.slice(0, n - 1) + '…';
   }
 
-  healthBadge(item: ShopifyResourceItem): string {
-    if (!item.seoTitle && !item.seoDescription) return '🔴 empty';
-    if (!item.seoTitle || !item.seoDescription) return '🟡 partial';
+  healthKey(item: ShopifyResourceItem): HealthKey {
+    if (!item.seoTitle && !item.seoDescription) return 'empty';
+    if (!item.seoTitle || !item.seoDescription) return 'partial';
     const tLen = item.seoTitle.length;
     const dLen = item.seoDescription.length;
+    // Same heuristics as healthBadge: out-of-range counts as "partial" since
+    // the row needs attention but isn't fully empty.
+    if (tLen > 70 || dLen > 160 || tLen < 20 || dLen < 60) return 'partial';
+    return 'good';
+  }
+
+  healthBadge(item: ShopifyResourceItem): string {
+    const key = this.healthKey(item);
+    if (key === 'good') return '🟢 good';
+    if (key === 'empty') return '🔴 empty';
+    if (!item.seoTitle || !item.seoDescription) return '🟡 partial';
+    const tLen = item.seoTitle?.length ?? 0;
+    const dLen = item.seoDescription?.length ?? 0;
     if (tLen > 70 || dLen > 160) return '🟡 over';
     if (tLen < 20 || dLen < 60) return '🟡 short';
-    return '🟢 good';
+    return '🟡 partial';
   }
 
   healthBadgeClass(item: ShopifyResourceItem): string {
-    const b = this.healthBadge(item);
-    if (b.startsWith('🟢')) return 'text-[10px] font-semibold text-positive-500';
-    if (b.startsWith('🟡')) return 'text-[10px] font-semibold text-warning-500';
+    const key = this.healthKey(item);
+    if (key === 'good') return 'text-[10px] font-semibold text-positive-500';
+    if (key === 'partial') return 'text-[10px] font-semibold text-warning-500';
     return 'text-[10px] font-semibold text-danger-500';
   }
+
+  toggleHealth(key: HealthKey) {
+    this.activeHealth.update((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  healthCount(key: HealthKey): number {
+    return this.items().filter((i) => this.healthKey(i) === key).length;
+  }
+
+  // --- Inline edit + track-in-task ---------------------------------------
+
+  editOpen = signal<ShopifyResourceItem | null>(null);
+  editOriginal = signal<ShopifyResourceItem | null>(null);
+  editForm: { seoTitle: string; seoDescription: string } = {
+    seoTitle: '',
+    seoDescription: '',
+  };
+  savingEdit = signal(false);
+  editError = signal<string | null>(null);
+
+  trackOpen = signal<TrackContext | null>(null);
+  clientTasks = signal<Task[]>([]);
+  loadingTasks = signal(false);
+  selectedTaskId: string | null = null;
+  trackingSave = signal(false);
+  trackError = signal<string | null>(null);
+  trackSaved = signal(false);
+
+  editHasChanges = computed(() => {
+    const orig = this.editOriginal();
+    if (!orig) return false;
+    const t = this.editForm.seoTitle.trim();
+    const d = this.editForm.seoDescription.trim();
+    return t !== (orig.seoTitle ?? '') || d !== (orig.seoDescription ?? '');
+  });
+
+  editTitleHealth = computed<CharHealth>(() => {
+    const len = this.editForm.seoTitle.trim().length;
+    if (len === 0) return 'neutral';
+    if (len >= 30 && len <= 60) return 'good';
+    return 'warn';
+  });
+
+  editDescHealth = computed<CharHealth>(() => {
+    const len = this.editForm.seoDescription.trim().length;
+    if (len === 0) return 'neutral';
+    if (len >= 120 && len <= 160) return 'good';
+    return 'warn';
+  });
+
+  openEdit(item: ShopifyResourceItem) {
+    this.editOriginal.set(item);
+    this.editOpen.set(item);
+    this.editForm = {
+      seoTitle: item.seoTitle ?? '',
+      seoDescription: item.seoDescription ?? '',
+    };
+    this.editError.set(null);
+  }
+
+  closeEdit() {
+    this.editOpen.set(null);
+    this.editOriginal.set(null);
+    this.editError.set(null);
+  }
+
+  saveEdit() {
+    const item = this.editOpen();
+    const orig = this.editOriginal();
+    if (!item || !orig || !this.client?._id) return;
+    const newTitle = this.editForm.seoTitle.trim();
+    const newDesc = this.editForm.seoDescription.trim();
+    const titleChanged = newTitle !== (orig.seoTitle ?? '');
+    const descChanged = newDesc !== (orig.seoDescription ?? '');
+    if (!titleChanged && !descChanged) {
+      this.closeEdit();
+      return;
+    }
+
+    this.savingEdit.set(true);
+    this.editError.set(null);
+    this.shopify
+      .apply(this.client._id, this.activeResource(), [
+        {
+          handle: item.handle,
+          id: item.id,
+          newSeoTitle: titleChanged ? newTitle : undefined,
+          newSeoDescription: descChanged ? newDesc : undefined,
+        },
+      ])
+      .subscribe({
+        next: (res) => {
+          this.savingEdit.set(false);
+          const result = res[0];
+          if (!result?.success) {
+            this.editError.set(result?.error || 'Update failed');
+            return;
+          }
+          // Optimistically reflect the new SEO in the visible list.
+          this.items.update((cur) =>
+            cur.map((i) =>
+              i.id === item.id
+                ? {
+                    ...i,
+                    seoTitle: titleChanged ? newTitle : i.seoTitle,
+                    seoDescription: descChanged ? newDesc : i.seoDescription,
+                  }
+                : i,
+            ),
+          );
+          this.closeEdit();
+          this.openTrackDialog(item);
+        },
+        error: (err) => {
+          this.savingEdit.set(false);
+          const m = err?.error?.message;
+          this.editError.set(
+            Array.isArray(m) ? m.join(', ') : m || 'Update failed',
+          );
+        },
+      });
+  }
+
+  private openTrackDialog(item: ShopifyResourceItem) {
+    const pageUrl = this.derivePageUrl(item);
+    const ctx: TrackContext = {
+      item,
+      pageUrl,
+      subtaskTitle: `Meta tags improvement for ${pageUrl}`,
+    };
+    this.trackOpen.set(ctx);
+    this.trackError.set(null);
+    this.trackSaved.set(false);
+    this.selectedTaskId = null;
+    this.loadClientTasks();
+  }
+
+  private derivePageUrl(item: ShopifyResourceItem): string {
+    if (item.onlineStoreUrl) return item.onlineStoreUrl;
+    const primary =
+      this.connStatus()?.primaryDomain || `https://${this.connStatus()?.shopDomain}`;
+    if (!primary) return item.handle;
+    const root = primary.replace(/\/$/, '');
+    switch (this.activeResource()) {
+      case 'product':
+        return `${root}/products/${item.handle}`;
+      case 'collection':
+        return `${root}/collections/${item.handle}`;
+      case 'page':
+        return `${root}/pages/${item.handle}`;
+      case 'article':
+        return `${root}/blogs/news/${item.handle}`;
+      default:
+        return `${root}/${item.handle}`;
+    }
+  }
+
+  private loadClientTasks() {
+    if (!this.client?._id) return;
+    this.loadingTasks.set(true);
+    this.clientTasks.set([]);
+    this.tasksSvc.list({ clientId: this.client._id }).subscribe({
+      next: (tasks) => {
+        // Filter out completed tasks so the user sees actionable buckets first,
+        // but keep them queryable if the user really wants to backfill.
+        const order: Record<TaskStatus, number> = {
+          in_progress: 0,
+          pending: 1,
+          blocked: 2,
+          completed: 3,
+        };
+        const sorted = [...tasks].sort(
+          (a, b) =>
+            (order[a.status] ?? 9) - (order[b.status] ?? 9) ||
+            a.title.localeCompare(b.title),
+        );
+        this.clientTasks.set(sorted);
+        this.loadingTasks.set(false);
+      },
+      error: () => {
+        this.loadingTasks.set(false);
+      },
+    });
+  }
+
+  confirmTrack() {
+    const ctx = this.trackOpen();
+    if (!ctx || !this.selectedTaskId) return;
+    this.trackingSave.set(true);
+    this.trackError.set(null);
+    this.tasksSvc.addSubtask(this.selectedTaskId, ctx.subtaskTitle).subscribe({
+      next: () => {
+        this.trackingSave.set(false);
+        this.trackSaved.set(true);
+      },
+      error: (err) => {
+        this.trackingSave.set(false);
+        const m = err?.error?.message;
+        this.trackError.set(
+          Array.isArray(m) ? m.join(', ') : m || 'Could not add subtask',
+        );
+      },
+    });
+  }
+
+  dismissTrack() {
+    this.trackOpen.set(null);
+    this.trackingSave.set(false);
+    this.trackError.set(null);
+  }
+
+  statusEmoji(s: TaskStatus): string {
+    if (s === 'completed') return '✓';
+    if (s === 'in_progress') return '▶';
+    if (s === 'blocked') return '🛑';
+    return '○';
+  }
+
+  filteredItems = computed(() => {
+    const filters = this.activeHealth();
+    if (filters.size === 0) return this.items();
+    return this.items().filter((i) => filters.has(this.healthKey(i)));
+  });
 }

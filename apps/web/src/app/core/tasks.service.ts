@@ -46,4 +46,11 @@ export class TasksService {
       body: { publicId },
     });
   }
+
+  addSubtask(taskId: string, title: string, done = false) {
+    return this.http.post<Task>(`${this.base}/tasks/${taskId}/subtasks`, {
+      title,
+      done,
+    });
+  }
 }
