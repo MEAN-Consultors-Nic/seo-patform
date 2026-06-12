@@ -57,6 +57,12 @@ export class Report {
   @Prop({ default: false })
   includeServiceAreas?: boolean;
 
+  // Default true: existing reports keep showing previous-period
+  // comparisons. Toggle off in the editor to hide deltas in the public
+  // report and PDF.
+  @Prop({ default: true })
+  comparePeriods?: boolean;
+
   @Prop({ type: [Object], default: undefined })
   serviceAreasSnapshot?: ServiceAreaSnapshot[];
 

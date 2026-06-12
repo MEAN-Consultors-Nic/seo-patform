@@ -42,4 +42,5 @@ export class UpsertReportDto {
   @IsOptional() @IsString() clientBlockers?: string;
   @IsOptional() @IsString() finalConsiderations?: string;
   @IsOptional() @IsBoolean() includeServiceAreas?: boolean;
+  @IsOptional() @IsBoolean() comparePeriods?: boolean;
 }

@@ -508,6 +508,7 @@ export class ReportsService {
     if (dto.clientBlockers !== undefined) $set.clientBlockers = dto.clientBlockers;
     if (dto.finalConsiderations !== undefined) $set.finalConsiderations = dto.finalConsiderations;
     if (dto.includeServiceAreas !== undefined) $set.includeServiceAreas = dto.includeServiceAreas;
+    if (dto.comparePeriods !== undefined) $set.comparePeriods = dto.comparePeriods;
 
     // Freeze the current Service Area metrics onto the report so future
     // edits to client.serviceAreas don't retroactively change historical
@@ -567,6 +568,7 @@ export class ReportsService {
       cycleId?: unknown;
       kpis?: ReportKpis;
       kpisPrevious?: ReportKpis;
+      comparePeriods?: boolean;
     },
   >(
     report: R,
@@ -575,6 +577,14 @@ export class ReportsService {
     const out = report as R & {
       kpisPreviousSource?: 'previous' | 'baseline' | null;
     };
+
+    // Respect the editor toggle. Defaulting to true so legacy reports
+    // without the field keep showing comparisons.
+    if (report.comparePeriods === false) {
+      out.kpisPrevious = undefined;
+      out.kpisPreviousSource = null;
+      return out;
+    }
 
     const clientId = report.clientId ? String(report.clientId) : '';
     const cycleId = report.cycleId ? String(report.cycleId) : '';

@@ -26,6 +26,7 @@ interface PublicPayload {
     kpis: Record<string, number>;
     kpisPrevious?: Record<string, number>;
     kpisPreviousSource?: 'previous' | 'baseline' | null;
+    comparePeriods?: boolean;
     coverImageUrl?: string;
     executiveSummary: string | string[];
     findings: string;
@@ -325,7 +326,7 @@ interface PublicPayload {
                                 <span class="font-semibold text-ink-700">{{ formatNum(k.previous) }}</span>
                               </div>
                             </div>
-                          } @else {
+                          } @else if (showComparisons()) {
                             <div class="text-[10px] text-ink-400 mt-1">no previous period</div>
                           }
 
@@ -1386,6 +1387,10 @@ export class PublicReportComponent implements OnInit {
   previousLabel(): string {
     const src = this.data()?.report.kpisPreviousSource;
     return src === 'baseline' ? 'vs baseline' : 'vs';
+  }
+
+  showComparisons(): boolean {
+    return this.data()?.report.comparePeriods !== false;
   }
 
   kpiCards() {

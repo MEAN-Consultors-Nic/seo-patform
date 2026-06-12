@@ -448,6 +448,8 @@ export interface Report {
   clientBlockers: string;
   finalConsiderations?: string;
   includeServiceAreas?: boolean;
+  /** When false, the public report hides previous-period comparisons. */
+  comparePeriods?: boolean;
   serviceAreasSnapshot?: ServiceAreaSnapshot[];
   generatedAt: Date;
   sentAt?: Date;

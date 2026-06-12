@@ -326,6 +326,24 @@ interface KpiGroup {
               </div>
             </div>
 
+            <!-- Compare periods toggle -->
+            <div class="mb-4 flex items-center justify-between gap-3 rounded-md border border-ink-200 bg-ink-50/50 px-3 py-2">
+              <div>
+                <div class="text-xs font-semibold text-ink-900">Compare periods</div>
+                <p class="text-[11px] text-ink-500 mt-0.5">
+                  When on, KPI cards in the public report show a delta vs the
+                  prior cycle (or baseline if first report). Turn off to show
+                  only current-period numbers.
+                </p>
+              </div>
+              <label class="inline-flex items-center gap-2 cursor-pointer flex-shrink-0">
+                <input type="checkbox" [(ngModel)]="comparePeriods" class="rounded" />
+                <span class="text-xs font-semibold text-ink-700">
+                  {{ comparePeriods ? 'On' : 'Off' }}
+                </span>
+              </label>
+            </div>
+
             @if (pullRangePreset() === 'custom') {
               <div class="mb-4 grid grid-cols-2 gap-3 max-w-md">
                 <div>
@@ -800,6 +818,7 @@ export class ReportEditorComponent implements OnInit {
   clientBlockers = '';
   finalConsiderations = '';
   includeServiceAreas = false;
+  comparePeriods = true;
   kpis: Record<string, number | null> = {};
   coverImageUrl = signal<string>('');
   uploadingCover = signal(false);
@@ -951,6 +970,8 @@ export class ReportEditorComponent implements OnInit {
     this.clientBlockers = r?.clientBlockers || '';
     this.finalConsiderations = r?.finalConsiderations || '';
     this.includeServiceAreas = !!r?.includeServiceAreas;
+    // Default true for legacy reports without the field set.
+    this.comparePeriods = r?.comparePeriods !== false;
     this.kpis = { ...(r?.kpis || {}) };
     this.coverImageUrl.set(r?.coverImageUrl || '');
     this.shareToken.set(r?.shareToken || null);
@@ -1127,6 +1148,7 @@ export class ReportEditorComponent implements OnInit {
           clientBlockers: this.clientBlockers,
           finalConsiderations: this.finalConsiderations,
           includeServiceAreas: this.includeServiceAreas,
+          comparePeriods: this.comparePeriods,
           kpis: this.cleanKpis(),
         })
         .subscribe({
@@ -1265,6 +1287,7 @@ export class ReportEditorComponent implements OnInit {
             clientBlockers: this.clientBlockers,
             finalConsiderations: this.finalConsiderations,
           includeServiceAreas: this.includeServiceAreas,
+          comparePeriods: this.comparePeriods,
             kpis: this.cleanKpis(),
           })
           .subscribe({
@@ -1451,6 +1474,7 @@ export class ReportEditorComponent implements OnInit {
         clientBlockers: this.clientBlockers,
         finalConsiderations: this.finalConsiderations,
           includeServiceAreas: this.includeServiceAreas,
+          comparePeriods: this.comparePeriods,
         kpis: this.cleanKpis(),
       })
       .subscribe({
@@ -1491,6 +1515,7 @@ export class ReportEditorComponent implements OnInit {
           findings: this.findings,
           nextPeriodPlan: this.nextPeriodPlan,
           clientBlockers: this.clientBlockers,
+          comparePeriods: this.comparePeriods,
           kpis: this.cleanKpis(),
         })
         .subscribe({

@@ -653,9 +653,18 @@ export class PdfService {
       ['avgPosition', 'Avg position'],
       ['conversions', 'Conversions'],
     ];
+    const showCompare = (report as { comparePeriods?: boolean }).comparePeriods !== false;
     const cards = main
       .filter(([k]) => report.kpis?.[k] !== undefined || report.kpisPrevious?.[k] !== undefined)
-      .map(([k, label]) => this.kpiCard(label, report.kpis?.[k], report.kpisPrevious?.[k], k === 'avgPosition'));
+      .map(([k, label]) =>
+        this.kpiCard(
+          label,
+          report.kpis?.[k],
+          showCompare ? report.kpisPrevious?.[k] : undefined,
+          k === 'avgPosition',
+          showCompare,
+        ),
+      );
 
     if (!cards.length) {
       return {
@@ -683,6 +692,7 @@ export class PdfService {
     current?: number,
     previous?: number,
     inverse = false,
+    showCompare = true,
   ) {
     let deltaText: string | null = null;
     let deltaColor = INK_500;
@@ -707,11 +717,13 @@ export class PdfService {
           ],
           margin: [0, 4, 0, 0],
         }
-      : {
-          text: 'no previous period',
-          style: 'meta',
-          margin: [0, 4, 0, 0],
-        };
+      : showCompare
+        ? {
+            text: 'no previous period',
+            style: 'meta',
+            margin: [0, 4, 0, 0],
+          }
+        : { text: '', margin: [0, 0, 0, 0] };
 
     return {
       table: {
