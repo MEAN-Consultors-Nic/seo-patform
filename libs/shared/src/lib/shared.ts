@@ -450,6 +450,8 @@ export interface Report {
   includeServiceAreas?: boolean;
   /** When false, the public report hides previous-period comparisons. */
   comparePeriods?: boolean;
+  /** Sort criterion for the Locations Performance grid. Defaults to clicks. */
+  locationsSort?: LocationsSortKey;
   serviceAreasSnapshot?: ServiceAreaSnapshot[];
   generatedAt: Date;
   sentAt?: Date;
@@ -576,6 +578,39 @@ export interface ShopifyResourceItem {
   updatedAt?: string;
   onlineStoreUrl?: string;
 }
+
+export type LocationsSortKey =
+  | 'clicks'
+  | 'impressions'
+  | 'ctr'
+  | 'position';
+
+export const LOCATIONS_SORT_OPTIONS: Array<{
+  key: LocationsSortKey;
+  label: string;
+  description: string;
+}> = [
+  {
+    key: 'clicks',
+    label: 'Clicks (most traffic first)',
+    description: 'Best for showcasing top-performing locations.',
+  },
+  {
+    key: 'impressions',
+    label: 'Impressions (most visibility first)',
+    description: 'Best for showing reach in search results.',
+  },
+  {
+    key: 'ctr',
+    label: 'CTR (highest first)',
+    description: 'Best for showing efficiency of search snippet.',
+  },
+  {
+    key: 'position',
+    label: 'Avg position (best ranking first)',
+    description: 'Best for showcasing ranking quality (lower = better).',
+  },
+];
 
 export type ReportSectionKey =
   | 'executive-summary'

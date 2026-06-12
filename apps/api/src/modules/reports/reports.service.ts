@@ -513,6 +513,7 @@ export class ReportsService {
     if (dto.finalConsiderations !== undefined) $set.finalConsiderations = dto.finalConsiderations;
     if (dto.includeServiceAreas !== undefined) $set.includeServiceAreas = dto.includeServiceAreas;
     if (dto.comparePeriods !== undefined) $set.comparePeriods = dto.comparePeriods;
+    if (dto.locationsSort !== undefined) $set.locationsSort = dto.locationsSort;
 
     // Freeze the current Service Area metrics onto the report so future
     // edits to client.serviceAreas don't retroactively change historical

@@ -3,7 +3,14 @@ import { Component, HostListener, OnInit, computed, inject, signal } from '@angu
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { QuillEditorComponent } from 'ngx-quill';
-import { Client, Cycle, Report, Task } from '@seo/shared';
+import {
+  Client,
+  Cycle,
+  LOCATIONS_SORT_OPTIONS,
+  LocationsSortKey,
+  Report,
+  Task,
+} from '@seo/shared';
 import { ClientsService } from '../../core/clients.service';
 import { CyclesService } from '../../core/cycles.service';
 import { ReportsService } from '../../core/reports.service';
@@ -570,6 +577,20 @@ interface KpiGroup {
             </div>
 
             @if (includeServiceAreas) {
+              <div class="mb-3 flex items-center gap-3 rounded-md border border-ink-200 bg-ink-50/50 px-3 py-2">
+                <div class="flex-1 min-w-0">
+                  <div class="text-xs font-semibold text-ink-900">Sort locations by</div>
+                  <p class="text-[11px] text-ink-500 mt-0.5">
+                    Best performance appears first. Hubs stay grouped on top.
+                  </p>
+                </div>
+                <select class="input input-sm text-xs" [(ngModel)]="locationsSort">
+                  @for (opt of locationsSortOptions; track opt.key) {
+                    <option [value]="opt.key">{{ opt.label }}</option>
+                  }
+                </select>
+              </div>
+
               @if (clientServiceAreas().length === 0) {
                 <div class="rounded-md border border-warning-500/30 bg-warning-100/40 px-3 py-2 text-xs text-warning-500">
                   This client has no service areas configured. Add some in
@@ -819,6 +840,8 @@ export class ReportEditorComponent implements OnInit {
   finalConsiderations = '';
   includeServiceAreas = false;
   comparePeriods = true;
+  locationsSort: LocationsSortKey = 'clicks';
+  locationsSortOptions = LOCATIONS_SORT_OPTIONS;
   kpis: Record<string, number | null> = {};
   coverImageUrl = signal<string>('');
   uploadingCover = signal(false);
@@ -972,6 +995,7 @@ export class ReportEditorComponent implements OnInit {
     this.includeServiceAreas = !!r?.includeServiceAreas;
     // Default true for legacy reports without the field set.
     this.comparePeriods = r?.comparePeriods !== false;
+    this.locationsSort = (r?.locationsSort as LocationsSortKey) || 'clicks';
     this.kpis = { ...(r?.kpis || {}) };
     this.coverImageUrl.set(r?.coverImageUrl || '');
     this.shareToken.set(r?.shareToken || null);
@@ -1149,6 +1173,7 @@ export class ReportEditorComponent implements OnInit {
           finalConsiderations: this.finalConsiderations,
           includeServiceAreas: this.includeServiceAreas,
           comparePeriods: this.comparePeriods,
+          locationsSort: this.locationsSort,
           kpis: this.cleanKpis(),
         })
         .subscribe({
@@ -1288,6 +1313,7 @@ export class ReportEditorComponent implements OnInit {
             finalConsiderations: this.finalConsiderations,
           includeServiceAreas: this.includeServiceAreas,
           comparePeriods: this.comparePeriods,
+          locationsSort: this.locationsSort,
             kpis: this.cleanKpis(),
           })
           .subscribe({
@@ -1475,6 +1501,7 @@ export class ReportEditorComponent implements OnInit {
         finalConsiderations: this.finalConsiderations,
           includeServiceAreas: this.includeServiceAreas,
           comparePeriods: this.comparePeriods,
+          locationsSort: this.locationsSort,
         kpis: this.cleanKpis(),
       })
       .subscribe({
@@ -1516,6 +1543,7 @@ export class ReportEditorComponent implements OnInit {
           nextPeriodPlan: this.nextPeriodPlan,
           clientBlockers: this.clientBlockers,
           comparePeriods: this.comparePeriods,
+          locationsSort: this.locationsSort,
           kpis: this.cleanKpis(),
         })
         .subscribe({

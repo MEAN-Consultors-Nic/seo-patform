@@ -28,6 +28,7 @@ interface PublicPayload {
     kpisPrevious?: Record<string, number>;
     kpisPreviousSource?: 'previous' | 'baseline' | null;
     comparePeriods?: boolean;
+    locationsSort?: 'clicks' | 'impressions' | 'ctr' | 'position';
     coverImageUrl?: string;
     executiveSummary: string | string[];
     findings: string;
@@ -1531,21 +1532,25 @@ export class PublicReportComponent implements OnInit {
     const d = this.data();
     const areas = d?.serviceAreas || [];
     if (areas.length === 0) return [];
-    // Sort within each group by best performance first: clicks DESC, then
-    // impressions DESC as tiebreaker, then name ASC for fully tied rows so
-    // the order is stable across renders.
+    // Sort within each group by the report's chosen criterion (defaults to
+    // clicks). Position sorts ascending because lower numbers = better
+    // ranking; everything else sorts descending. Name break-ties for stable
+    // render order.
+    const sortKey = d?.report.locationsSort || 'clicks';
     const byPerformance = <T extends {
       clicks?: number;
       impressions?: number;
+      ctr?: number;
+      position?: number;
       name?: string;
     }>(
       list: T[],
     ) =>
       [...list].sort((a, b) => {
-        const c = (b.clicks ?? 0) - (a.clicks ?? 0);
-        if (c !== 0) return c;
-        const i = (b.impressions ?? 0) - (a.impressions ?? 0);
-        if (i !== 0) return i;
+        const av = (a as Record<string, number | undefined>)[sortKey] ?? 0;
+        const bv = (b as Record<string, number | undefined>)[sortKey] ?? 0;
+        const diff = sortKey === 'position' ? av - bv : bv - av;
+        if (diff !== 0) return diff;
         return (a.name ?? '').localeCompare(b.name ?? '');
       });
     const hubs = byPerformance(areas.filter((a) => a.isCityHub));

@@ -63,6 +63,13 @@ export class Report {
   @Prop({ default: true })
   comparePeriods?: boolean;
 
+  @Prop({
+    type: String,
+    enum: ['clicks', 'impressions', 'ctr', 'position'],
+    default: 'clicks',
+  })
+  locationsSort?: 'clicks' | 'impressions' | 'ctr' | 'position';
+
   @Prop({ type: [Object], default: undefined })
   serviceAreasSnapshot?: ServiceAreaSnapshot[];
 

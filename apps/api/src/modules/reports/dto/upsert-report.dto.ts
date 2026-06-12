@@ -1,5 +1,6 @@
 import {
   IsBoolean,
+  IsEnum,
   IsMongoId,
   IsNumber,
   IsOptional,
@@ -43,4 +44,7 @@ export class UpsertReportDto {
   @IsOptional() @IsString() finalConsiderations?: string;
   @IsOptional() @IsBoolean() includeServiceAreas?: boolean;
   @IsOptional() @IsBoolean() comparePeriods?: boolean;
+  @IsOptional()
+  @IsEnum(['clicks', 'impressions', 'ctr', 'position'])
+  locationsSort?: 'clicks' | 'impressions' | 'ctr' | 'position';
 }
