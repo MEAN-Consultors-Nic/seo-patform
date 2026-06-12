@@ -1537,6 +1537,26 @@ export class PublicReportComponent implements OnInit {
     // ranking; everything else sorts descending. Name break-ties for stable
     // render order.
     const sortKey = d?.report.locationsSort || 'clicks';
+    const metricOf = <T extends {
+      clicks?: number;
+      impressions?: number;
+      ctr?: number;
+      position?: number;
+    }>(
+      item: T,
+    ): number => {
+      switch (sortKey) {
+        case 'impressions':
+          return item.impressions ?? 0;
+        case 'ctr':
+          return item.ctr ?? 0;
+        case 'position':
+          return item.position ?? 0;
+        case 'clicks':
+        default:
+          return item.clicks ?? 0;
+      }
+    };
     const byPerformance = <T extends {
       clicks?: number;
       impressions?: number;
@@ -1547,8 +1567,8 @@ export class PublicReportComponent implements OnInit {
       list: T[],
     ) =>
       [...list].sort((a, b) => {
-        const av = (a as Record<string, number | undefined>)[sortKey] ?? 0;
-        const bv = (b as Record<string, number | undefined>)[sortKey] ?? 0;
+        const av = metricOf(a);
+        const bv = metricOf(b);
         const diff = sortKey === 'position' ? av - bv : bv - av;
         if (diff !== 0) return diff;
         return (a.name ?? '').localeCompare(b.name ?? '');
