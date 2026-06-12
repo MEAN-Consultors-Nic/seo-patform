@@ -354,11 +354,10 @@ export class ReportsService {
         this.kpiHistory(report.clientId.toString(), 12),
       ]);
 
-    // If kpisPrevious is empty (typical for first-period reports created
-    // before a baseline was set), fall back to client.baselineKpis on the
-    // fly so the public report can show real deltas instead of "no previous
-    // period". We tag the source so the UI labels deltas appropriately.
-    const reportOut = this.applyKpisPreviousFallback(report, client);
+    // Recompute the "previous" comparison series at read time so changes
+    // to the client baseline (or new prior-cycle reports) are reflected
+    // without re-saving this report.
+    const reportOut = await this.applyKpisPreviousFallback(report, client);
 
     return {
       report: reportOut,
@@ -549,34 +548,96 @@ export class ReportsService {
   }
 
   /**
-   * Lazy fallback: when a report doc was created before the client baseline
-   * was set (so kpisPrevious is empty), surface client.baselineKpis as the
-   * comparison series on read. Stamps `kpisPreviousSource` so consumers can
-   * label the deltas as "vs baseline" instead of "vs previous period".
+   * Recomputes the "previous period" comparison series on read so it tracks
+   * the live state — not whatever was snapshotted into `kpisPrevious` at the
+   * time the report was first saved. Priority:
+   *   1. The most recent prior cycle's report kpis (true "previous period")
+   *   2. Otherwise the client's current `baselineKpis` (first-cycle case —
+   *      reflects edits made to the baseline after the report was created)
+   *   3. Otherwise the stored `kpisPrevious` snapshot, if any
+   *   4. Otherwise null
+   * Stamps `kpisPreviousSource` so the UI can label deltas correctly.
+   * Field-level merge: missing fields fall back to baseline values so a
+   * partial prior snapshot doesn't leave the rest of the cards blank.
    */
-  private applyKpisPreviousFallback<
-    R extends { kpis?: ReportKpis; kpisPrevious?: ReportKpis },
+  private async applyKpisPreviousFallback<
+    R extends {
+      _id?: unknown;
+      clientId?: unknown;
+      cycleId?: unknown;
+      kpis?: ReportKpis;
+      kpisPrevious?: ReportKpis;
+    },
   >(
     report: R,
     client: { baselineKpis?: ReportKpis },
-  ): R & { kpisPreviousSource?: 'previous' | 'baseline' | null } {
+  ): Promise<R & { kpisPreviousSource?: 'previous' | 'baseline' | null }> {
     const out = report as R & {
       kpisPreviousSource?: 'previous' | 'baseline' | null;
     };
-    const hasExplicitPrev =
-      out.kpisPrevious && Object.keys(out.kpisPrevious).length > 0;
-    if (hasExplicitPrev) {
+
+    const clientId = report.clientId ? String(report.clientId) : '';
+    const cycleId = report.cycleId ? String(report.cycleId) : '';
+    let priorCycleKpis: ReportKpis | null = null;
+    if (clientId && cycleId) {
+      priorCycleKpis = await this.findPriorCycleKpis(clientId, cycleId);
+    }
+    const baseline = client.baselineKpis;
+    const baselineHasValues =
+      !!baseline && Object.keys(baseline).length > 0;
+
+    if (priorCycleKpis) {
+      // Use the prior cycle as the primary comparison; fill any field it
+      // doesn't carry from the current baseline so cards never go blank
+      // when both sources have some data.
+      out.kpisPrevious = baselineHasValues
+        ? { ...baseline, ...priorCycleKpis }
+        : priorCycleKpis;
       out.kpisPreviousSource = 'previous';
       return out;
     }
-    const baseline = client.baselineKpis;
-    if (baseline && Object.keys(baseline).length > 0) {
+
+    if (baselineHasValues) {
       out.kpisPrevious = baseline;
       out.kpisPreviousSource = 'baseline';
+      return out;
+    }
+
+    const stored = out.kpisPrevious;
+    if (stored && Object.keys(stored).length > 0) {
+      out.kpisPreviousSource = 'previous';
     } else {
       out.kpisPreviousSource = null;
     }
     return out;
+  }
+
+  private async findPriorCycleKpis(
+    clientId: string,
+    cycleId: string,
+  ): Promise<ReportKpis | null> {
+    const cycle = await this.cycles.findOne(cycleId).catch(() => null);
+    if (!cycle) return null;
+    const prior = await this.model
+      .aggregate([
+        { $match: { clientId: new Types.ObjectId(clientId) } },
+        {
+          $lookup: {
+            from: 'cycles',
+            localField: 'cycleId',
+            foreignField: '_id',
+            as: 'cycle',
+          },
+        },
+        { $unwind: '$cycle' },
+        { $match: { 'cycle.startDate': { $lt: cycle.startDate } } },
+        { $sort: { 'cycle.startDate': -1 } },
+        { $limit: 1 },
+      ])
+      .exec();
+    const kpis = prior[0]?.kpis as ReportKpis | undefined;
+    if (kpis && Object.keys(kpis).length > 0) return kpis;
+    return null;
   }
 
   private async derivePreviousKpis(
@@ -729,7 +790,7 @@ export class ReportsService {
       throw new NotFoundException(
         'Report for that client/cycle does not exist yet. Save it first.',
       );
-    const reportForPdf = this.applyKpisPreviousFallback(report, client);
+    const reportForPdf = await this.applyKpisPreviousFallback(report, client);
     return this.pdf.generate(
       client as unknown as ClientType,
       cycle as unknown as CycleType,
