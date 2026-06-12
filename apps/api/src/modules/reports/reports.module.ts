@@ -11,6 +11,7 @@ import { TasksModule } from '../tasks/tasks.module';
 import { KeywordsModule } from '../keywords/keywords.module';
 import { BacklinksModule } from '../backlinks/backlinks.module';
 import { AppSettingsModule } from '../app-settings/app-settings.module';
+import { ContentModule } from '../content/content.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { AppSettingsModule } from '../app-settings/app-settings.module';
     KeywordsModule,
     BacklinksModule,
     AppSettingsModule,
+    ContentModule,
   ],
   controllers: [ReportsController, PublicReportsController],
   providers: [ReportsService, PdfService],

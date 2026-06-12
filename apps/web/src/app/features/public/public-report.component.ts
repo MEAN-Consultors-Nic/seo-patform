@@ -102,6 +102,11 @@ interface PublicPayload {
     };
   }>;
   layout?: Array<{ key: ReportSectionKey; visible: boolean }>;
+  contentIdeas?: Array<{
+    title: string;
+    targetKeyword?: string;
+    targetUrl?: string;
+  }>;
 }
 
 @Component({
@@ -773,27 +778,69 @@ interface PublicPayload {
 
         <ng-template #nextPeriodTpl>
           <!-- Next period plan -->
-          @if (plannedTasks().length > 0) {
+          @if (plannedTasks().length > 0 || contentIdeas().length > 0) {
             <section>
               <div class="flex items-center gap-3 mb-5">
                 <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">{{ sectionNumber('next-period-plan') }}</span>
                 <h2 class="text-3xl font-bold text-ink-900">Next Period Plan</h2>
               </div>
-              <div class="space-y-2">
-                @for (t of plannedTasks(); track $index) {
-                  <div class="bg-white rounded-lg p-4 border border-ink-200 shadow-card flex items-center gap-3">
-                    <span class="text-[10px] uppercase font-bold px-2 py-1 rounded flex-shrink-0"
-                          [ngClass]="priorityBadgeClass(t.priority)">
-                      {{ priorityLabel(t.priority) }}
+
+              @if (plannedTasks().length > 0) {
+                <div class="space-y-2">
+                  @for (t of plannedTasks(); track $index) {
+                    <div class="bg-white rounded-lg p-4 border border-ink-200 shadow-card flex items-center gap-3">
+                      <span class="text-[10px] uppercase font-bold px-2 py-1 rounded flex-shrink-0"
+                            [ngClass]="priorityBadgeClass(t.priority)">
+                        {{ priorityLabel(t.priority) }}
+                      </span>
+                      <span class="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded flex-shrink-0"
+                            [ngClass]="categoryBadgeClass(t.category)">
+                        {{ t.category }}
+                      </span>
+                      <span class="font-medium text-ink-800 text-sm flex-1">{{ t.title }}</span>
+                    </div>
+                  }
+                </div>
+              }
+
+              @if (contentIdeas().length > 0) {
+                <div [class.mt-6]="plannedTasks().length > 0">
+                  <div class="flex items-baseline justify-between mb-3">
+                    <h3 class="text-sm font-bold uppercase tracking-[0.15em] text-ink-700">
+                      Content pipeline · ideas
+                    </h3>
+                    <span class="text-[11px] text-ink-400">
+                      {{ contentIdeas().length }} planned
                     </span>
-                    <span class="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded flex-shrink-0"
-                          [ngClass]="categoryBadgeClass(t.category)">
-                      {{ t.category }}
-                    </span>
-                    <span class="font-medium text-ink-800 text-sm flex-1">{{ t.title }}</span>
                   </div>
-                }
-              </div>
+                  <div class="bg-white rounded-lg border border-ink-200 shadow-card overflow-hidden">
+                    <table class="w-full text-sm">
+                      <thead class="bg-ink-50 border-b border-ink-200">
+                        <tr class="text-left text-[10px] uppercase tracking-wider text-ink-500">
+                          <th class="py-2.5 px-4 font-bold">Piece title</th>
+                          <th class="py-2.5 px-4 font-bold">Target keyword</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (idea of contentIdeas(); track idea.title; let i = $index) {
+                          <tr class="border-b border-ink-100 last:border-0">
+                            <td class="py-2.5 px-4 text-ink-900 font-medium">
+                              {{ idea.title }}
+                            </td>
+                            <td class="py-2.5 px-4 text-ink-700">
+                              @if (idea.targetKeyword) {
+                                🎯 <span class="font-mono text-xs">{{ idea.targetKeyword }}</span>
+                              } @else {
+                                <span class="text-ink-400 italic text-xs">—</span>
+                              }
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              }
             </section>
           }
         </ng-template>
@@ -1638,6 +1685,10 @@ export class PublicReportComponent implements OnInit {
     return (this.data()?.tasks || [])
       .filter((t) => t.status !== 'completed')
       .sort((a, b) => (order[a.priority] || 9) - (order[b.priority] || 9));
+  }
+
+  contentIdeas() {
+    return this.data()?.contentIdeas ?? [];
   }
 
   deltaClass(delta: number, _inverse: boolean): string {

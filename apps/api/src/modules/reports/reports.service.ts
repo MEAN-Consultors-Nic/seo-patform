@@ -27,6 +27,7 @@ import { KeywordsService } from '../keywords/keywords.service';
 import { BacklinksService } from '../backlinks/backlinks.service';
 import { MailService } from '../mail/mail.service';
 import { AppSettingsService } from '../app-settings/app-settings.service';
+import { ContentService } from '../content/content.service';
 
 const MAX_PIN_ATTEMPTS = 5;
 const PIN_LOCK_MINUTES = 15;
@@ -46,6 +47,7 @@ export class ReportsService {
     private readonly jwt: JwtService,
     private readonly mail: MailService,
     private readonly appSettings: AppSettingsService,
+    private readonly content: ContentService,
     private readonly configSvc: ConfigService,
   ) {}
 
@@ -342,20 +344,33 @@ export class ReportsService {
 
   async getPublicPayload(token: string) {
     const report = await this.findByShareToken(token);
-    const [client, cycle, tasks, keywords, movements, backlinksSummary, history, layout] =
-      await Promise.all([
-        this.clients.findOne(report.clientId.toString()),
-        this.cycles.findOne(report.cycleId.toString()),
-        this.tasks.findAll({
-          clientId: report.clientId.toString(),
-          cycleId: report.cycleId.toString(),
-        }),
-        this.keywords.byClient(report.clientId.toString()),
-        this.keywords.movements(report.clientId.toString()),
-        this.backlinks.summary(report.clientId.toString()),
-        this.kpiHistory(report.clientId.toString(), 12),
-        this.appSettings.getReportLayout(),
-      ]);
+    const [
+      client,
+      cycle,
+      tasks,
+      keywords,
+      movements,
+      backlinksSummary,
+      history,
+      layout,
+      contentIdeas,
+    ] = await Promise.all([
+      this.clients.findOne(report.clientId.toString()),
+      this.cycles.findOne(report.cycleId.toString()),
+      this.tasks.findAll({
+        clientId: report.clientId.toString(),
+        cycleId: report.cycleId.toString(),
+      }),
+      this.keywords.byClient(report.clientId.toString()),
+      this.keywords.movements(report.clientId.toString()),
+      this.backlinks.summary(report.clientId.toString()),
+      this.kpiHistory(report.clientId.toString(), 12),
+      this.appSettings.getReportLayout(),
+      this.content.list({
+        clientId: report.clientId.toString(),
+        status: 'idea',
+      }),
+    ]);
 
     // Recompute the "previous" comparison series at read time so changes
     // to the client baseline (or new prior-cycle reports) are reflected
@@ -421,6 +436,11 @@ export class ReportsService {
       kpiHistory: history,
       serviceAreas: await this.buildPublicServiceAreas(report),
       layout,
+      contentIdeas: (contentIdeas ?? []).map((p) => ({
+        title: p.title,
+        targetKeyword: p.targetKeyword,
+        targetUrl: p.targetUrl,
+      })),
     };
   }
 

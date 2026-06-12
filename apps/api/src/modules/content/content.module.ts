@@ -14,5 +14,6 @@ import { ClientsModule } from '../clients/clients.module';
   ],
   controllers: [ContentController],
   providers: [ContentService],
+  exports: [ContentService],
 })
 export class ContentModule {}
