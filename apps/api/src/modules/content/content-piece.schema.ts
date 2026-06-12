@@ -11,10 +11,13 @@ export class ContentPiece {
 
   @Prop({ required: true }) title!: string;
 
+  // No enum constraint at the DB layer so legacy documents that still
+  // hold 'brief' / 'review' / 'archived' continue to load. The DTO restricts
+  // writes to the current 3 values, and the service normalizes legacy
+  // values to the new shape on read.
   @Prop({
     required: true,
     type: String,
-    enum: ['idea', 'brief', 'draft', 'review', 'published', 'archived'],
     default: 'idea',
   })
   status!: ContentStatus;

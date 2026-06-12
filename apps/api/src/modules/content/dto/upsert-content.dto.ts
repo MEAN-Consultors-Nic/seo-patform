@@ -11,7 +11,7 @@ export class UpsertContentDto {
   @IsMongoId() clientId!: string;
   @IsString() title!: string;
   @IsOptional()
-  @IsEnum(['idea', 'brief', 'draft', 'review', 'published', 'archived'])
+  @IsEnum(['idea', 'draft', 'published'])
   status?: ContentStatus;
   @IsOptional() @IsString() targetKeyword?: string;
   @IsOptional() @IsString() targetUrl?: string;

@@ -1,10 +1,27 @@
 import { forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { ContentStatus } from '@seo/shared';
 import { ContentPiece, ContentPieceDocument } from './content-piece.schema';
 import { UpsertContentDto } from './dto/upsert-content.dto';
 import { ClientsService } from '../clients/clients.service';
 import { AuthenticatedUser } from '../auth/roles.guard';
+
+// Legacy statuses retired (brief / review / archived) get mapped to the
+// nearest active bucket so historic documents keep showing up in the new
+// 3-column kanban. Writes are restricted to the new 3 values via the DTO.
+const LEGACY_STATUS_MAP: Record<string, ContentStatus> = {
+  brief: 'draft',
+  review: 'draft',
+  archived: 'published',
+};
+
+function normalizeStatus<T extends { status?: string }>(piece: T): T {
+  if (piece.status && LEGACY_STATUS_MAP[piece.status]) {
+    piece.status = LEGACY_STATUS_MAP[piece.status];
+  }
+  return piece;
+}
 
 @Injectable()
 export class ContentService {
@@ -37,8 +54,20 @@ export class ContentService {
       const accessibleIds = await this.clients.listAccessibleIds(user);
       if (accessibleIds !== null) q.clientId = { $in: accessibleIds };
     }
-    if (filters.status) q.status = filters.status;
-    return this.model.find(q).sort({ updatedAt: -1 }).lean().exec();
+    if (filters.status) {
+      // Expand the filter to also match legacy statuses that map to it,
+      // so e.g. filter status=draft also returns docs still stored as
+      // 'brief' or 'review'.
+      const legacyEquivalents = Object.entries(LEGACY_STATUS_MAP)
+        .filter(([, v]) => v === filters.status)
+        .map(([k]) => k);
+      q.status =
+        legacyEquivalents.length > 0
+          ? { $in: [filters.status, ...legacyEquivalents] }
+          : filters.status;
+    }
+    const docs = await this.model.find(q).sort({ updatedAt: -1 }).lean().exec();
+    return docs.map((d) => normalizeStatus(d));
   }
 
   create(dto: UpsertContentDto) {
@@ -63,7 +92,7 @@ export class ContentService {
       .lean()
       .exec();
     if (!updated) throw new NotFoundException(`Content ${id} not found`);
-    return updated;
+    return normalizeStatus(updated);
   }
 
   async remove(id: string, user?: AuthenticatedUser) {

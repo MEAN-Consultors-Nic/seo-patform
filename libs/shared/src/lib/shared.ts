@@ -278,21 +278,12 @@ export interface Competitor {
   updatedAt?: Date;
 }
 
-export type ContentStatus =
-  | 'idea'
-  | 'brief'
-  | 'draft'
-  | 'review'
-  | 'published'
-  | 'archived';
+export type ContentStatus = 'idea' | 'draft' | 'published';
 
 export const CONTENT_STATUSES: ContentStatus[] = [
   'idea',
-  'brief',
   'draft',
-  'review',
   'published',
-  'archived',
 ];
 
 export interface ContentPiece {
