@@ -11,7 +11,12 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { randomBytes, randomInt } from 'crypto';
 import * as bcrypt from 'bcrypt';
-import { Client as ClientType, Cycle as CycleType, Report as ReportType } from '@seo/shared';
+import {
+  Client as ClientType,
+  Cycle as CycleType,
+  Report as ReportType,
+  ReportKpis,
+} from '@seo/shared';
 import { Report, ReportDocument } from './report.schema';
 import { UpsertReportDto } from './dto/upsert-report.dto';
 import { PdfService } from './pdf.service';
@@ -550,13 +555,10 @@ export class ReportsService {
    * label the deltas as "vs baseline" instead of "vs previous period".
    */
   private applyKpisPreviousFallback<
-    R extends {
-      kpis?: Record<string, number>;
-      kpisPrevious?: Record<string, number>;
-    },
+    R extends { kpis?: ReportKpis; kpisPrevious?: ReportKpis },
   >(
     report: R,
-    client: { baselineKpis?: Record<string, number> | unknown },
+    client: { baselineKpis?: ReportKpis },
   ): R & { kpisPreviousSource?: 'previous' | 'baseline' | null } {
     const out = report as R & {
       kpisPreviousSource?: 'previous' | 'baseline' | null;
@@ -567,9 +569,7 @@ export class ReportsService {
       out.kpisPreviousSource = 'previous';
       return out;
     }
-    const baseline = client.baselineKpis as
-      | Record<string, number>
-      | undefined;
+    const baseline = client.baselineKpis;
     if (baseline && Object.keys(baseline).length > 0) {
       out.kpisPrevious = baseline;
       out.kpisPreviousSource = 'baseline';
@@ -729,10 +729,7 @@ export class ReportsService {
       throw new NotFoundException(
         'Report for that client/cycle does not exist yet. Save it first.',
       );
-    const reportForPdf = this.applyKpisPreviousFallback(
-      report as { kpis?: Record<string, number>; kpisPrevious?: Record<string, number> },
-      client as { baselineKpis?: Record<string, number> | unknown },
-    );
+    const reportForPdf = this.applyKpisPreviousFallback(report, client);
     return this.pdf.generate(
       client as unknown as ClientType,
       cycle as unknown as CycleType,
