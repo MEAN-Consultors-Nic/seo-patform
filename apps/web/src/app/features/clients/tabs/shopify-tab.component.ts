@@ -1442,7 +1442,9 @@ export class ClientShopifyTab implements OnChanges {
     if (!ctx || !this.selectedTaskId) return;
     this.trackingSave.set(true);
     this.trackError.set(null);
-    this.tasksSvc.addSubtask(this.selectedTaskId, ctx.subtaskTitle).subscribe({
+    this.tasksSvc
+      .addSubtask(this.selectedTaskId, ctx.subtaskTitle, true)
+      .subscribe({
       next: () => {
         this.trackingSave.set(false);
         this.trackSaved.set(true);
