@@ -1531,8 +1531,25 @@ export class PublicReportComponent implements OnInit {
     const d = this.data();
     const areas = d?.serviceAreas || [];
     if (areas.length === 0) return [];
-    const hubs = areas.filter((a) => a.isCityHub);
-    const others = areas.filter((a) => !a.isCityHub);
+    // Sort within each group by best performance first: clicks DESC, then
+    // impressions DESC as tiebreaker, then name ASC for fully tied rows so
+    // the order is stable across renders.
+    const byPerformance = <T extends {
+      clicks?: number;
+      impressions?: number;
+      name?: string;
+    }>(
+      list: T[],
+    ) =>
+      [...list].sort((a, b) => {
+        const c = (b.clicks ?? 0) - (a.clicks ?? 0);
+        if (c !== 0) return c;
+        const i = (b.impressions ?? 0) - (a.impressions ?? 0);
+        if (i !== 0) return i;
+        return (a.name ?? '').localeCompare(b.name ?? '');
+      });
+    const hubs = byPerformance(areas.filter((a) => a.isCityHub));
+    const others = byPerformance(areas.filter((a) => !a.isCityHub));
     const hasHubs = hubs.length > 0;
     const hasOthers = others.length > 0;
     const groups: Array<{
