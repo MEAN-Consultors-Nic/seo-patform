@@ -311,6 +311,12 @@ interface TrackContext {
                       </span>
                     </td>
                     <td class="py-2 pl-2 align-top text-right whitespace-nowrap">
+                      @if (viewUrl(item); as href) {
+                        <a class="btn-secondary text-[11px] !py-1 !px-2 mr-1 inline-block"
+                           [href]="href" target="_blank" rel="noopener">
+                          👁 View
+                        </a>
+                      }
                       <button class="btn-secondary text-[11px] !py-1 !px-2 mr-1"
                               (click)="openRichResults(item)">
                         🔍 Test
@@ -1393,12 +1399,20 @@ export class ClientWordpressTab implements OnChanges {
   // Rich Results Test ------------------------------------------------------
 
   openRichResults(item: WordpressResourceItem) {
-    const url = item.link || `${this.connStatus()?.siteUrl}/${item.slug}`;
+    const url = this.viewUrl(item);
+    if (!url) return;
     window.open(
       `https://search.google.com/test/rich-results?url=${encodeURIComponent(url)}`,
       '_blank',
       'noopener',
     );
+  }
+
+  viewUrl(item: WordpressResourceItem): string | null {
+    if (item.link) return item.link;
+    const site = this.connStatus()?.siteUrl;
+    if (site && item.slug) return `${site}/${item.slug}`;
+    return null;
   }
 
   // Helpers ----------------------------------------------------------------

@@ -350,6 +350,12 @@ interface TrackContext {
                       </span>
                     </td>
                     <td class="py-2 pl-2 align-top text-right whitespace-nowrap">
+                      @if (viewUrl(item); as href) {
+                        <a class="btn-secondary text-[11px] !py-1 !px-2 mr-1 inline-block"
+                           [href]="href" target="_blank" rel="noopener">
+                          👁 View
+                        </a>
+                      }
                       <button class="btn-secondary text-[11px] !py-1 !px-2 mr-1"
                               (click)="openRichResults(item)">
                         🔍 Test
@@ -1489,5 +1495,14 @@ export class ClientShopifyTab implements OnChanges {
       '_blank',
       'noopener',
     );
+  }
+
+  viewUrl(item: ShopifyResourceItem): string | null {
+    if (item.onlineStoreUrl) return item.onlineStoreUrl;
+    // Fall back to derivePageUrl only when we actually have a primary domain
+    // to construct from — otherwise the link would point to a bare handle.
+    const primary = this.connStatus()?.primaryDomain;
+    if (!primary) return null;
+    return this.derivePageUrl(item);
   }
 }
