@@ -107,6 +107,12 @@ interface PublicPayload {
     targetKeyword?: string;
     targetUrl?: string;
   }>;
+  contentPublished?: Array<{
+    title: string;
+    targetKeyword?: string;
+    publishedUrl?: string;
+    publishedAt?: string;
+  }>;
 }
 
 @Component({
@@ -710,7 +716,7 @@ interface PublicPayload {
 
         <ng-template #actionsTpl>
           <!-- Actions taken -->
-          @if (completedTasks().length > 0) {
+          @if (completedTasks().length > 0 || contentPublished().length > 0) {
             <section>
               <div class="flex items-center gap-3 mb-5">
                 <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">{{ sectionNumber('actions-taken') }}</span>
@@ -721,7 +727,8 @@ interface PublicPayload {
                 SEO actions executed in this period, organized by category.
               </p>
 
-              <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-4"
+                   [class.hidden]="completedTasks().length === 0">
                 @for (t of completedTasks(); track $index) {
                   <article class="bg-white rounded-xl border border-ink-200 shadow-card flex gap-3 p-4">
                     <div class="w-1 rounded-full flex-shrink-0" [ngClass]="categoryBarClass(t.category)"></div>
@@ -772,6 +779,56 @@ interface PublicPayload {
                   </article>
                 }
               </div>
+
+              @if (contentPublished().length > 0) {
+                <div [class.mt-6]="completedTasks().length > 0">
+                  <div class="flex items-baseline justify-between mb-3">
+                    <h3 class="text-sm font-bold uppercase tracking-[0.15em] text-ink-700">
+                      Content published this period
+                    </h3>
+                    <span class="text-[11px] text-ink-400">
+                      {{ contentPublished().length }} live
+                    </span>
+                  </div>
+                  <div class="bg-white rounded-lg border border-ink-200 shadow-card overflow-hidden">
+                    <table class="w-full text-sm">
+                      <thead class="bg-ink-50 border-b border-ink-200">
+                        <tr class="text-left text-[10px] uppercase tracking-wider text-ink-500">
+                          <th class="py-2.5 px-4 font-bold">Piece title</th>
+                          <th class="py-2.5 px-4 font-bold">Target keyword</th>
+                          <th class="py-2.5 px-4 font-bold">Published</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (p of contentPublished(); track p.title) {
+                          <tr class="border-b border-ink-100 last:border-0">
+                            <td class="py-2.5 px-4 text-ink-900 font-medium">
+                              @if (p.publishedUrl) {
+                                <a [href]="p.publishedUrl" target="_blank" rel="noopener"
+                                   class="text-brand-500 hover:underline">
+                                  {{ p.title }} ↗
+                                </a>
+                              } @else {
+                                {{ p.title }}
+                              }
+                            </td>
+                            <td class="py-2.5 px-4 text-ink-700">
+                              @if (p.targetKeyword) {
+                                🎯 <span class="font-mono text-xs">{{ p.targetKeyword }}</span>
+                              } @else {
+                                <span class="text-ink-400 italic text-xs">—</span>
+                              }
+                            </td>
+                            <td class="py-2.5 px-4 text-ink-500 text-xs whitespace-nowrap">
+                              {{ p.publishedAt ? (p.publishedAt | date: 'MMM d, y') : '—' }}
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              }
             </section>
           }
         </ng-template>
@@ -1689,6 +1746,10 @@ export class PublicReportComponent implements OnInit {
 
   contentIdeas() {
     return this.data()?.contentIdeas ?? [];
+  }
+
+  contentPublished() {
+    return this.data()?.contentPublished ?? [];
   }
 
   deltaClass(delta: number, _inverse: boolean): string {

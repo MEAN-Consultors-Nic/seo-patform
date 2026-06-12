@@ -95,6 +95,28 @@ export class ContentService {
     return normalizeStatus(updated);
   }
 
+  /**
+   * Pieces published during a date range. Used by the public report's
+   * Actions Taken section to highlight what content went live in the
+   * current cycle.
+   */
+  async publishedInRange(
+    clientId: string,
+    from: Date,
+    to: Date,
+  ): Promise<ContentPiece[]> {
+    const docs = await this.model
+      .find({
+        clientId: new Types.ObjectId(clientId),
+        status: 'published',
+        publishedAt: { $gte: from, $lte: to },
+      })
+      .sort({ publishedAt: -1 })
+      .lean()
+      .exec();
+    return docs.map((d) => normalizeStatus(d));
+  }
+
   async remove(id: string, user?: AuthenticatedUser) {
     await this.ensureAccessToContent(id, user);
     const deleted = await this.model.findByIdAndDelete(id).lean().exec();

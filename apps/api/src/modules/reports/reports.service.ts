@@ -372,6 +372,13 @@ export class ReportsService {
       }),
     ]);
 
+    // Pieces published during the cycle window — fed into Actions Taken.
+    const contentPublished = await this.content.publishedInRange(
+      report.clientId.toString(),
+      new Date(cycle.startDate),
+      new Date(cycle.endDate),
+    );
+
     // Recompute the "previous" comparison series at read time so changes
     // to the client baseline (or new prior-cycle reports) are reflected
     // without re-saving this report.
@@ -440,6 +447,12 @@ export class ReportsService {
         title: p.title,
         targetKeyword: p.targetKeyword,
         targetUrl: p.targetUrl,
+      })),
+      contentPublished: contentPublished.map((p) => ({
+        title: p.title,
+        targetKeyword: p.targetKeyword,
+        publishedUrl: p.publishedUrl,
+        publishedAt: p.publishedAt,
       })),
     };
   }
