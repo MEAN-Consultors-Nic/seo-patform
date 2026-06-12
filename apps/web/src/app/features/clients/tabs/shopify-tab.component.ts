@@ -1277,27 +1277,30 @@ export class ClientShopifyTab implements OnChanges {
   trackError = signal<string | null>(null);
   trackSaved = signal(false);
 
-  editHasChanges = computed(() => {
+  // These are plain methods (not `computed`) because `editForm` is a plain
+  // object — signals only track other signals. Re-evaluation runs on every
+  // change-detection tick triggered by ngModel.
+  editHasChanges(): boolean {
     const orig = this.editOriginal();
     if (!orig) return false;
     const t = this.editForm.seoTitle.trim();
     const d = this.editForm.seoDescription.trim();
     return t !== (orig.seoTitle ?? '') || d !== (orig.seoDescription ?? '');
-  });
+  }
 
-  editTitleHealth = computed<CharHealth>(() => {
+  editTitleHealth(): CharHealth {
     const len = this.editForm.seoTitle.trim().length;
     if (len === 0) return 'neutral';
     if (len >= 30 && len <= 60) return 'good';
     return 'warn';
-  });
+  }
 
-  editDescHealth = computed<CharHealth>(() => {
+  editDescHealth(): CharHealth {
     const len = this.editForm.seoDescription.trim().length;
     if (len === 0) return 'neutral';
     if (len >= 120 && len <= 160) return 'good';
     return 'warn';
-  });
+  }
 
   openEdit(item: ShopifyResourceItem) {
     this.editOriginal.set(item);
