@@ -142,7 +142,8 @@ body {
 
 /* ---------- Cards ---------- */
 .card {
-  @apply bg-white rounded-lg shadow-card border border-ink-200 p-5;
+  /* Less padding on mobile so cards don't squeeze content. */
+  @apply bg-white rounded-lg shadow-card border border-ink-200 p-4 sm:p-5;
 }
 .card-flush {
   @apply bg-white rounded-lg shadow-card border border-ink-200 overflow-hidden;
@@ -189,10 +190,14 @@ select.input {
 
 /* ---------- Tabs ---------- */
 .tab-bar {
-  @apply flex border-b border-ink-200;
+  /* Horizontal scroll on mobile so tab strips don't break the layout. The
+     -mx-4 sm:-mx-0 plus px-4 hack would extend bleed to the viewport edges
+     but it conflicts with bordered containers, so we just allow scroll. */
+  @apply flex border-b border-ink-200 overflow-x-auto;
+  scrollbar-width: thin;
 }
 .tab {
-  @apply px-4 py-2.5 text-sm font-medium text-ink-500 border-b-2 border-transparent transition-colors hover:text-ink-900;
+  @apply px-4 py-2.5 text-sm font-medium text-ink-500 border-b-2 border-transparent transition-colors hover:text-ink-900 whitespace-nowrap flex-shrink-0;
 }
 .tab-active {
   @apply text-ink-900 border-brand-500;
@@ -200,16 +205,24 @@ select.input {
 
 /* ---------- Page chrome ---------- */
 .page-container {
-  @apply px-8 py-6 max-w-7xl mx-auto;
+  /* Tighter horizontal padding on mobile. */
+  @apply px-4 sm:px-6 lg:px-8 py-4 sm:py-6 max-w-7xl mx-auto;
 }
 .page-header {
-  @apply mb-6 flex items-start justify-between gap-4;
+  /* Stack title and actions on mobile, side-by-side from sm up. */
+  @apply mb-5 sm:mb-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4;
 }
 .page-title {
-  @apply text-2xl font-bold text-ink-900 tracking-tight;
+  @apply text-xl sm:text-2xl font-bold text-ink-900 tracking-tight;
 }
 .page-subtitle {
   @apply text-sm text-ink-500 mt-0.5;
+}
+
+/* Table wrappers: any direct child of .table-wrap can overflow horizontally
+   so wide data tables remain usable on mobile. */
+.table-wrap {
+  @apply -mx-4 sm:mx-0 overflow-x-auto;
 }
 
 /* ---------- Stat card (Ahrefs-style metric tile) ---------- */

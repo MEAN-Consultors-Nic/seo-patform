@@ -79,33 +79,33 @@ interface TabDef {
           ← Back to clients
         </a>
 
-        <header class="flex items-start justify-between mt-3 mb-6">
-          <div class="flex items-center gap-4">
+        <header class="flex flex-col sm:flex-row sm:items-start sm:justify-between mt-3 mb-6 gap-3">
+          <div class="flex items-center gap-3 sm:gap-4 min-w-0">
             @if (c.logoUrl) {
               <img [src]="c.logoUrl" [alt]="c.name"
-                   class="w-14 h-14 rounded-lg object-contain bg-white border border-ink-200 shadow-sm" />
+                   class="w-12 h-12 sm:w-14 sm:h-14 rounded-lg object-contain bg-white border border-ink-200 shadow-sm flex-shrink-0" />
             } @else {
-              <div class="w-14 h-14 rounded-lg bg-ink-100 border border-ink-200 flex items-center justify-center text-xl text-ink-500 font-bold">
+              <div class="w-12 h-12 sm:w-14 sm:h-14 rounded-lg bg-ink-100 border border-ink-200 flex items-center justify-center text-xl text-ink-500 font-bold flex-shrink-0">
                 {{ c.name.charAt(0) }}
               </div>
             }
-            <div>
-              <h1 class="text-2xl font-bold text-ink-900">{{ c.name }}</h1>
+            <div class="min-w-0">
+              <h1 class="text-xl sm:text-2xl font-bold text-ink-900 truncate">{{ c.name }}</h1>
               <div class="flex items-center gap-2 mt-1 flex-wrap">
                 <span [class]="'tier-' + c.tier">{{ c.tier }}</span>
                 <span class="text-xs text-ink-500">{{ c.hoursPerCycle }} h / cycle</span>
-                <span class="text-xs text-ink-300">·</span>
-                <a [href]="c.url" target="_blank" class="text-xs text-sky-500 hover:underline">{{ c.url }}</a>
+                <span class="text-xs text-ink-300 hidden sm:inline">·</span>
+                <a [href]="c.url" target="_blank" class="text-xs text-sky-500 hover:underline truncate max-w-[200px] sm:max-w-none">{{ c.url }}</a>
                 <app-domain-info-button [url]="c.url" />
                 <app-schema-modeler-button [url]="c.url" />
               </div>
             </div>
           </div>
-          <div class="flex items-center gap-2">
-            <button class="btn-secondary" (click)="openEdit()">
+          <div class="flex flex-wrap items-center gap-2 sm:flex-shrink-0">
+            <button class="btn-secondary text-xs sm:text-sm" (click)="openEdit()">
               ✏ Edit client
             </button>
-            <a [routerLink]="['/reports']" [queryParams]="{ clientId: c._id }" class="btn-primary">
+            <a [routerLink]="['/reports']" [queryParams]="{ clientId: c._id }" class="btn-primary text-xs sm:text-sm">
               Generate report
             </a>
           </div>

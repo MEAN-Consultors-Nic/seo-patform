@@ -60,13 +60,13 @@ interface CapacityAlert {
       <!-- Cycle banner -->
       @if (cycle(); as c) {
         <div class="card mb-4">
-          <div class="flex items-center justify-between gap-4">
-            <div class="flex items-center gap-4">
-              <div class="w-12 h-12 rounded-lg bg-brand-50 flex items-center justify-center text-brand-500 text-xl">◐</div>
-              <div>
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+            <div class="flex items-center gap-3 sm:gap-4 min-w-0">
+              <div class="w-12 h-12 rounded-lg bg-brand-50 flex items-center justify-center text-brand-500 text-xl flex-shrink-0">◐</div>
+              <div class="min-w-0">
                 <div class="text-xs font-semibold text-ink-500 uppercase tracking-wider">Current cycle</div>
-                <div class="flex items-baseline gap-2 mt-0.5">
-                  <span class="text-lg font-bold text-ink-900">{{ c.label }}</span>
+                <div class="flex items-baseline gap-2 mt-0.5 flex-wrap">
+                  <span class="text-lg font-bold text-ink-900 truncate">{{ c.label }}</span>
                   <span class="badge-neutral capitalize">{{ c.status }}</span>
                 </div>
                 <div class="text-xs text-ink-500 mt-0.5">
@@ -75,13 +75,13 @@ interface CapacityAlert {
                 </div>
               </div>
             </div>
-            <div class="flex gap-2">
-              <button class="btn-secondary"
+            <div class="flex flex-wrap gap-2 sm:flex-shrink-0">
+              <button class="btn-secondary text-xs sm:text-sm"
                       (click)="generateRecurring()"
                       [disabled]="applying() || !cycle()">
                 @if (applying()) { Generating… } @else { ⚡ Generate cycle tasks }
               </button>
-              <a routerLink="/reports" class="btn-primary">Reports</a>
+              <a routerLink="/reports" class="btn-primary text-xs sm:text-sm">Reports</a>
             </div>
           </div>
           <!-- Cycle progress -->
@@ -156,7 +156,7 @@ interface CapacityAlert {
         } @else {
           <div class="space-y-2">
             @for (b of todayBlocks(); track b._id) {
-              <div [class]="'flex items-center gap-3 rounded-md border px-3 py-2.5 transition ' +
+              <div [class]="'flex flex-wrap items-center gap-3 rounded-md border px-3 py-2.5 transition ' +
                             (b.status === 'completed' ? 'border-positive-500/30 bg-positive-100/30' :
                              b.status === 'in_progress' ? 'border-sky-500 bg-sky-50' :
                              'border-ink-200 hover:bg-ink-50')">
@@ -175,7 +175,7 @@ interface CapacityAlert {
                     <div class="text-xs text-ink-400 italic mt-0.5">Generic block</div>
                   }
                 </div>
-                <div class="flex items-center gap-1 flex-shrink-0">
+                <div class="flex items-center gap-1 flex-shrink-0 w-full sm:w-auto justify-end">
                   @if (b.status === 'completed') {
                     <span class="text-positive-500 text-xs font-bold">✓ Done</span>
                   } @else {
@@ -190,7 +190,7 @@ interface CapacityAlert {
               </div>
             }
           </div>
-          <div class="mt-3 pt-3 border-t border-ink-100 text-xs text-ink-500 flex items-center justify-between">
+          <div class="mt-3 pt-3 border-t border-ink-100 text-xs text-ink-500 flex flex-wrap items-center justify-between gap-2">
             <span>
               <strong class="text-ink-900">{{ todayPlannedMinutes() / 60 | number: '1.1-1' }}h</strong> planned
               · <strong class="text-positive-500">{{ todayCompletedMinutes() / 60 | number: '1.1-1' }}h</strong> completed

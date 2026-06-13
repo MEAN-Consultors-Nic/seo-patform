@@ -38,18 +38,18 @@ interface KpiField {
           <h1 class="page-title">Clients</h1>
           <p class="page-subtitle">{{ clients().length }} active accounts</p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <div class="flex bg-white border border-ink-200 rounded-md p-0.5">
             @for (t of tierOptions; track t.value) {
               <button
                 (click)="setTier(t.value)"
-                [class]="'px-3 py-1 text-xs font-semibold rounded transition ' +
+                [class]="'px-2.5 sm:px-3 py-1 text-xs font-semibold rounded transition ' +
                   (tierFilter() === t.value ? 'bg-ink-900 text-white' : 'text-ink-600 hover:text-ink-900')">
                 {{ t.label }}
               </button>
             }
           </div>
-          <a routerLink="/clients/new" class="btn-primary">+ New client</a>
+          <a routerLink="/clients/new" class="btn-primary text-xs sm:text-sm">+ New client</a>
         </div>
       </header>
 
@@ -191,9 +191,10 @@ interface KpiField {
 
       <!-- Set Initial KPIs modal -->
       @if (kpisModalClient(); as kc) {
-        <div class="fixed inset-0 z-50 bg-ink-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+        <div class="fixed inset-0 z-50 bg-ink-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
              (click)="closeKpisModal()">
-          <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6" (click)="$event.stopPropagation()">
+          <div class="bg-white sm:rounded-lg rounded-t-xl shadow-xl w-full max-w-2xl p-4 sm:p-6 max-h-[95vh] overflow-y-auto"
+               (click)="$event.stopPropagation()">
             <div class="flex items-start justify-between mb-1">
               <div>
                 <h2 class="text-lg font-bold text-ink-900">Set Initial KPIs</h2>

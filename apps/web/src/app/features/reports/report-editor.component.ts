@@ -32,11 +32,11 @@ interface KpiGroup {
   template: `
     <div class="page-container max-w-6xl">
       <!-- Sticky action bar -->
-      <header class="sticky top-0 -mx-8 -mt-6 px-8 py-4 bg-ink-50/95 backdrop-blur z-30 mb-6 border-b border-ink-200">
-        <div class="flex items-center justify-between gap-4">
+      <header class="sticky top-0 -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 px-4 sm:px-6 lg:px-8 py-3 sm:py-4 bg-ink-50/95 backdrop-blur z-30 mb-5 sm:mb-6 border-b border-ink-200">
+        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 lg:gap-4">
           <div class="flex items-center gap-3 min-w-0">
             <div class="min-w-0">
-              <h1 class="text-xl font-bold text-ink-900 leading-tight truncate">
+              <h1 class="text-lg sm:text-xl font-bold text-ink-900 leading-tight truncate">
                 Bi-weekly report
                 @if (selectedClientName(); as name) {
                   <span class="text-brand-500">· {{ name }}</span>
@@ -52,20 +52,20 @@ interface KpiGroup {
             </div>
           </div>
 
-          <div class="flex items-center gap-2 flex-shrink-0">
-            <button class="btn-secondary" (click)="autoCompose()" [disabled]="!ready() || saving()" title="Generate base content from tasks">
+          <div class="flex flex-wrap items-center gap-2 lg:flex-shrink-0">
+            <button class="btn-secondary text-xs sm:text-sm" (click)="autoCompose()" [disabled]="!ready() || saving()" title="Generate base content from tasks">
               ⚡ Auto-compose
             </button>
-            <button class="btn-primary" (click)="save()" [disabled]="!ready() || saving()">
+            <button class="btn-primary text-xs sm:text-sm" (click)="save()" [disabled]="!ready() || saving()">
               @if (saving()) { Saving… } @else { 💾 Save }
             </button>
-            <button class="btn-secondary" (click)="viewPdf()" [disabled]="!ready() || downloading()">
+            <button class="btn-secondary text-xs sm:text-sm" (click)="viewPdf()" [disabled]="!ready() || downloading()">
               {{ downloading() ? '…' : '👁 View PDF' }}
             </button>
-            <button class="btn-secondary" (click)="downloadPdf()" [disabled]="!ready() || downloading()">
+            <button class="btn-secondary text-xs sm:text-sm" (click)="downloadPdf()" [disabled]="!ready() || downloading()">
               ⬇
             </button>
-            <button class="btn-primary" (click)="share()" [disabled]="!ready() || sharing()">
+            <button class="btn-primary text-xs sm:text-sm" (click)="share()" [disabled]="!ready() || sharing()">
               {{ sharing() ? '…' : '🔗 Share' }}
             </button>
           </div>
