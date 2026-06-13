@@ -139,7 +139,8 @@ Chart.register(...registerables);
         <div class="bg-warning-100 px-4 py-2.5 border-b border-ink-200">
           <span class="text-sm font-semibold text-warning-500">⚡ URL Volatility — Keywords ranking with different URLs (90d)</span>
         </div>
-        <table class="table">
+        <div class="overflow-x-auto">
+        <table class="table min-w-[640px]">
           <thead>
             <tr>
               <th>Keyword</th>
@@ -173,6 +174,7 @@ Chart.register(...registerables);
             }
           </tbody>
         </table>
+        </div>
       </div>
 
       <!-- Detail drawer -->

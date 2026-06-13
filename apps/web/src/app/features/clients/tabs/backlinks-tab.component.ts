@@ -50,8 +50,8 @@ import { BacklinksService } from '../../../core/backlinks.service';
         </button>
       </div>
 
-      <div class="card overflow-hidden p-0">
-        <table class="w-full text-sm">
+      <div class="card overflow-x-auto p-0">
+        <table class="w-full text-sm min-w-[720px]">
           <thead class="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500">
             <tr>
               <th class="px-3 py-2 text-left">Source domain</th>

@@ -83,8 +83,8 @@ function daysAgoIso(days: number): string {
         <button class="btn-primary mt-3" (click)="add()" [disabled]="!newKw.text">Create keyword</button>
       </div>
 
-      <div class="card overflow-hidden p-0">
-        <table class="w-full text-sm">
+      <div class="card overflow-x-auto p-0">
+        <table class="w-full text-sm min-w-[720px]">
           <thead class="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500">
             <tr>
               <th class="px-4 py-2 text-left">Keyword</th>
@@ -158,9 +158,9 @@ function daysAgoIso(days: number): string {
 
     <!-- Pull from GSC modal -->
     @if (pullModal()) {
-      <div class="fixed inset-0 bg-ink-900/60 z-50 flex items-center justify-center p-4"
+      <div class="fixed inset-0 bg-ink-900/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
            (click)="closePullModal()">
-        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6"
+        <div class="bg-white sm:rounded-xl rounded-t-xl shadow-xl w-full max-w-lg p-4 sm:p-6 max-h-[95vh] overflow-y-auto"
              (click)="$event.stopPropagation()">
           <div class="flex items-start justify-between gap-3 mb-4">
             <div>

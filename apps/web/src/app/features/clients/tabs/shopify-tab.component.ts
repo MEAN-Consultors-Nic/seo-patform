@@ -390,9 +390,9 @@ interface TrackContext {
 
     <!-- Bulk CSV modal -->
     @if (csvOpen()) {
-      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4"
            (click)="closeCsv()">
-        <div class="bg-white rounded-xl shadow-xl w-full max-w-5xl p-6 max-h-[90vh] overflow-y-auto"
+        <div class="bg-white sm:rounded-xl rounded-t-xl shadow-xl w-full max-w-5xl p-4 sm:p-6 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto"
              (click)="$event.stopPropagation()">
           <div class="flex items-start justify-between mb-4">
             <div>
@@ -649,9 +649,9 @@ interface TrackContext {
 
     <!-- Inline edit modal -->
     @if (editOpen(); as item) {
-      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4"
            (click)="closeEdit()">
-        <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto"
+        <div class="bg-white sm:rounded-xl rounded-t-xl shadow-xl w-full max-w-2xl p-4 sm:p-6 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto"
              (click)="$event.stopPropagation()">
           <div class="flex items-start justify-between mb-4">
             <div>
@@ -742,9 +742,9 @@ interface TrackContext {
 
     <!-- Track-in-task dialog -->
     @if (trackOpen(); as ctx) {
-      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4"
            (click)="dismissTrack()">
-        <div class="bg-white rounded-xl shadow-xl w-full max-w-xl p-6"
+        <div class="bg-white sm:rounded-xl rounded-t-xl shadow-xl w-full max-w-xl p-4 sm:p-6 max-h-[95vh] overflow-y-auto"
              (click)="$event.stopPropagation()">
           <div class="flex items-start justify-between mb-3">
             <div>

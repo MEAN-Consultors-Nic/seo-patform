@@ -98,8 +98,8 @@ function daysAgoIso(days: number): string {
                 </div>
               </div>
             </div>
-            <div class="rounded-md border border-ink-200 overflow-hidden">
-              <table class="w-full text-xs">
+            <div class="rounded-md border border-ink-200 overflow-x-auto">
+              <table class="w-full text-xs min-w-[520px]">
                 <thead class="bg-ink-50 text-ink-500 uppercase tracking-wider text-[10px]">
                   <tr>
                     <th class="px-3 py-2 text-left">Sitemap</th>
@@ -169,8 +169,8 @@ function daysAgoIso(days: number): string {
         @if (d.byCountry.length > 0) {
           <div class="card">
             <h3 class="text-sm font-semibold text-ink-900 mb-3">Top countries</h3>
-            <div class="rounded-md border border-ink-200 overflow-hidden">
-              <table class="w-full text-xs">
+            <div class="rounded-md border border-ink-200 overflow-x-auto">
+              <table class="w-full text-xs min-w-[520px]">
                 <thead class="bg-ink-50 text-ink-500 uppercase tracking-wider text-[10px]">
                   <tr>
                     <th class="px-3 py-2 text-left">Country</th>
@@ -200,8 +200,8 @@ function daysAgoIso(days: number): string {
         @if (d.topPages.length > 0) {
           <div class="card">
             <h3 class="text-sm font-semibold text-ink-900 mb-3">Top pages</h3>
-            <div class="rounded-md border border-ink-200 overflow-hidden">
-              <table class="w-full text-xs">
+            <div class="rounded-md border border-ink-200 overflow-x-auto">
+              <table class="w-full text-xs min-w-[520px]">
                 <thead class="bg-ink-50 text-ink-500 uppercase tracking-wider text-[10px]">
                   <tr>
                     <th class="px-3 py-2 text-left">Page</th>

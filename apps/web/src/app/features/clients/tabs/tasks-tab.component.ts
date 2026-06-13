@@ -88,27 +88,27 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
     <div class="space-y-4">
       <!-- Cycle header -->
       @if (cycle(); as c) {
-        <div class="card flex items-center justify-between gap-4">
-          <div>
+        <div class="card flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
+          <div class="min-w-0">
             <div class="text-xs font-semibold text-ink-500 uppercase tracking-wider">Current cycle</div>
-            <div class="flex items-baseline gap-2 mt-0.5">
+            <div class="flex items-baseline gap-2 mt-0.5 flex-wrap">
               <span class="text-lg font-bold text-ink-900">{{ c.label }}</span>
               <span class="badge-neutral capitalize">{{ c.status }}</span>
               <span class="text-xs text-ink-500">closes {{ c.endDate | date: 'mediumDate' }}</span>
             </div>
           </div>
-          <div class="flex items-center gap-4 text-sm">
-            <div class="text-right">
+          <div class="flex flex-wrap items-center gap-3 sm:gap-4 text-sm">
+            <div class="md:text-right">
               <div class="text-xs text-ink-500">Hours invested</div>
               <div class="font-bold" [ngClass]="hoursTextColor()">
                 {{ actualHours() | number: '1.1-1' }} / {{ assignedHours }} h
                 <span class="text-xs font-normal">({{ pct() | number: '1.0-0' }}%)</span>
               </div>
             </div>
-            <div class="w-32 h-2 bg-ink-100 rounded-full overflow-hidden">
+            <div class="flex-1 md:flex-none w-full md:w-32 h-2 bg-ink-100 rounded-full overflow-hidden">
               <div class="h-full transition-all" [ngClass]="hoursBarColor()" [style.width.%]="Math.min(pct(), 100)"></div>
             </div>
-            <button class="btn-primary text-xs whitespace-nowrap"
+            <button class="btn-primary text-xs whitespace-nowrap ml-auto md:ml-0"
                     type="button"
                     (click)="openCreateModal()"
                     [disabled]="!cycle()?._id">
@@ -341,9 +341,9 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
 
     <!-- Edit / Create task modal -->
     @if (editingTask() || creatingTask()) {
-      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4"
            (click)="closeEditModal()">
-        <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto"
+        <div class="bg-white sm:rounded-xl rounded-t-xl shadow-xl w-full max-w-2xl p-4 sm:p-6 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto"
              (click)="$event.stopPropagation()">
           <div class="flex items-start justify-between mb-4">
             <h2 class="text-lg font-bold text-ink-900">
@@ -461,12 +461,12 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
 
     <!-- Detail task modal -->
     @if (detailTask(); as d) {
-      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4"
            (click)="closeDetailModal()">
-        <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col"
+        <div class="bg-white sm:rounded-xl rounded-t-xl shadow-xl w-full max-w-4xl max-h-[95vh] sm:max-h-[90vh] flex flex-col"
              (click)="$event.stopPropagation()">
           <!-- Header -->
-          <div class="px-6 py-4 border-b border-ink-100 flex items-start justify-between gap-4">
+          <div class="px-4 sm:px-6 py-3 sm:py-4 border-b border-ink-100 flex items-start justify-between gap-3 sm:gap-4">
             <div class="flex flex-wrap items-center gap-2 min-w-0">
               <span [class]="'inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded ' + statusOf(d).pill">
                 <span class="w-1.5 h-1.5 rounded-full" [ngClass]="statusOf(d).dot"></span>
@@ -497,8 +497,8 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
           </div>
 
           <!-- Body (scrollable) -->
-          <div class="px-6 py-5 overflow-y-auto flex-1">
-            <h2 class="text-2xl font-bold text-ink-900 leading-tight"
+          <div class="px-4 sm:px-6 py-4 sm:py-5 overflow-y-auto flex-1">
+            <h2 class="text-xl sm:text-2xl font-bold text-ink-900 leading-tight"
                 [class.line-through]="d.status === 'completed'"
                 [class.text-ink-500]="d.status === 'completed'">
               {{ d.title }}
@@ -558,7 +558,7 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
           </div>
 
           <!-- Footer -->
-          <div class="px-6 py-4 border-t border-ink-100 flex flex-wrap items-center justify-between gap-4 text-xs">
+          <div class="px-4 sm:px-6 py-3 sm:py-4 border-t border-ink-100 flex flex-wrap items-center justify-between gap-3 sm:gap-4 text-xs">
             <div class="flex flex-wrap items-center gap-x-5 gap-y-1">
               <div>
                 <span class="text-ink-400 uppercase tracking-wider text-[10px] font-semibold mr-1">Estimated</span>
