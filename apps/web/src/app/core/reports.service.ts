@@ -19,6 +19,21 @@ export class ReportsService {
     );
   }
 
+  previousKpis(
+    clientId: string,
+    cycleId: string,
+  ): Observable<{
+    kpisPrevious: Record<string, number> | null;
+    kpisPreviousSource: 'previous' | 'baseline' | null;
+  }> {
+    return this.http.get<{
+      kpisPrevious: Record<string, number> | null;
+      kpisPreviousSource: 'previous' | 'baseline' | null;
+    }>(
+      `${this.base}/reports/previous-kpis?clientId=${clientId}&cycleId=${cycleId}`,
+    );
+  }
+
   upsert(dto: Partial<Report> & { clientId: string; cycleId: string }) {
     return this.http.post<Report>(`${this.base}/reports`, dto);
   }

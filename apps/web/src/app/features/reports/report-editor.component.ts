@@ -425,6 +425,21 @@ interface KpiGroup {
                           <span class="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-ink-400">{{ k.suffix }}</span>
                         }
                       </div>
+                      @if (previousKpiCell(k.key); as prev) {
+                        <div class="mt-1 text-[10px] text-ink-500 flex items-center gap-1 flex-wrap"
+                             [title]="prev.tooltip">
+                          <span>{{ previousLabel() }}</span>
+                          <span class="font-semibold text-ink-700">{{ prev.previousFormatted }}</span>
+                          @if (prev.delta !== null) {
+                            <span class="ml-0.5 font-semibold inline-flex items-center gap-0.5"
+                                  [class.text-positive-500]="prev.good"
+                                  [class.text-danger-500]="!prev.good">
+                              <span>{{ prev.delta > 0 ? '▲' : '▼' }}</span>
+                              <span>{{ prev.deltaPct > 0 ? '+' : '' }}{{ prev.deltaPct | number: '1.1-1' }}%</span>
+                            </span>
+                          }
+                        </div>
+                      }
                     </div>
                   }
                 </div>
@@ -843,6 +858,16 @@ export class ReportEditorComponent implements OnInit {
   comparePeriods = true;
   locationsSort: LocationsSortKey = 'clicks';
   locationsSortOptions = LOCATIONS_SORT_OPTIONS;
+
+  // Previous-period preview shown next to each KPI input so the user can
+  // sanity-check the comparison before saving. Populated by
+  // loadPreviousKpis() whenever clientId + cycleId are both set.
+  previousKpis = signal<Record<string, number> | null>(null);
+  previousKpisSource = signal<'previous' | 'baseline' | null>(null);
+  private readonly INVERSE_KEYS = new Set<string>([
+    'avgPosition',
+    'nonIndexedPages',
+  ]);
   kpis: Record<string, number | null> = {};
   coverImageUrl = signal<string>('');
   uploadingCover = signal(false);
@@ -982,6 +1007,75 @@ export class ReportEditorComponent implements OnInit {
     this.tasksSvc
       .list({ clientId: this.clientId(), cycleId: this.cycleId() })
       .subscribe((tasks) => this.cycleTasks.set(tasks));
+    // Pull the resolved previous-period series so the editor can preview
+    // the same comparison the public report will use.
+    this.loadPreviousKpis();
+  }
+
+  private loadPreviousKpis() {
+    this.previousKpis.set(null);
+    this.previousKpisSource.set(null);
+    this.reportsSvc.previousKpis(this.clientId(), this.cycleId()).subscribe({
+      next: (r) => {
+        this.previousKpis.set(r.kpisPrevious);
+        this.previousKpisSource.set(r.kpisPreviousSource);
+      },
+      error: () => {
+        this.previousKpis.set(null);
+        this.previousKpisSource.set(null);
+      },
+    });
+  }
+
+  /** Label that mirrors the public report's "vs" / "vs baseline" rendering. */
+  previousLabel(): string {
+    return this.previousKpisSource() === 'baseline' ? 'vs baseline' : 'vs prev';
+  }
+
+  /**
+   * Returns the rendering cell for a KPI's previous value + delta — or null
+   * when there's no comparison data so the input row stays compact.
+   */
+  previousKpiCell(key: string): {
+    previous: number;
+    previousFormatted: string;
+    delta: number | null;
+    deltaPct: number;
+    good: boolean;
+    tooltip: string;
+  } | null {
+    const prevMap = this.previousKpis();
+    if (!prevMap) return null;
+    const prev = (prevMap as Record<string, number | undefined>)[key];
+    if (typeof prev !== 'number') return null;
+
+    const cur = this.kpis[key];
+    let delta: number | null = null;
+    let deltaPct = 0;
+    let good = true;
+    if (typeof cur === 'number' && prev !== 0) {
+      delta = cur - prev;
+      deltaPct = (delta / prev) * 100;
+      const up = cur > prev;
+      good = this.INVERSE_KEYS.has(key) ? !up : up;
+    }
+    const sourceLabel =
+      this.previousKpisSource() === 'baseline' ? 'baseline' : 'previous cycle';
+    return {
+      previous: prev,
+      previousFormatted: this.formatKpi(prev),
+      delta,
+      deltaPct,
+      good,
+      tooltip: `${sourceLabel}: ${this.formatKpi(prev)}`,
+    };
+  }
+
+  private formatKpi(n: number): string {
+    if (!isFinite(n)) return '—';
+    if (Math.abs(n) >= 1000) return n.toLocaleString();
+    if (Number.isInteger(n)) return String(n);
+    return n.toFixed(2);
   }
 
   populate(r: Report | null) {

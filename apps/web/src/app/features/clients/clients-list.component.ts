@@ -104,6 +104,16 @@ interface KpiField {
                           </svg>
                           Set Initial KPIs
                         </button>
+                        <a [routerLink]="['/reports']"
+                           [queryParams]="{ clientId: c._id }"
+                           (click)="closeMenuOnly($event)"
+                           class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 flex items-center gap-2">
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M3 2h7l3 3v9H3V2z" />
+                            <path d="M10 2v3h3M5 8h6M5 11h6" stroke-linecap="round" />
+                          </svg>
+                          Generate report
+                        </a>
                       </div>
                     }
                   </div>
@@ -391,6 +401,15 @@ export class ClientsListComponent implements OnInit {
     } else if (this.menuOpenId()) {
       this.menuOpenId.set(null);
     }
+  }
+
+  /**
+   * Close the overflow menu while letting the routerLink complete its
+   * navigation. Used by menu entries that are <a routerLink> elements.
+   */
+  closeMenuOnly(event: MouseEvent) {
+    event.stopPropagation();
+    this.menuOpenId.set(null);
   }
 
   openKpisModal(c: ClientWithStats) {

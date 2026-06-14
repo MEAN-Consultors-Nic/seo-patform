@@ -43,6 +43,16 @@ export class ReportsController {
     return this.reports.kpiHistory(clientId, limit ? Number(limit) : undefined);
   }
 
+  @Get('previous-kpis')
+  async previousKpis(
+    @Query('clientId') clientId: string,
+    @Query('cycleId') cycleId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.clients.assertAccess(clientId, user);
+    return this.reports.previousKpisForCycle(clientId, cycleId);
+  }
+
   @Get('by-cycle')
   async byCycle(
     @Query('clientId') clientId: string,

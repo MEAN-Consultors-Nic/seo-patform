@@ -660,6 +660,37 @@ export class ReportsService {
     return out;
   }
 
+  /**
+   * Read-side resolver used by the report editor to preview comparisons
+   * before a report is actually saved. Returns the comparison series
+   * (prior cycle's kpis or current baseline) plus a source tag.
+   */
+  async previousKpisForCycle(
+    clientId: string,
+    cycleId: string,
+  ): Promise<{
+    kpisPrevious: ReportKpis | null;
+    kpisPreviousSource: 'previous' | 'baseline' | null;
+  }> {
+    const [priorCycleKpis, client] = await Promise.all([
+      this.findPriorCycleKpis(clientId, cycleId),
+      this.clients.findOne(clientId).catch(() => null),
+    ]);
+    if (priorCycleKpis) {
+      const baseline = client?.baselineKpis;
+      const merged =
+        baseline && Object.keys(baseline).length > 0
+          ? { ...baseline, ...priorCycleKpis }
+          : priorCycleKpis;
+      return { kpisPrevious: merged, kpisPreviousSource: 'previous' };
+    }
+    const baseline = client?.baselineKpis;
+    if (baseline && Object.keys(baseline).length > 0) {
+      return { kpisPrevious: baseline, kpisPreviousSource: 'baseline' };
+    }
+    return { kpisPrevious: null, kpisPreviousSource: null };
+  }
+
   private async findPriorCycleKpis(
     clientId: string,
     cycleId: string,
