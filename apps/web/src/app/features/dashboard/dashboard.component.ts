@@ -683,6 +683,7 @@ export class DashboardComponent implements OnInit {
   );
 
   clientName(b: TimeBlock): string {
+    if (b.kind === 'reporting') return '📊 Send client reports';
     const ref = b.clientId as unknown;
     if (ref && typeof ref === 'object' && 'name' in ref) {
       return (ref as { name: string }).name;
@@ -691,6 +692,7 @@ export class DashboardComponent implements OnInit {
   }
 
   clientTier(b: TimeBlock): string {
+    if (b.kind === 'reporting') return 'A';
     const ref = b.clientId as unknown;
     if (ref && typeof ref === 'object' && 'tier' in ref) {
       return (ref as { tier: string }).tier;

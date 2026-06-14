@@ -514,6 +514,8 @@ export const DEFAULT_WORKING_HOURS: Omit<WorkingHoursConfig, 'userId'> = {
 
 export type TimeBlockStatus = 'planned' | 'in_progress' | 'completed' | 'skipped';
 
+export type TimeBlockKind = 'client' | 'reporting';
+
 export interface TimeBlock {
   _id?: string;
   userId: string;
@@ -522,9 +524,13 @@ export interface TimeBlock {
   startTime: string; // HH:mm
   endTime: string; // HH:mm
   durationMinutes: number;
-  clientId: string | { _id: string; name: string; tier: ClientTier; logoUrl?: string };
+  clientId?:
+    | string
+    | { _id: string; name: string; tier: ClientTier; logoUrl?: string };
   taskId?: string | { _id: string; title: string; category: TaskCategory; status: TaskStatus };
   status: TimeBlockStatus;
+  /** Reporting blocks (cycle-end "send client reports" slot) have no client. */
+  kind?: TimeBlockKind;
   startedAt?: Date;
   completedAt?: Date;
   actualMinutes?: number;

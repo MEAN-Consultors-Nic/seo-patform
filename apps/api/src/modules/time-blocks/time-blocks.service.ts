@@ -404,6 +404,32 @@ export class TimeBlocksService {
       allSlots.push(...filtered);
     }
 
+    // 6b. Reserve a single noon slot on the last working day of the cycle
+    //     for "send client reports". The block is pulled out of the
+    //     allocation pool before clients compete for slots, so it always
+    //     lands on the calendar regardless of demand. We pick the first
+    //     slot whose startTime is at or after 12:00 on that day.
+    let reportingSlot: Slot | null = null;
+    if (workingDays.length > 0) {
+      const lastDay = workingDays[workingDays.length - 1];
+      const idx = allSlots.findIndex(
+        (s) => s.date === lastDay && s.startTime >= '12:00',
+      );
+      if (idx >= 0) {
+        reportingSlot = allSlots.splice(idx, 1)[0];
+      } else {
+        // No afternoon slot on the last day — fall back to the last slot
+        // of the day so we still book *something* on cycle close.
+        const lastDayIdx = allSlots
+          .map((s, i) => ({ s, i }))
+          .filter((x) => x.s.date === lastDay)
+          .pop();
+        if (lastDayIdx) {
+          reportingSlot = allSlots.splice(lastDayIdx.i, 1)[0];
+        }
+      }
+    }
+
     const totalMinutesAvailable = allSlots.reduce((acc, s) => acc + s.durationMinutes, 0);
 
     // 7. Pre-fetch open tasks once so we can incorporate pending count +
@@ -534,10 +560,11 @@ export class TimeBlocksService {
       startTime: string;
       endTime: string;
       durationMinutes: number;
-      clientId: Types.ObjectId;
+      clientId?: Types.ObjectId;
       cycleId: Types.ObjectId;
       userId: Types.ObjectId;
       status: TimeBlockStatus;
+      kind: 'client' | 'reporting';
     }> = [];
 
     const pickForSlot = (slot: Slot): ClientPlan | null => {
@@ -590,6 +617,7 @@ export class TimeBlocksService {
         cycleId: cycleObjId,
         userId: userObjId,
         status: 'planned',
+        kind: 'client',
       });
       picked.slotsAssigned++;
       picked.lastDate = slot.date;
@@ -598,6 +626,21 @@ export class TimeBlocksService {
         stat.scheduledMinutes += slot.durationMinutes;
         stat.sessions += 1;
       }
+    }
+
+    // 8b. Append the reserved reporting block (no clientId) so it lands on
+    //     the calendar at cycle close.
+    if (reportingSlot) {
+      newBlocks.push({
+        date: reportingSlot.date,
+        startTime: reportingSlot.startTime,
+        endTime: reportingSlot.endTime,
+        durationMinutes: reportingSlot.durationMinutes,
+        cycleId: cycleObjId,
+        userId: userObjId,
+        status: 'planned',
+        kind: 'reporting',
+      });
     }
 
     // Flag clients that ended up under/over the target by more than ~25%
@@ -639,6 +682,7 @@ export class TimeBlocksService {
       list.sort((a, b) => (priorityRank[a.priority] ?? 5) - (priorityRank[b.priority] ?? 5));
     }
     for (const b of newBlocks) {
+      if (b.kind === 'reporting' || !b.clientId) continue;
       const cid = String(b.clientId);
       const queue = tasksByClient.get(cid);
       if (!queue || queue.length === 0) continue;
@@ -683,7 +727,7 @@ export class TimeBlocksService {
     userObjId: Types.ObjectId;
     cycleObjId: Types.ObjectId;
     workingDays: string[];
-    existing: Array<{ date: string; startTime: string; endTime: string; durationMinutes: number; clientId: Types.ObjectId | string }>;
+    existing: Array<{ date: string; startTime: string; endTime: string; durationMinutes: number; clientId?: Types.ObjectId | string }>;
     used: Map<string, { byDay: number; byClient: Map<string, number> }>;
     dailyCapMinutes: number;
     clients: Array<{ _id: Types.ObjectId | string; name: string; tier: ClientTier; hoursPerCycle?: number }>;

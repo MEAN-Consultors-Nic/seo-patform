@@ -210,7 +210,9 @@ function weekdayLabel(iso: string): { weekday: string; label: string } {
                   <button type="button"
                           (click)="editBlock(b)"
                           [class]="'absolute left-1 right-1 rounded-md border-l-4 px-2 py-1.5 text-left shadow-card hover:shadow-elevated transition overflow-hidden text-[11px] ' +
-                                   clientColor(asId(b.clientId)).bg + ' ' + clientColor(asId(b.clientId)).border + ' ' +
+                                   (isReporting(b)
+                                     ? 'bg-brand-50 border-brand-500'
+                                     : (clientColor(asId(b.clientId)).bg + ' ' + clientColor(asId(b.clientId)).border)) + ' ' +
                                    (b.status === 'completed' ? 'opacity-60' : '') + ' ' +
                                    (b.status === 'in_progress' ? 'ring-2 ring-sky-500' : '')"
                           [style.top.px]="topOf(b)"
@@ -225,6 +227,10 @@ function weekdayLabel(iso: string): { weekday: string; label: string } {
                     </div>
                     @if (taskTitle(b)) {
                       <div class="text-[10px] text-ink-600 truncate mt-0.5">{{ taskTitle(b) }}</div>
+                    } @else if (isReporting(b)) {
+                      <div class="text-[10px] text-brand-600 truncate mt-0.5">
+                        Cycle close · review &amp; send reports
+                      </div>
                     }
                   </button>
                 }
@@ -849,11 +855,16 @@ export class ScheduleComponent implements OnInit {
   }
 
   clientName(b: TimeBlock): string {
+    if (b.kind === 'reporting') return '📊 Send client reports';
     const ref = b.clientId as unknown;
     if (ref && typeof ref === 'object' && 'name' in ref) {
       return (ref as { name: string }).name;
     }
     return '—';
+  }
+
+  isReporting(b: TimeBlock): boolean {
+    return b.kind === 'reporting';
   }
 
   taskTitle(b: TimeBlock): string | null {

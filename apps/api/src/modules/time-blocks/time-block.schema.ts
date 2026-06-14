@@ -24,11 +24,24 @@ export class TimeBlock {
   @Prop({ required: true })
   durationMinutes!: number;
 
-  @Prop({ type: Types.ObjectId, ref: 'Client', required: true, index: true })
-  clientId!: Types.ObjectId;
+  // Required for client blocks (kind='client') — reporting blocks
+  // (kind='reporting') aren't tied to a single client so this can be null.
+  @Prop({ type: Types.ObjectId, ref: 'Client', index: true })
+  clientId?: Types.ObjectId;
 
   @Prop({ type: Types.ObjectId, ref: 'Task' })
   taskId?: Types.ObjectId;
+
+  /**
+   * `client` (default) — a regular work block tied to a single client.
+   * `reporting` — reserved cycle-end slot for sending reports; no clientId.
+   */
+  @Prop({
+    type: String,
+    enum: ['client', 'reporting'],
+    default: 'client',
+  })
+  kind!: 'client' | 'reporting';
 
   @Prop({
     type: String,
