@@ -14,6 +14,10 @@ export class Competitor {
   @Prop() estimatedTraffic?: number;
   @Prop() notes?: string;
   @Prop({ type: [String], default: [] }) tags?: string[];
+
+  // When set, the competitor only applies to that service area. When
+  // empty, the competitor is global to the client (default).
+  @Prop() serviceAreaName?: string;
 }
 
 export const CompetitorSchema = SchemaFactory.createForClass(Competitor);

@@ -14,4 +14,5 @@ export class UpsertCompetitorDto {
   @IsOptional() @IsNumber() estimatedTraffic?: number;
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) tags?: string[];
+  @IsOptional() @IsString() serviceAreaName?: string;
 }

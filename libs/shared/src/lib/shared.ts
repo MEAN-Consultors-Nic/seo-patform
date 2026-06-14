@@ -307,6 +307,8 @@ export interface Competitor {
   estimatedTraffic?: number;
   notes?: string;
   tags?: string[];
+  /** When set, this competitor applies only to that service area. */
+  serviceAreaName?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
