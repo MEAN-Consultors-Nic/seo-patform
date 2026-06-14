@@ -23,15 +23,17 @@ import { AppSettingsService } from '../../core/app-settings.service';
       </header>
 
       <nav class="tab-bar mb-6">
-        <a routerLink="/settings/working-hours" routerLinkActive="tab-active" class="tab">
-          Working hours
-        </a>
-        <a routerLink="/settings/integrations" routerLinkActive="tab-active" class="tab">
-          Integrations
-        </a>
-        <a routerLink="/settings/report-layout" routerLinkActive="tab-active" class="tab">
-          Report layout
-        </a>
+        <div class="tab-bar-scroll flex-1 min-w-0">
+          <a routerLink="/settings/working-hours" routerLinkActive="tab-active" class="tab">
+            Working hours
+          </a>
+          <a routerLink="/settings/integrations" routerLinkActive="tab-active" class="tab">
+            Integrations
+          </a>
+          <a routerLink="/settings/report-layout" routerLinkActive="tab-active" class="tab">
+            Report layout
+          </a>
+        </div>
       </nav>
 
       <div class="mb-4">

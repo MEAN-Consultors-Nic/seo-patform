@@ -111,26 +111,31 @@ interface TabDef {
           </div>
         </header>
 
-        <nav class="tab-bar mb-6 flex items-center gap-0 relative">
-          @for (t of primaryTabs(); track t.key) {
-            <button
-              (click)="activeTab.set(t.key)"
-              [class]="'tab whitespace-nowrap ' + (activeTab() === t.key ? 'tab-active' : '')">
-              {{ t.label }}
-            </button>
-          }
+        <nav class="tab-bar mb-6 items-stretch gap-0 relative">
+          <!-- Scrollable tab list — wide tab strips scroll horizontally on
+               mobile. The More dropdown lives OUTSIDE this scroll context
+               so it isn't clipped by overflow:auto. -->
+          <div class="tab-bar-scroll flex-1 min-w-0">
+            @for (t of primaryTabs(); track t.key) {
+              <button
+                (click)="activeTab.set(t.key)"
+                [class]="'tab ' + (activeTab() === t.key ? 'tab-active' : '')">
+                {{ t.label }}
+              </button>
+            }
+          </div>
           @if (overflowTabs.length) {
-            <div class="relative">
+            <div class="relative flex-shrink-0">
               <button
                 type="button"
                 (click)="toggleMore($event)"
-                [class]="'tab whitespace-nowrap inline-flex items-center gap-1 ' + (activeIsInOverflow() ? 'tab-active' : '')">
+                [class]="'tab inline-flex items-center gap-1 ' + (activeIsInOverflow() ? 'tab-active' : '')">
                 {{ moreLabel() }}
                 <span class="text-[10px] leading-none">▾</span>
               </button>
               @if (moreOpen()) {
                 <div
-                  class="absolute right-0 top-full mt-1 bg-white border border-ink-200 rounded-lg shadow-lg py-1 min-w-[180px] z-20"
+                  class="absolute right-0 top-full mt-1 bg-white border border-ink-200 rounded-lg shadow-lg py-1 min-w-[180px] z-30"
                   (click)="$event.stopPropagation()">
                   @for (t of overflowTabs; track t.key) {
                     <button

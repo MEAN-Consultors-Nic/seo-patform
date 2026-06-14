@@ -190,10 +190,13 @@ select.input {
 
 /* ---------- Tabs ---------- */
 .tab-bar {
-  /* Horizontal scroll on mobile so tab strips don't break the layout. The
-     -mx-4 sm:-mx-0 plus px-4 hack would extend bleed to the viewport edges
-     but it conflicts with bordered containers, so we just allow scroll. */
-  @apply flex border-b border-ink-200 overflow-x-auto;
+  /* Stay overflow-visible at the root so absolutely-positioned children
+     (e.g. the "More ▾" dropdown in client detail) aren't clipped. Use the
+     .tab-bar-scroll inner wrapper when you need horizontal scroll. */
+  @apply flex border-b border-ink-200;
+}
+.tab-bar-scroll {
+  @apply flex overflow-x-auto;
   scrollbar-width: thin;
 }
 .tab {
