@@ -104,7 +104,11 @@ const GLOBAL_SCOPE = '__global__';
                   }
                 </td>
                 <td class="px-4 py-2 text-xs">
-                  <a [href]="c.url" target="_blank" class="text-navy-500 hover:underline">{{ c.url }}</a>
+                  <a [href]="c.url" target="_blank" rel="noopener"
+                     class="text-brand-500 hover:text-brand-600 hover:underline inline-flex items-center gap-1 max-w-[280px] truncate"
+                     [title]="c.url">
+                    {{ c.url }} ↗
+                  </a>
                 </td>
                 <td class="px-4 py-2 text-right">
                   <input type="number" class="w-14 text-xs border rounded px-1 py-0.5 text-right"
