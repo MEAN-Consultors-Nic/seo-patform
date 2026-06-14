@@ -47,13 +47,19 @@ function daysAgoIso(days: number): string {
         <div>
           <h3 class="text-sm font-semibold text-ink-900">Google Search Console</h3>
           <p class="text-xs text-ink-500 mt-0.5">
-            Auto-import the top queries reported by GSC and use them as tracked keywords.
+            Auto-import top queries from GSC, or refresh metrics on existing
+            keywords.
             <span class="text-ink-400">·</span>
             <span class="text-ink-700 font-semibold">{{ gscCount() }}</span>
-            of {{ keywords().length }} keywords were imported from GSC.
+            of {{ keywords().length }} keywords imported from GSC.
           </p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
+          <button class="btn-secondary text-xs" (click)="openSyncModal()"
+                  [disabled]="syncing()"
+                  title="Refresh position, impressions, clicks for every keyword">
+            {{ syncing() ? 'Syncing…' : '🔄 Sync from GSC' }}
+          </button>
           <button class="btn-secondary text-xs" (click)="openPullModal()">
             ⚡ Pull from GSC
           </button>
@@ -64,6 +70,27 @@ function daysAgoIso(days: number): string {
           </button>
         </div>
       </div>
+
+      @if (syncResult(); as r) {
+        <div class="card border-l-4 border-l-positive-500 bg-positive-100/30 text-sm">
+          <div class="font-semibold text-ink-900">✓ Sync complete</div>
+          <div class="text-xs text-ink-700 mt-0.5">
+            <strong>{{ r.updated }}</strong> updated
+            · <strong>{{ r.notFound }}</strong> no data in range
+            @if (r.failed > 0) {
+              · <strong class="text-danger-500">{{ r.failed }}</strong> failed
+            }
+            · range {{ r.range.from }} → {{ r.range.to }}
+          </div>
+          @if (r.warnings.length > 0) {
+            <ul class="mt-1 text-[11px] text-warning-500 list-disc pl-4 max-h-24 overflow-y-auto">
+              @for (w of r.warnings; track w) {
+                <li>{{ w }}</li>
+              }
+            </ul>
+          }
+        </div>
+      }
 
       <div class="card">
         <h3 class="font-semibold text-navy-700 mb-3">+ New keyword</h3>
@@ -243,6 +270,69 @@ function daysAgoIso(days: number): string {
         </div>
       </div>
     }
+
+    <!-- Sync from GSC modal -->
+    @if (syncModal()) {
+      <div class="fixed inset-0 bg-ink-900/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+           (click)="closeSyncModal()">
+        <div class="bg-white sm:rounded-xl rounded-t-xl shadow-xl w-full max-w-lg p-4 sm:p-6 max-h-[95vh] overflow-y-auto"
+             (click)="$event.stopPropagation()">
+          <div class="flex items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 class="text-lg font-bold text-ink-900">Sync metrics from GSC</h2>
+              <p class="text-xs text-ink-500 mt-0.5">
+                Refreshes <strong>position</strong>, <strong>impressions</strong>,
+                <strong>clicks</strong>, and <strong>CTR</strong> on every keyword
+                already tracked for this client. Does <em>not</em> create new
+                keywords.
+              </p>
+            </div>
+            <button (click)="closeSyncModal()"
+                    class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
+          </div>
+
+          <div class="space-y-3">
+            <div>
+              <label class="label">Date range</label>
+              <select class="input"
+                      [ngModel]="syncPreset()"
+                      (ngModelChange)="setSyncPreset($event)">
+                <option value="last7">Last 7 days</option>
+                <option value="last28">Last 28 days</option>
+                <option value="last90">Last 90 days</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+            @if (syncPreset() === 'custom') {
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="label">From</label>
+                  <input type="date" class="input" [(ngModel)]="syncFrom" />
+                </div>
+                <div>
+                  <label class="label">To</label>
+                  <input type="date" class="input" [(ngModel)]="syncTo" />
+                </div>
+              </div>
+            }
+            <div class="rounded-md border border-ink-200 bg-ink-50/50 px-3 py-2 text-[11px] text-ink-600">
+              {{ keywords().length }} keyword(s) will be processed in parallel
+              batches. Expect a few seconds depending on volume.
+            </div>
+            @if (syncError()) {
+              <div class="text-xs text-danger-500">{{ syncError() }}</div>
+            }
+          </div>
+
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-ink-100">
+            <button class="btn-secondary" (click)="closeSyncModal()" [disabled]="syncing()">Close</button>
+            <button class="btn-primary" (click)="runSync()" [disabled]="syncing()">
+              {{ syncing() ? 'Syncing…' : '🔄 Run sync' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class ClientKeywordsTab implements OnChanges {
@@ -272,6 +362,22 @@ export class ClientKeywordsTab implements OnChanges {
   pullResult = signal<GscKeywordPullResult | null>(null);
   pullError = signal<string | null>(null);
   cleaning = signal(false);
+
+  // GSC sync state — refreshes metrics for existing keywords
+  syncModal = signal(false);
+  syncPreset = signal<'last7' | 'last28' | 'last90' | 'custom'>('last28');
+  syncFrom = daysAgoIso(28);
+  syncTo = todayIso();
+  syncing = signal(false);
+  syncResult = signal<{
+    updated: number;
+    notFound: number;
+    failed: number;
+    totalProcessed: number;
+    range: { from: string; to: string };
+    warnings: string[];
+  } | null>(null);
+  syncError = signal<string | null>(null);
 
   ngOnChanges() {
     this.load();
@@ -404,5 +510,66 @@ export class ClientKeywordsTab implements OnChanges {
     if (diff > 0) return 'text-emerald-600 font-semibold';
     if (diff < 0) return 'text-red-500 font-semibold';
     return 'text-slate-400';
+  }
+
+  // --- GSC sync ----------------------------------------------------------
+
+  openSyncModal() {
+    this.syncModal.set(true);
+    this.syncError.set(null);
+    this.setSyncPreset(this.syncPreset());
+  }
+
+  closeSyncModal() {
+    if (this.syncing()) return;
+    this.syncModal.set(false);
+  }
+
+  setSyncPreset(preset: 'last7' | 'last28' | 'last90' | 'custom') {
+    this.syncPreset.set(preset);
+    if (preset === 'last7') {
+      this.syncFrom = daysAgoIso(7);
+      this.syncTo = todayIso();
+    } else if (preset === 'last28') {
+      this.syncFrom = daysAgoIso(28);
+      this.syncTo = todayIso();
+    } else if (preset === 'last90') {
+      this.syncFrom = daysAgoIso(90);
+      this.syncTo = todayIso();
+    }
+  }
+
+  runSync() {
+    if (!this.syncFrom || !this.syncTo) {
+      this.syncError.set('Pick a from and to date.');
+      return;
+    }
+    if (this.keywords().length === 0) {
+      this.syncError.set('No keywords to sync. Add some first.');
+      return;
+    }
+    this.syncing.set(true);
+    this.syncError.set(null);
+    this.svc
+      .syncFromGsc({
+        clientId: this.clientId,
+        from: this.syncFrom,
+        to: this.syncTo,
+      })
+      .subscribe({
+        next: (r) => {
+          this.syncing.set(false);
+          this.syncResult.set(r);
+          this.syncModal.set(false);
+          this.load();
+        },
+        error: (err) => {
+          this.syncing.set(false);
+          const m = err?.error?.message;
+          this.syncError.set(
+            Array.isArray(m) ? m.join(', ') : m || 'Could not sync from GSC.',
+          );
+        },
+      });
   }
 }

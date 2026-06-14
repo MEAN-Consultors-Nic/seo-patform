@@ -355,6 +355,115 @@ export class KeywordsService {
     };
   }
 
+  /**
+   * Refresh GSC metrics (position, impressions, clicks, CTR) for every
+   * existing keyword of the client by querying GSC per-keyword. Unlike
+   * pullFromGsc — which imports top queries as new keywords — this method
+   * targets the keywords that are already in the platform regardless of
+   * how popular they are in GSC.
+   */
+  async syncFromGsc(
+    clientId: string,
+    user: AuthenticatedUser,
+    opts: { from: string; to: string },
+  ): Promise<{
+    updated: number;
+    notFound: number;
+    failed: number;
+    totalProcessed: number;
+    range: { from: string; to: string };
+    warnings: string[];
+  }> {
+    const client = await this.clients.findOne(clientId, user);
+    if (!client.gscSiteUrl) {
+      throw new BadRequestException(
+        'GSC site URL is not configured for this client. Set it in the Integrations tab first.',
+      );
+    }
+    const clientObjId = new Types.ObjectId(clientId);
+    const keywords = await this.keywordModel
+      .find({ clientId: clientObjId })
+      .exec();
+
+    const warnings: string[] = [];
+    const now = new Date();
+    let updated = 0;
+    let notFound = 0;
+    let failed = 0;
+
+    // GSC accepts ~1200 queries/minute per site. Process in small parallel
+    // batches so a client with 50+ keywords completes in a few seconds.
+    const CONCURRENCY = 5;
+    for (let i = 0; i < keywords.length; i += CONCURRENCY) {
+      const batch = keywords.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        batch.map(async (kw) => {
+          try {
+            const row = await this.gsc.queryStats(
+              user.userId,
+              client.gscSiteUrl as string,
+              opts.from,
+              opts.to,
+              kw.text,
+            );
+            if (!row) {
+              kw.set({
+                gscPulledAt: now,
+                gscClicks: 0,
+                gscImpressions: 0,
+                gscCtr: 0,
+                gscPosition: undefined,
+                lastCheckedAt: now,
+              });
+              await kw.save();
+              notFound++;
+              return;
+            }
+            const position = row.position
+              ? Number(row.position.toFixed(1))
+              : undefined;
+            if (
+              typeof position === 'number' &&
+              kw.currentPosition !== position
+            ) {
+              kw.previousPosition = kw.currentPosition;
+            }
+            if (
+              typeof position === 'number' &&
+              (typeof kw.bestPosition !== 'number' || position < kw.bestPosition)
+            ) {
+              kw.bestPosition = position;
+              kw.bestPositionAt = now;
+            }
+            kw.set({
+              currentPosition: position,
+              gscPulledAt: now,
+              gscClicks: Math.round(row.clicks),
+              gscImpressions: Math.round(row.impressions),
+              gscCtr: Number(row.ctr.toFixed(2)),
+              gscPosition: position,
+              lastCheckedAt: now,
+            });
+            await kw.save();
+            updated++;
+          } catch (err) {
+            warnings.push(`${kw.text}: ${(err as Error).message}`);
+            failed++;
+          }
+        }),
+      );
+    }
+
+    return {
+      updated,
+      notFound,
+      failed,
+      totalProcessed: keywords.length,
+      range: { from: opts.from, to: opts.to },
+      warnings,
+    };
+  }
+
   async cleanGscPulled(clientId: string, user: AuthenticatedUser) {
     await this.clients.assertAccess(clientId, user);
     const clientObjId = new Types.ObjectId(clientId);

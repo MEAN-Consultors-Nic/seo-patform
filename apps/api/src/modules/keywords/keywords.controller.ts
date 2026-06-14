@@ -131,4 +131,13 @@ export class KeywordsController {
   ) {
     return this.keywords.cleanGscPulled(clientId, user);
   }
+
+  @Post('sync-gsc')
+  async syncGsc(
+    @Body() body: { clientId: string; from: string; to: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.clients.assertAccess(body.clientId, user);
+    return this.keywords.syncFromGsc(body.clientId, user, body);
+  }
 }

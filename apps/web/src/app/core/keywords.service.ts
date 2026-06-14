@@ -100,4 +100,26 @@ export class KeywordsService {
       `${this.base}/keywords/gsc-pulled/${clientId}`,
     );
   }
+
+  syncFromGsc(dto: {
+    clientId: string;
+    from: string;
+    to: string;
+  }): Observable<{
+    updated: number;
+    notFound: number;
+    failed: number;
+    totalProcessed: number;
+    range: { from: string; to: string };
+    warnings: string[];
+  }> {
+    return this.http.post<{
+      updated: number;
+      notFound: number;
+      failed: number;
+      totalProcessed: number;
+      range: { from: string; to: string };
+      warnings: string[];
+    }>(`${this.base}/keywords/sync-gsc`, dto);
+  }
 }

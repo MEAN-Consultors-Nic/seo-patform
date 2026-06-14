@@ -240,6 +240,53 @@ export class GscService {
   /**
    * Returns top queries for a site between two dates.
    */
+  /**
+   * Aggregated metrics for a single search query within a date range.
+   * Uses dimensionFilterGroups so we don't need to paginate top-queries to
+   * find low-traffic keywords. Returns null when the query has no rows in
+   * the period (i.e. zero impressions).
+   */
+  async queryStats(
+    userId: string,
+    siteUrl: string,
+    startDate: string,
+    endDate: string,
+    query: string,
+  ): Promise<GscTopRow | null> {
+    if (!siteUrl) throw new BadRequestException('Missing siteUrl');
+    const auth = await this.oauth.getAuthorizedClient(userId);
+    const sc = google.searchconsole({ version: 'v1', auth });
+    const res = await sc.searchanalytics.query({
+      siteUrl,
+      requestBody: {
+        startDate,
+        endDate,
+        dimensions: ['query'],
+        rowLimit: 1,
+        dimensionFilterGroups: [
+          {
+            filters: [
+              {
+                dimension: 'query',
+                operator: 'equals',
+                expression: query,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const r = res.data.rows?.[0];
+    if (!r) return null;
+    return {
+      key: r.keys?.[0] ?? query,
+      clicks: r.clicks ?? 0,
+      impressions: r.impressions ?? 0,
+      ctr: (r.ctr ?? 0) * 100,
+      position: r.position ?? 0,
+    };
+  }
+
   async topQueries(
     userId: string,
     siteUrl: string,
