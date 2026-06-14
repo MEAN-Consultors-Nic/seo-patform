@@ -18,8 +18,15 @@ import {
 const GSC_SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly';
 const GA4_SCOPE = 'https://www.googleapis.com/auth/analytics.readonly';
 const MERCHANT_SCOPE = 'https://www.googleapis.com/auth/content';
+const GBP_SCOPE = 'https://www.googleapis.com/auth/business.manage';
 const PROFILE_SCOPES = ['openid', 'email', 'profile'];
-const SCOPES = [GSC_SCOPE, GA4_SCOPE, MERCHANT_SCOPE, ...PROFILE_SCOPES];
+const SCOPES = [
+  GSC_SCOPE,
+  GA4_SCOPE,
+  MERCHANT_SCOPE,
+  GBP_SCOPE,
+  ...PROFILE_SCOPES,
+];
 
 interface OAuthStatePayload {
   userId: string;
@@ -159,13 +166,27 @@ export class GoogleOAuthService {
     const hasMerchantScope = !!doc?.scopes?.some((s) =>
       s.includes('auth/content'),
     );
+    const hasGbpScope = !!doc?.scopes?.some((s) =>
+      s.includes('auth/business.manage'),
+    );
     return {
-      // GSC, GA4, and Merchant Center share the same OAuth credentials —
-      // connecting Google once gives the platform access to all three APIs.
+      // GSC, GA4, Merchant Center, and Business Profile share the same
+      // OAuth credentials — one connect grants access to all four. The
+      // newer scopes can require an explicit reconnect when added to an
+      // existing token.
       gsc: linked,
       ga4: linked,
       merchantCenter: doc
         ? hasMerchantScope
+          ? linked
+          : {
+              connected: false,
+              needsReconnect: true,
+              email: doc.googleEmail,
+            }
+        : { connected: false },
+      gbp: doc
+        ? hasGbpScope
           ? linked
           : {
               connected: false,

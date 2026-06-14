@@ -170,6 +170,10 @@ export interface Client {
   gscSiteUrl?: string;
   isEcommerce?: boolean;
   merchantCenterId?: string;
+  /** Full GBP account resource name, e.g. `accounts/12345`. */
+  gbpAccountName?: string;
+  /** Full GBP location resource name, e.g. `locations/67890`. */
+  gbpLocationName?: string;
   shopifyShopDomain?: string;
   shopifyClientId?: string;
   shopifyClientSecret?: string;
@@ -188,11 +192,40 @@ export interface GoogleConnectionLink {
   connected: boolean;
   email?: string;
   connectedAt?: Date;
+  /** True when the scope is missing on the persisted token — user must reconnect. */
+  needsReconnect?: boolean;
 }
 
 export interface GoogleConnectionStatus {
   gsc: GoogleConnectionLink;
   ga4: GoogleConnectionLink;
+  merchantCenter?: GoogleConnectionLink;
+  gbp?: GoogleConnectionLink;
+}
+
+export interface GbpAccount {
+  name: string;
+  accountId: string;
+  accountName?: string;
+  type?: string;
+  role?: string;
+  verificationState?: string;
+  organizationInfo?: { registeredDomain?: string };
+}
+
+export interface GbpLocation {
+  name: string;
+  locationId: string;
+  title?: string;
+  storefrontAddress?: {
+    addressLines?: string[];
+    locality?: string;
+    administrativeArea?: string;
+    postalCode?: string;
+    regionCode?: string;
+  };
+  primaryPhone?: string;
+  websiteUri?: string;
 }
 
 export type KeywordIntent =

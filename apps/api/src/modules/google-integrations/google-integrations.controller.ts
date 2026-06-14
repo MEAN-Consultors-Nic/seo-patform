@@ -14,6 +14,7 @@ import { GoogleOAuthService } from './google-oauth.service';
 import { GscService } from './gsc.service';
 import { Ga4Service } from './ga4.service';
 import { GoogleIntegrationsService } from './google-integrations.service';
+import { GbpService } from './gbp.service';
 
 @Controller('google')
 export class GoogleIntegrationsController {
@@ -22,6 +23,7 @@ export class GoogleIntegrationsController {
     private readonly gsc: GscService,
     private readonly ga4: Ga4Service,
     private readonly svc: GoogleIntegrationsService,
+    private readonly gbp: GbpService,
   ) {}
 
   // --- OAuth lifecycle -----------------------------------------------------
@@ -146,5 +148,53 @@ export class GoogleIntegrationsController {
     if (!clientId || !from || !to)
       throw new BadRequestException('clientId, from, to are required');
     return this.svc.ecommerceForClient(clientId, user, from, to);
+  }
+
+  // --- Google Business Profile -------------------------------------------
+
+  @Get('gbp/accounts')
+  async gbpAccounts(@CurrentUser() user: AuthenticatedUser) {
+    return this.gbp.listAccounts(user.userId);
+  }
+
+  @Get('gbp/locations')
+  async gbpLocations(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('accountName') accountName: string,
+  ) {
+    if (!accountName)
+      throw new BadRequestException('accountName is required (accounts/...)');
+    return this.gbp.listLocations(user.userId, accountName);
+  }
+
+  @Get('gbp/test')
+  async gbpTest(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('locationName') locationName: string,
+  ) {
+    if (!locationName)
+      throw new BadRequestException('locationName is required (locations/...)');
+    return this.gbp.verifyAccess(user.userId, locationName);
+  }
+
+  @Get('gbp/performance')
+  async gbpPerformance(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('accountName') accountName: string,
+    @Query('locationName') locationName: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+  ) {
+    if (!locationName || !from || !to)
+      throw new BadRequestException(
+        'locationName, from, to are required',
+      );
+    return this.gbp.fetchPerformance(
+      user.userId,
+      accountName,
+      locationName,
+      from,
+      to,
+    );
   }
 }

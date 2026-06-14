@@ -170,6 +170,12 @@ export class Client {
   merchantCenterId?: string;
 
   @Prop()
+  gbpAccountName?: string;
+
+  @Prop()
+  gbpLocationName?: string;
+
+  @Prop()
   shopifyShopDomain?: string;
 
   @Prop()

@@ -5,6 +5,7 @@ import { AuthenticatedUser } from '../auth/roles.guard';
 import { Ga4Service } from './ga4.service';
 import { GscService } from './gsc.service';
 import { MerchantCenterService } from './merchant-center.service';
+import { GbpService } from './gbp.service';
 
 @Injectable()
 export class GoogleIntegrationsService {
@@ -13,6 +14,7 @@ export class GoogleIntegrationsService {
     private readonly gsc: GscService,
     private readonly ga4: Ga4Service,
     private readonly merchant: MerchantCenterService,
+    private readonly gbp: GbpService,
   ) {}
 
   /**
@@ -26,7 +28,7 @@ export class GoogleIntegrationsService {
     endDate: string,
   ): Promise<{
     kpis: ReportKpis;
-    sources: { gsc: boolean; ga4: boolean; warnings: string[] };
+    sources: { gsc: boolean; ga4: boolean; gbp: boolean; warnings: string[] };
   }> {
     const client = await this.clients.findOne(clientId, user);
     const warnings: string[] = [];
@@ -96,7 +98,38 @@ export class GoogleIntegrationsService {
       warnings.push('GA4 property ID is not set for this client.');
     }
 
-    return { kpis: out, sources: { gsc: gscOk, ga4: ga4Ok, warnings } };
+    let gbpOk = false;
+    const clientWithGbp = client as typeof client & {
+      gbpLocationName?: string;
+      gbpAccountName?: string;
+    };
+    if (clientWithGbp.gbpLocationName) {
+      try {
+        const r = await this.gbp.fetchPerformance(
+          user.userId,
+          clientWithGbp.gbpAccountName ?? '',
+          clientWithGbp.gbpLocationName,
+          startDate,
+          endDate,
+        );
+        out.gbpSearches = Math.round(r.searches);
+        out.gbpCalls = Math.round(r.calls);
+        out.gbpDirections = Math.round(r.directions);
+        out.gbpWebsiteClicks = Math.round(r.websiteClicks);
+        if (typeof r.reviews === 'number') {
+          out.gbpReviews = r.reviews;
+        }
+        for (const w of r.warnings) warnings.push(`GBP: ${w}`);
+        gbpOk = true;
+      } catch (err) {
+        warnings.push(`GBP: ${(err as Error).message}`);
+      }
+    }
+
+    return {
+      kpis: out,
+      sources: { gsc: gscOk, ga4: ga4Ok, gbp: gbpOk, warnings },
+    };
   }
 
   async gscBreakdown(
@@ -146,6 +179,7 @@ export class GoogleIntegrationsService {
       gsc: { ok: boolean; message?: string };
       ga4: { ok: boolean; message?: string };
       merchantCenter?: { ok: boolean; message?: string };
+      gbp?: { ok: boolean; message?: string };
     } = {
       gsc: { ok: false },
       ga4: { ok: false },
@@ -200,6 +234,25 @@ export class GoogleIntegrationsService {
         } catch (err) {
           result.merchantCenter.message = (err as Error).message;
         }
+      }
+    }
+
+    const clientWithGbp = client as typeof client & {
+      gbpLocationName?: string;
+    };
+    if (clientWithGbp.gbpLocationName) {
+      result.gbp = { ok: false };
+      try {
+        const info = await this.gbp.verifyAccess(
+          user.userId,
+          clientWithGbp.gbpLocationName,
+        );
+        result.gbp.ok = true;
+        result.gbp.message = info.title
+          ? `Connected to "${info.title}".`
+          : 'GBP connection OK.';
+      } catch (err) {
+        result.gbp.message = (err as Error).message;
       }
     }
 

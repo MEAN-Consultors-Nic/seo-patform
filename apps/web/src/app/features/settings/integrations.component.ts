@@ -159,6 +159,72 @@ import { GoogleIntegrationsService } from '../../core/google-integrations.servic
           </div>
         </div>
 
+        <!-- Google Business Profile -->
+        <div class="card mb-4">
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex items-start gap-3">
+              <div class="w-10 h-10 rounded-md bg-positive-100 border border-positive-500/30 flex items-center justify-center text-lg">📍</div>
+              <div>
+                <h2 class="text-base font-semibold text-ink-900">Google Business Profile</h2>
+                <p class="text-xs text-ink-500 mt-0.5 max-w-md">
+                  Pulls searches, calls, directions, website clicks, and
+                  reviews for clients with a local presence. Uses the same
+                  OAuth connection as Search Console.
+                </p>
+              </div>
+            </div>
+            @if (s.gbp?.connected) {
+              <span class="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-positive-100 text-positive-500">
+                ● Connected
+              </span>
+            } @else if (s.gbp?.needsReconnect) {
+              <span class="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-warning-100 text-warning-500">
+                ⟳ Needs reconnect
+              </span>
+            } @else {
+              <span class="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-ink-100 text-ink-500">
+                ○ Disconnected
+              </span>
+            }
+          </div>
+
+          <div class="mt-4 pt-4 border-t border-ink-100 text-xs space-y-2">
+            @if (s.gbp?.connected) {
+              <div class="text-ink-700">
+                Using <strong class="text-ink-900">{{ s.gbp?.email || '(unknown)' }}</strong>
+                via the Google Search Console connection.
+              </div>
+              <div class="text-ink-500">
+                Configure the <strong>GBP account</strong> and <strong>location</strong>
+                per client in the client's Integrations tab.
+              </div>
+            } @else if (s.gbp?.needsReconnect) {
+              <div class="text-warning-500">
+                ⚠ Your existing Google token doesn't include the GBP scope.
+                Click <strong>Reconnect</strong> above to grant access — Google
+                will reuse the same account.
+              </div>
+            } @else {
+              <div class="text-ink-500">
+                Connect Google Search Console above. The same OAuth grants
+                GBP access too.
+              </div>
+            }
+            <div class="rounded-md bg-warning-100/60 border border-warning-500/30 px-3 py-2 text-[11px] text-ink-700">
+              ⚠ <strong>Important:</strong> Google requires a one-time API
+              access approval before GBP queries return data. In your Cloud
+              Console, enable the
+              <em>Business Profile Performance API</em>,
+              <em>My Business Account Management API</em>, and
+              <em>My Business Business Information API</em>, then submit the
+              <a href="https://support.google.com/business/contact/api_default"
+                 target="_blank" rel="noopener"
+                 class="text-brand-500 underline">Application for Basic API Access</a>.
+              Until approved, quota is 0 QPM and calls return 403.
+            </div>
+          </div>
+        </div>
+
         <!-- Next steps -->
         <div class="card">
           <h2 class="text-sm font-semibold text-ink-900 mb-2">Next steps</h2>

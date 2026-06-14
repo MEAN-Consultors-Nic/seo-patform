@@ -1,18 +1,35 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { GoogleConnectionStatus, GscBreakdown, ReportKpis } from '@seo/shared';
+import {
+  GbpAccount,
+  GbpLocation,
+  GoogleConnectionStatus,
+  GscBreakdown,
+  ReportKpis,
+} from '@seo/shared';
 import { API_BASE_URL } from './api.config';
 
 export interface GoogleKpisResult {
   kpis: ReportKpis;
-  sources: { gsc: boolean; ga4: boolean; warnings: string[] };
+  sources: { gsc: boolean; ga4: boolean; gbp?: boolean; warnings: string[] };
 }
 
 export interface GoogleConnectionTest {
   gsc: { ok: boolean; message?: string };
   ga4: { ok: boolean; message?: string };
   merchantCenter?: { ok: boolean; message?: string };
+  gbp?: { ok: boolean; message?: string };
+}
+
+export interface GbpPerformanceResult {
+  searches: number;
+  calls: number;
+  directions: number;
+  websiteClicks: number;
+  reviews?: number;
+  range: { from: string; to: string };
+  warnings: string[];
 }
 
 export interface Ga4EcommerceMetrics {
@@ -85,6 +102,36 @@ export class GoogleIntegrationsService {
     const qs = new URLSearchParams({ clientId, from, to });
     return this.http.get<Ga4EcommerceMetrics>(
       `${this.base}/google/ga4/ecommerce?${qs.toString()}`,
+    );
+  }
+
+  gbpAccounts(): Observable<GbpAccount[]> {
+    return this.http.get<GbpAccount[]>(`${this.base}/google/gbp/accounts`);
+  }
+
+  gbpLocations(accountName: string): Observable<GbpLocation[]> {
+    const qs = new URLSearchParams({ accountName });
+    return this.http.get<GbpLocation[]>(
+      `${this.base}/google/gbp/locations?${qs.toString()}`,
+    );
+  }
+
+  gbpTest(locationName: string): Observable<GbpLocation> {
+    const qs = new URLSearchParams({ locationName });
+    return this.http.get<GbpLocation>(
+      `${this.base}/google/gbp/test?${qs.toString()}`,
+    );
+  }
+
+  gbpPerformance(
+    accountName: string,
+    locationName: string,
+    from: string,
+    to: string,
+  ): Observable<GbpPerformanceResult> {
+    const qs = new URLSearchParams({ accountName, locationName, from, to });
+    return this.http.get<GbpPerformanceResult>(
+      `${this.base}/google/gbp/performance?${qs.toString()}`,
     );
   }
 }

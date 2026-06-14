@@ -118,6 +118,8 @@ export class CreateClientDto {
   @IsOptional() @IsString() gscSiteUrl?: string;
   @IsOptional() @IsBoolean() isEcommerce?: boolean;
   @IsOptional() @IsString() merchantCenterId?: string;
+  @IsOptional() @IsString() gbpAccountName?: string;
+  @IsOptional() @IsString() gbpLocationName?: string;
   @IsOptional() @IsString() shopifyShopDomain?: string;
   @IsOptional() @IsString() shopifyClientId?: string;
   @IsOptional() @IsString() shopifyClientSecret?: string;

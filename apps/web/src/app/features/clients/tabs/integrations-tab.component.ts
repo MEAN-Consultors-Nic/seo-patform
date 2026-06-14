@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, Input, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { Client } from '@seo/shared';
+import { Client, GbpAccount, GbpLocation } from '@seo/shared';
 import { ClientsService } from '../../../core/clients.service';
 import {
   GoogleConnectionTest,
@@ -59,6 +59,66 @@ import {
         </div>
       }
 
+      <!-- Google Business Profile -->
+      <div class="border-t border-ink-100 pt-4 space-y-3">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="text-sm font-semibold text-ink-900">📍 Google Business Profile</h3>
+          <button class="btn-secondary text-xs"
+                  type="button"
+                  (click)="loadGbpAccounts()"
+                  [disabled]="loadingGbpAccounts()">
+            {{ loadingGbpAccounts() ? 'Loading…' : (gbpAccounts().length ? '⟳ Refresh accounts' : '⚡ Load accounts') }}
+          </button>
+        </div>
+
+        @if (gbpError()) {
+          <div class="text-xs text-danger-500">{{ gbpError() }}</div>
+        }
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="label">GBP account</label>
+            <select class="input"
+                    [ngModel]="form.gbpAccountName"
+                    (ngModelChange)="onGbpAccountChange($event)"
+                    [disabled]="gbpAccounts().length === 0">
+              <option value="">— Select account —</option>
+              @for (a of gbpAccounts(); track a.name) {
+                <option [value]="a.name">
+                  {{ a.accountName || a.name }}
+                </option>
+              }
+            </select>
+            <p class="text-[11px] text-ink-400 mt-1">
+              The agency or business account that owns this client's listing.
+            </p>
+          </div>
+          <div>
+            <label class="label">GBP location</label>
+            <select class="input"
+                    [(ngModel)]="form.gbpLocationName"
+                    [disabled]="!form.gbpAccountName || loadingGbpLocations()">
+              <option value="">
+                @if (loadingGbpLocations()) { — Loading locations… }
+                @else if (!form.gbpAccountName) { — Pick an account first — }
+                @else { — Select location — }
+              </option>
+              @for (l of gbpLocations(); track l.name) {
+                <option [value]="l.name">
+                  {{ l.title || l.name }}
+                  @if (l.storefrontAddress?.locality) {
+                    · {{ l.storefrontAddress?.locality }}
+                  }
+                </option>
+              }
+            </select>
+            <p class="text-[11px] text-ink-400 mt-1">
+              The specific store/office tracked for this client.
+            </p>
+          </div>
+        </div>
+      </div>
+
       @if (saved()) {
         <div class="text-xs text-positive-500">✓ Saved</div>
       }
@@ -109,6 +169,19 @@ import {
               </div>
             </div>
           }
+          @if (r.gbp) {
+            <div class="flex items-start gap-2">
+              <span [class]="r.gbp.ok ? 'text-positive-500' : 'text-danger-500'">
+                {{ r.gbp.ok ? '✓' : '✗' }}
+              </span>
+              <div>
+                <div class="text-sm text-ink-900 font-medium">Google Business Profile</div>
+                <div class="text-xs text-ink-500">
+                  {{ r.gbp.message || (r.gbp.ok ? 'OK' : 'Failed') }}
+                </div>
+              </div>
+            </div>
+          }
         </div>
       }
     </div>
@@ -120,49 +193,121 @@ export class ClientIntegrationsTab implements OnInit {
   private clientsSvc = inject(ClientsService);
   private google = inject(GoogleIntegrationsService);
 
-  form = { gscSiteUrl: '', ga4PropertyId: '', merchantCenterId: '' };
+  form = {
+    gscSiteUrl: '',
+    ga4PropertyId: '',
+    merchantCenterId: '',
+    gbpAccountName: '',
+    gbpLocationName: '',
+  };
   saving = signal(false);
   saved = signal(false);
   error = signal<string | null>(null);
   testing = signal(false);
   testResult = signal<GoogleConnectionTest | null>(null);
 
+  // GBP picker state
+  gbpAccounts = signal<GbpAccount[]>([]);
+  gbpLocations = signal<GbpLocation[]>([]);
+  loadingGbpAccounts = signal(false);
+  loadingGbpLocations = signal(false);
+  gbpError = signal<string | null>(null);
+
   ngOnInit() {
     this.form.gscSiteUrl = this.client.gscSiteUrl || '';
     this.form.ga4PropertyId = this.client.ga4PropertyId || '';
     this.form.merchantCenterId = this.client.merchantCenterId || '';
+    this.form.gbpAccountName = this.client.gbpAccountName || '';
+    this.form.gbpLocationName = this.client.gbpLocationName || '';
+    // If the client already has an account configured, preload its locations
+    // so the existing selection renders properly.
+    if (this.form.gbpAccountName) {
+      this.loadGbpLocationsForAccount(this.form.gbpAccountName);
+    }
   }
 
   canTest(): boolean {
     return !!(
       this.form.gscSiteUrl ||
       this.form.ga4PropertyId ||
-      (this.client.isEcommerce && this.form.merchantCenterId)
+      (this.client.isEcommerce && this.form.merchantCenterId) ||
+      this.form.gbpLocationName
     );
+  }
+
+  loadGbpAccounts() {
+    this.loadingGbpAccounts.set(true);
+    this.gbpError.set(null);
+    this.google.gbpAccounts().subscribe({
+      next: (accounts) => {
+        this.gbpAccounts.set(accounts);
+        this.loadingGbpAccounts.set(false);
+      },
+      error: (err) => {
+        this.loadingGbpAccounts.set(false);
+        const m = err?.error?.message;
+        this.gbpError.set(
+          Array.isArray(m) ? m.join(', ') : m || 'Could not load GBP accounts',
+        );
+      },
+    });
+  }
+
+  onGbpAccountChange(accountName: string) {
+    this.form.gbpAccountName = accountName;
+    this.form.gbpLocationName = '';
+    this.gbpLocations.set([]);
+    if (accountName) {
+      this.loadGbpLocationsForAccount(accountName);
+    }
+  }
+
+  private loadGbpLocationsForAccount(accountName: string) {
+    this.loadingGbpLocations.set(true);
+    this.gbpError.set(null);
+    this.google.gbpLocations(accountName).subscribe({
+      next: (locations) => {
+        this.gbpLocations.set(locations);
+        this.loadingGbpLocations.set(false);
+      },
+      error: (err) => {
+        this.loadingGbpLocations.set(false);
+        const m = err?.error?.message;
+        this.gbpError.set(
+          Array.isArray(m) ? m.join(', ') : m || 'Could not load GBP locations',
+        );
+      },
+    });
+  }
+
+  private formPatch(): Partial<Client> {
+    return {
+      gscSiteUrl: this.form.gscSiteUrl?.trim() || undefined,
+      ga4PropertyId: this.form.ga4PropertyId?.trim() || undefined,
+      merchantCenterId: this.form.merchantCenterId?.trim() || undefined,
+      gbpAccountName: this.form.gbpAccountName?.trim() || undefined,
+      gbpLocationName: this.form.gbpLocationName?.trim() || undefined,
+    };
   }
 
   save() {
     if (!this.client._id) return;
     this.saving.set(true);
     this.error.set(null);
-    this.clientsSvc
-      .update(this.client._id, {
-        gscSiteUrl: this.form.gscSiteUrl?.trim() || undefined,
-        ga4PropertyId: this.form.ga4PropertyId?.trim() || undefined,
-        merchantCenterId: this.form.merchantCenterId?.trim() || undefined,
-      })
-      .subscribe({
-        next: () => {
-          this.saving.set(false);
-          this.saved.set(true);
-          setTimeout(() => this.saved.set(false), 3000);
-        },
-        error: (err) => {
-          this.saving.set(false);
-          const msg = err?.error?.message;
-          this.error.set(Array.isArray(msg) ? msg.join(', ') : msg || 'Could not save');
-        },
-      });
+    this.clientsSvc.update(this.client._id, this.formPatch()).subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.saved.set(true);
+        setTimeout(() => this.saved.set(false), 3000);
+      },
+      error: (err) => {
+        this.saving.set(false);
+        const msg = err?.error?.message;
+        this.error.set(
+          Array.isArray(msg) ? msg.join(', ') : msg || 'Could not save',
+        );
+      },
+    });
   }
 
   test() {
@@ -170,26 +315,20 @@ export class ClientIntegrationsTab implements OnInit {
     // Make sure we test the current form values, not stale ones
     this.testing.set(true);
     this.testResult.set(null);
-    this.clientsSvc
-      .update(this.client._id, {
-        gscSiteUrl: this.form.gscSiteUrl?.trim() || undefined,
-        ga4PropertyId: this.form.ga4PropertyId?.trim() || undefined,
-        merchantCenterId: this.form.merchantCenterId?.trim() || undefined,
-      })
-      .subscribe({
-        next: () => {
-          this.google.testConnections(this.client._id!).subscribe({
-            next: (r) => {
-              this.testResult.set(r);
-              this.testing.set(false);
-            },
-            error: (err) => {
-              this.testing.set(false);
-              this.error.set(err?.error?.message || 'Test failed');
-            },
-          });
-        },
-        error: () => this.testing.set(false),
-      });
+    this.clientsSvc.update(this.client._id, this.formPatch()).subscribe({
+      next: () => {
+        this.google.testConnections(this.client._id!).subscribe({
+          next: (r) => {
+            this.testResult.set(r);
+            this.testing.set(false);
+          },
+          error: (err) => {
+            this.testing.set(false);
+            this.error.set(err?.error?.message || 'Test failed');
+          },
+        });
+      },
+      error: () => this.testing.set(false),
+    });
   }
 }
