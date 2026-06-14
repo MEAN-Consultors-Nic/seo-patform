@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Client, ServiceArea } from '@seo/shared';
 import { ClientsService } from '../../../core/clients.service';
 import { GoogleIntegrationsService } from '../../../core/google-integrations.service';
+import { UsearchfromButtonComponent } from '../../../shared/usearchfrom/usearchfrom-button.component';
 
 function todayIso(): string {
   const d = new Date();
@@ -29,7 +30,7 @@ function normalizeUrl(url: string): string {
 @Component({
   selector: 'app-client-service-areas-tab',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, DecimalPipe],
+  imports: [CommonModule, FormsModule, DatePipe, DecimalPipe, UsearchfromButtonComponent],
   template: `
     <div class="space-y-4">
       <div class="card">
@@ -228,6 +229,12 @@ function normalizeUrl(url: string): string {
                            [title]="a.googleMapsUrl">
                           📍 Google Maps
                         </a>
+                      }
+                      @if (a.primaryKeyword && a.city) {
+                        <app-usearchfrom-button
+                          [keyword]="a.primaryKeyword"
+                          [location]="{ city: a.city, region: a.region, country: a.country }"
+                          buttonClass="text-xs text-ink-600 hover:text-brand-500 inline-flex items-center gap-1"></app-usearchfrom-button>
                       }
                     </div>
                     @if (a.notes) {

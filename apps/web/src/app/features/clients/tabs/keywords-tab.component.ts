@@ -1,8 +1,18 @@
 import { CommonModule } from '@angular/common';
 import { Component, Input, OnChanges, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { GscKeywordPullResult, Keyword, KeywordIntent } from '@seo/shared';
+import {
+  Client,
+  GscKeywordPullResult,
+  Keyword,
+  KeywordIntent,
+} from '@seo/shared';
+import { ClientsService } from '../../../core/clients.service';
 import { KeywordsService } from '../../../core/keywords.service';
+import {
+  SearchFromLocation,
+  UsearchfromButtonComponent,
+} from '../../../shared/usearchfrom/usearchfrom-button.component';
 
 type KeywordSortKey =
   | 'cluster'
@@ -29,7 +39,7 @@ function daysAgoIso(days: number): string {
 @Component({
   selector: 'app-client-keywords-tab',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, UsearchfromButtonComponent],
   template: `
     <div class="space-y-4">
       <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -247,6 +257,10 @@ function daysAgoIso(days: number): string {
                   </div>
                 </td>
                 <td class="px-4 py-2 text-right whitespace-nowrap">
+                  <app-usearchfrom-button
+                    [keyword]="k.text"
+                    [location]="defaultSearchLocation()"
+                    buttonClass="text-ink-500 hover:text-brand-500 mr-2 text-sm"></app-usearchfrom-button>
                   <button class="text-ink-500 hover:text-brand-500 mr-2"
                           title="Edit keyword"
                           (click)="openEditModal(k)">✎</button>
@@ -523,6 +537,22 @@ function daysAgoIso(days: number): string {
 export class ClientKeywordsTab implements OnChanges {
   @Input({ required: true }) clientId!: string;
   private svc = inject(KeywordsService);
+  private clientsSvc = inject(ClientsService);
+
+  /** Cached client doc so the search-from-location modal pre-fills the city. */
+  client = signal<Client | null>(null);
+
+  /**
+   * Best-guess default location for the search-from-location modal. Picks
+   * the first city hub (isCityHub=true) of the client, falling back to the
+   * first service area, or empty when the client has none.
+   */
+  defaultSearchLocation(): SearchFromLocation {
+    const c = this.client();
+    if (!c?.serviceAreas?.length) return {};
+    const hub = c.serviceAreas.find((a) => a.isCityHub) ?? c.serviceAreas[0];
+    return { city: hub.city, region: hub.region, country: hub.country };
+  }
 
   keywords = signal<Keyword[]>([]);
   summary = signal<{ total: number; ranked: number; top3: number; top10: number; avgPosition: number | null }>({
@@ -727,6 +757,9 @@ export class ClientKeywordsTab implements OnChanges {
   load() {
     this.svc.byClient(this.clientId).subscribe((k) => this.keywords.set(k));
     this.svc.summary(this.clientId).subscribe((s) => this.summary.set(s));
+    this.clientsSvc
+      .get(this.clientId)
+      .subscribe((c) => this.client.set(c));
   }
 
   add() {
