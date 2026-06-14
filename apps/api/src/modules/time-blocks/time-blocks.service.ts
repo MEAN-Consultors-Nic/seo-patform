@@ -406,7 +406,40 @@ export class TimeBlocksService {
 
     const totalMinutesAvailable = allSlots.reduce((acc, s) => acc + s.durationMinutes, 0);
 
-    // 7. Compute per-client demand in slots based on tier and target hours.
+    // 7. Pre-fetch open tasks once so we can incorporate pending count +
+    //    priority into the allocation. Tier still gates the broad ordering
+    //    (A > B > C) but within a tier, clients with more pending
+    //    high-priority work get scheduled first and clients with zero open
+    //    tasks are skipped altogether (no point burning a slot on a client
+    //    who has nothing to do).
+    const openTasks = await this.taskModel
+      .find({
+        cycleId: cycleObjId,
+        clientId: { $in: clients.map((c) => c._id) },
+        status: { $in: ['pending', 'in_progress'] },
+      })
+      .lean()
+      .exec();
+    const PRIORITY_WEIGHT: Record<string, number> = { high: 3, medium: 2, low: 1 };
+    const demandByClient = new Map<
+      string,
+      { count: number; score: number; remainingHours: number }
+    >();
+    for (const t of openTasks) {
+      const cid = String(t.clientId);
+      const entry =
+        demandByClient.get(cid) || { count: 0, score: 0, remainingHours: 0 };
+      entry.count++;
+      entry.score += PRIORITY_WEIGHT[t.priority as string] ?? 1;
+      const est = t.estimatedHours || 0;
+      const act = t.actualHours || 0;
+      const remaining = Math.max(0, est - act);
+      // Fall back to the estimate when the task hasn't been worked yet, and
+      // to 1h when nothing was estimated so the demand isn't zero.
+      entry.remainingHours += remaining > 0 ? remaining : est || 1;
+      demandByClient.set(cid, entry);
+    }
+
     type ClientPlan = {
       clientId: string;
       name: string;
@@ -415,6 +448,9 @@ export class TimeBlocksService {
       slotsNeeded: number;
       slotsAssigned: number;
       lastDate: string | null;
+      pendingCount: number;
+      pendingScore: number;
+      remainingHours: number;
     };
     const perClient = new Map<string, {
       name: string;
@@ -422,29 +458,61 @@ export class TimeBlocksService {
       targetMinutes: number;
       scheduledMinutes: number;
       sessions: number;
+      pendingCount: number;
+      pendingScore: number;
     }>();
     const plansByTier: Record<ClientTier, ClientPlan[]> = { A: [], B: [], C: [] };
     const avgSlotMin =
       allSlots.length > 0 ? totalMinutesAvailable / allSlots.length : 120;
+    const skippedNoWork: string[] = [];
     for (const c of clients) {
       const tier = c.tier as ClientTier;
       const targetMinutes = Math.round((c.hoursPerCycle ?? HOURS_PER_TIER[tier]) * 60);
+      const demand = demandByClient.get(String(c._id)) || {
+        count: 0,
+        score: 0,
+        remainingHours: 0,
+      };
       perClient.set(String(c._id), {
         name: c.name,
         tier,
         targetMinutes,
         scheduledMinutes: 0,
         sessions: 0,
+        pendingCount: demand.count,
+        pendingScore: demand.score,
       });
+      // Skip clients with no open work — they shouldn't take a slot.
+      if (demand.count === 0) {
+        skippedNoWork.push(c.name);
+        continue;
+      }
+      // Slots are capped by actual remaining work so we don't schedule
+      // 9h for a client whose pending tasks only need 4h. The target
+      // hours still acts as a ceiling for clients with lots of work.
+      const targetSlots = Math.max(1, Math.round(targetMinutes / avgSlotMin));
+      const demandSlots = Math.max(
+        1,
+        Math.ceil((demand.remainingHours * 60) / avgSlotMin),
+      );
+      const slotsNeeded = Math.min(targetSlots, demandSlots);
       plansByTier[tier].push({
         clientId: String(c._id),
         name: c.name,
         tier,
         targetMinutes,
-        slotsNeeded: Math.max(1, Math.round(targetMinutes / avgSlotMin)),
+        slotsNeeded,
         slotsAssigned: 0,
         lastDate: null,
+        pendingCount: demand.count,
+        pendingScore: demand.score,
+        remainingHours: demand.remainingHours,
       });
+    }
+    if (skippedNoWork.length > 0) {
+      warnings.push(
+        `Skipped ${skippedNoWork.length} client(s) with no open tasks this cycle: ${skippedNoWork.slice(0, 5).join(', ')}${skippedNoWork.length > 5 ? '…' : ''}.`,
+      );
     }
 
     if (allSlots.length === 0) {
@@ -480,9 +548,27 @@ export class TimeBlocksService {
         const notToday = needing.filter((p) => p.lastDate !== slot.date);
         const pool = notToday.length > 0 ? notToday : needing;
         pool.sort((a, b) => {
-          const aD = a.lastDate || '0000-00-00';
-          const bD = b.lastDate || '0000-00-00';
+          // 1. Anyone who hasn't been touched yet jumps first so rotation
+          //    fairness still holds across the cycle.
+          if (!a.lastDate && b.lastDate) return -1;
+          if (a.lastDate && !b.lastDate) return 1;
+          // 2. Within "already touched", prefer the client whose last
+          //    block is the oldest (also fairness).
+          const aD = a.lastDate || '';
+          const bD = b.lastDate || '';
           if (aD !== bD) return aD.localeCompare(bD);
+          // 3. Among ties on lastDate, prefer the client with more pending
+          //    high-priority work — pendingScore weights high=3 medium=2
+          //    low=1, so a client with 4 high-priority pending tasks beats
+          //    one with 2 medium ones.
+          if (a.pendingScore !== b.pendingScore) {
+            return b.pendingScore - a.pendingScore;
+          }
+          // 4. Then the client with more pending tasks overall.
+          if (a.pendingCount !== b.pendingCount) {
+            return b.pendingCount - a.pendingCount;
+          }
+          // 5. Whoever has fewer slots assigned so far.
           if (a.slotsAssigned !== b.slotsAssigned)
             return a.slotsAssigned - b.slotsAssigned;
           return a.name.localeCompare(b.name);
@@ -534,18 +620,11 @@ export class TimeBlocksService {
       );
     }
 
-    // 9. Pick a task for each block (highest-priority pending task for that client/cycle)
-    const tasks = await this.taskModel
-      .find({
-        cycleId: cycleObjId,
-        clientId: { $in: clients.map((c) => c._id) },
-        status: { $in: ['pending', 'in_progress'] },
-      })
-      .lean()
-      .exec();
+    // 9. Pick a task for each block (highest-priority pending task for that client/cycle).
+    //    Reuses the openTasks fetched at step 7 so we don't query Mongo twice.
     const priorityRank: Record<string, number> = { high: 0, medium: 1, low: 2 };
     const tasksByClient = new Map<string, Array<{ _id: Types.ObjectId; remainingHours: number; priority: string }>>();
-    for (const t of tasks) {
+    for (const t of openTasks) {
       const cid = String(t.clientId);
       const arr = tasksByClient.get(cid) || [];
       const remainingHours = Math.max(0, (t.estimatedHours || 0) - (t.actualHours || 0));
