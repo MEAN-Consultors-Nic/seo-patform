@@ -1,8 +1,19 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnChanges, inject, signal } from '@angular/core';
+import { Component, Input, OnChanges, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { GscKeywordPullResult, Keyword, KeywordIntent } from '@seo/shared';
 import { KeywordsService } from '../../../core/keywords.service';
+
+type KeywordSortKey =
+  | 'cluster'
+  | 'text'
+  | 'currentPosition'
+  | 'previousPosition'
+  | 'delta'
+  | 'volume'
+  | 'difficulty'
+  | 'gscClicks'
+  | 'gscImpressions';
 
 function todayIso(): string {
   const d = new Date();
@@ -105,9 +116,78 @@ function daysAgoIso(days: number): string {
               <option [value]="i">{{ i }}</option>
             }
           </select>
-          <input class="input" [(ngModel)]="newKw.group" placeholder="Group (e.g. local)" />
+          <input class="input" [(ngModel)]="newKw.group" placeholder="Cluster (e.g. local-services)" />
         </div>
         <button class="btn-primary mt-3" (click)="add()" [disabled]="!newKw.text">Create keyword</button>
+      </div>
+
+      <!-- Toolbar: search · cluster filter · sort · page size -->
+      <div class="card !p-3 flex flex-wrap items-end gap-2">
+        <div class="flex-1 min-w-[180px]">
+          <label class="label">Search</label>
+          <input class="input input-sm" type="search"
+                 [ngModel]="searchTerm()"
+                 (ngModelChange)="onSearchChange($event)"
+                 placeholder="Filter by keyword text…" />
+        </div>
+        <div class="min-w-[160px]">
+          <label class="label">Cluster</label>
+          <select class="input input-sm"
+                  [ngModel]="clusterFilter()"
+                  (ngModelChange)="onClusterChange($event)">
+            <option value="">All clusters</option>
+            <option value="__none__">— No cluster —</option>
+            @for (c of availableClusters(); track c) {
+              <option [value]="c">{{ c }}</option>
+            }
+          </select>
+        </div>
+        <div class="min-w-[160px]">
+          <label class="label">Sort by</label>
+          <select class="input input-sm"
+                  [ngModel]="sortKey()"
+                  (ngModelChange)="onSortKeyChange($event)">
+            <option value="cluster">Cluster (A→Z)</option>
+            <option value="text">Keyword (A→Z)</option>
+            <option value="currentPosition">Current position</option>
+            <option value="previousPosition">Previous position</option>
+            <option value="delta">Δ position</option>
+            <option value="volume">Volume</option>
+            <option value="difficulty">Difficulty</option>
+            <option value="gscClicks">GSC clicks</option>
+            <option value="gscImpressions">GSC impressions</option>
+          </select>
+        </div>
+        <button class="btn-secondary text-xs flex-shrink-0"
+                (click)="toggleSortDir()"
+                title="Toggle sort direction">
+          {{ sortDir() === 'asc' ? '↑ Asc' : '↓ Desc' }}
+        </button>
+        <div class="min-w-[100px]">
+          <label class="label">Per page</label>
+          <select class="input input-sm"
+                  [ngModel]="pageSize()"
+                  (ngModelChange)="onPageSizeChange($event)">
+            <option [ngValue]="10">10</option>
+            <option [ngValue]="20">20</option>
+            <option [ngValue]="50">50</option>
+            <option [ngValue]="100">100</option>
+            <option [ngValue]="9999">All</option>
+          </select>
+        </div>
+        @if (searchTerm() || clusterFilter()) {
+          <button class="btn-ghost text-xs text-ink-500"
+                  (click)="clearFilters()">
+            Clear
+          </button>
+        }
+        <div class="text-[11px] text-ink-500 ml-auto whitespace-nowrap">
+          <strong class="text-ink-700">{{ filteredKeywords().length }}</strong>
+          of {{ keywords().length }}
+          @if (totalPages() > 1) {
+            · page {{ currentPage() }} / {{ totalPages() }}
+          }
+        </div>
       </div>
 
       <div class="card overflow-x-auto p-0">
@@ -115,7 +195,7 @@ function daysAgoIso(days: number): string {
           <thead class="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500">
             <tr>
               <th class="px-4 py-2 text-left">Keyword</th>
-              <th class="px-4 py-2 text-left">Group</th>
+              <th class="px-4 py-2 text-left">Cluster</th>
               <th class="px-4 py-2 text-right">Vol.</th>
               <th class="px-4 py-2 text-right">KD</th>
               <th class="px-4 py-2 text-right">Current pos.</th>
@@ -126,7 +206,7 @@ function daysAgoIso(days: number): string {
             </tr>
           </thead>
           <tbody>
-            @for (k of keywords(); track k._id) {
+            @for (k of pagedKeywords(); track k._id) {
               <tr class="border-b border-slate-100 hover:bg-slate-50">
                 <td class="px-4 py-2">
                   <div class="flex items-center gap-2">
@@ -182,9 +262,42 @@ function daysAgoIso(days: number): string {
                   No keywords registered. Add the first one above.
                 </td>
               </tr>
+            } @else if (!pagedKeywords().length) {
+              <tr>
+                <td colspan="9" class="px-4 py-8 text-center text-slate-400 italic">
+                  No keywords match the current filters.
+                </td>
+              </tr>
             }
           </tbody>
         </table>
+
+        @if (totalPages() > 1) {
+          <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-t border-ink-100 text-xs">
+            <span class="text-ink-500">
+              Showing
+              <strong class="text-ink-900">{{ pagedRangeStart() }}–{{ pagedRangeEnd() }}</strong>
+              of {{ filteredKeywords().length }}
+            </span>
+            <div class="flex items-center gap-1">
+              <button class="btn-secondary !py-1 !px-2 text-xs"
+                      [disabled]="currentPage() === 1"
+                      (click)="goToPage(1)">«</button>
+              <button class="btn-secondary !py-1 !px-2 text-xs"
+                      [disabled]="currentPage() === 1"
+                      (click)="goToPage(currentPage() - 1)">‹</button>
+              <span class="px-2 font-semibold text-ink-700">
+                {{ currentPage() }} / {{ totalPages() }}
+              </span>
+              <button class="btn-secondary !py-1 !px-2 text-xs"
+                      [disabled]="currentPage() === totalPages()"
+                      (click)="goToPage(currentPage() + 1)">›</button>
+              <button class="btn-secondary !py-1 !px-2 text-xs"
+                      [disabled]="currentPage() === totalPages()"
+                      (click)="goToPage(totalPages())">»</button>
+            </div>
+          </div>
+        }
       </div>
     </div>
 
@@ -234,8 +347,8 @@ function daysAgoIso(days: number): string {
                 </select>
               </div>
               <div>
-                <label class="label">Group</label>
-                <input class="input" [(ngModel)]="editForm.group" placeholder="e.g. local" />
+                <label class="label">Cluster</label>
+                <input class="input" [(ngModel)]="editForm.group" placeholder="e.g. local-services" />
               </div>
             </div>
 
@@ -422,6 +535,156 @@ export class ClientKeywordsTab implements OnChanges {
   intents: KeywordIntent[] = ['informational', 'commercial', 'transactional', 'navigational'];
 
   newKw: Partial<Keyword> = { text: '', targetUrl: '', volume: undefined, difficulty: undefined, intent: undefined, group: '' };
+
+  // --- Filters / sort / pagination ---------------------------------------
+  searchTerm = signal('');
+  clusterFilter = signal<string>(''); // '' = all, '__none__' = empty cluster
+  sortKey = signal<KeywordSortKey>('cluster');
+  sortDir = signal<'asc' | 'desc'>('asc');
+  pageSize = signal(20);
+  currentPage = signal(1);
+
+  availableClusters = computed(() => {
+    const set = new Set<string>();
+    for (const k of this.keywords()) {
+      const g = k.group?.trim();
+      if (g) set.add(g);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  });
+
+  filteredKeywords = computed(() => {
+    const q = this.searchTerm().trim().toLowerCase();
+    const cluster = this.clusterFilter();
+    return this.keywords().filter((k) => {
+      if (q) {
+        const hay = `${k.text} ${k.targetUrl ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (cluster === '__none__') {
+        if (k.group?.trim()) return false;
+      } else if (cluster) {
+        if (k.group !== cluster) return false;
+      }
+      return true;
+    });
+  });
+
+  sortedKeywords = computed(() => {
+    const list = [...this.filteredKeywords()];
+    const key = this.sortKey();
+    const dir = this.sortDir() === 'asc' ? 1 : -1;
+    const num = (n: number | undefined) =>
+      typeof n === 'number' && !isNaN(n) ? n : Number.POSITIVE_INFINITY;
+    const str = (s: string | undefined) => (s ?? '').toLowerCase();
+    list.sort((a, b) => {
+      let cmp = 0;
+      switch (key) {
+        case 'cluster':
+          cmp = str(a.group).localeCompare(str(b.group));
+          if (cmp === 0) cmp = str(a.text).localeCompare(str(b.text));
+          break;
+        case 'text':
+          cmp = str(a.text).localeCompare(str(b.text));
+          break;
+        case 'currentPosition':
+          cmp = num(a.currentPosition) - num(b.currentPosition);
+          break;
+        case 'previousPosition':
+          cmp = num(a.previousPosition) - num(b.previousPosition);
+          break;
+        case 'delta': {
+          const da =
+            typeof a.previousPosition === 'number' &&
+            typeof a.currentPosition === 'number'
+              ? a.previousPosition - a.currentPosition
+              : -Number.POSITIVE_INFINITY;
+          const db =
+            typeof b.previousPosition === 'number' &&
+            typeof b.currentPosition === 'number'
+              ? b.previousPosition - b.currentPosition
+              : -Number.POSITIVE_INFINITY;
+          cmp = da - db;
+          break;
+        }
+        case 'volume':
+          cmp = num(a.volume) - num(b.volume);
+          break;
+        case 'difficulty':
+          cmp = num(a.difficulty) - num(b.difficulty);
+          break;
+        case 'gscClicks':
+          cmp = num(a.gscClicks) - num(b.gscClicks);
+          break;
+        case 'gscImpressions':
+          cmp = num(a.gscImpressions) - num(b.gscImpressions);
+          break;
+      }
+      return cmp * dir;
+    });
+    return list;
+  });
+
+  totalPages = computed(() => {
+    const total = this.sortedKeywords().length;
+    const size = this.pageSize() || 1;
+    return Math.max(1, Math.ceil(total / size));
+  });
+
+  pagedKeywords = computed(() => {
+    const list = this.sortedKeywords();
+    const size = this.pageSize() || list.length;
+    const page = Math.min(this.currentPage(), this.totalPages());
+    const start = (page - 1) * size;
+    return list.slice(start, start + size);
+  });
+
+  pagedRangeStart = computed(() => {
+    if (!this.sortedKeywords().length) return 0;
+    return (this.currentPage() - 1) * this.pageSize() + 1;
+  });
+
+  pagedRangeEnd = computed(() =>
+    Math.min(
+      this.sortedKeywords().length,
+      this.currentPage() * this.pageSize(),
+    ),
+  );
+
+  onSearchChange(v: string) {
+    this.searchTerm.set(v);
+    this.currentPage.set(1);
+  }
+
+  onClusterChange(v: string) {
+    this.clusterFilter.set(v);
+    this.currentPage.set(1);
+  }
+
+  onSortKeyChange(v: string) {
+    this.sortKey.set(v as KeywordSortKey);
+    this.currentPage.set(1);
+  }
+
+  toggleSortDir() {
+    this.sortDir.update((d) => (d === 'asc' ? 'desc' : 'asc'));
+  }
+
+  onPageSizeChange(v: number) {
+    this.pageSize.set(v);
+    this.currentPage.set(1);
+  }
+
+  goToPage(p: number) {
+    if (p < 1 || p > this.totalPages()) return;
+    this.currentPage.set(p);
+  }
+
+  clearFilters() {
+    this.searchTerm.set('');
+    this.clusterFilter.set('');
+    this.currentPage.set(1);
+  }
 
   // Edit-keyword modal state
   editingKeyword = signal<Keyword | null>(null);
