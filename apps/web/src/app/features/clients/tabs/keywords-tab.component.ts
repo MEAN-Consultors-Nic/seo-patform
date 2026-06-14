@@ -166,8 +166,13 @@ function daysAgoIso(days: number): string {
                     </button>
                   </div>
                 </td>
-                <td class="px-4 py-2 text-right">
-                  <button class="text-red-500 hover:text-red-700" (click)="remove(k)">×</button>
+                <td class="px-4 py-2 text-right whitespace-nowrap">
+                  <button class="text-ink-500 hover:text-brand-500 mr-2"
+                          title="Edit keyword"
+                          (click)="openEditModal(k)">✎</button>
+                  <button class="text-red-500 hover:text-red-700"
+                          title="Remove keyword"
+                          (click)="remove(k)">×</button>
                 </td>
               </tr>
             }
@@ -182,6 +187,73 @@ function daysAgoIso(days: number): string {
         </table>
       </div>
     </div>
+
+    <!-- Edit keyword modal -->
+    @if (editingKeyword(); as kw) {
+      <div class="fixed inset-0 bg-ink-900/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+           (click)="closeEditModal()">
+        <div class="bg-white sm:rounded-xl rounded-t-xl shadow-xl w-full max-w-lg p-4 sm:p-6 max-h-[95vh] overflow-y-auto"
+             (click)="$event.stopPropagation()">
+          <div class="flex items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 class="text-lg font-bold text-ink-900">Edit keyword</h2>
+              <p class="text-xs text-ink-500 mt-0.5">{{ kw.text }}</p>
+            </div>
+            <button type="button" (click)="closeEditModal()"
+                    class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
+          </div>
+
+          <div class="space-y-3">
+            <div>
+              <label class="label">Keyword</label>
+              <input class="input" [(ngModel)]="editForm.text" placeholder="keyword phrase" />
+            </div>
+            <div>
+              <label class="label">Target URL</label>
+              <input class="input" [(ngModel)]="editForm.targetUrl"
+                     placeholder="https://example.com/page" />
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="label">Volume</label>
+                <input type="number" min="0" class="input" [(ngModel)]="editForm.volume" />
+              </div>
+              <div>
+                <label class="label">KD (%)</label>
+                <input type="number" min="0" max="100" class="input" [(ngModel)]="editForm.difficulty" />
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="label">Intent</label>
+                <select class="input" [(ngModel)]="editForm.intent">
+                  <option [ngValue]="undefined">—</option>
+                  @for (i of intents; track i) {
+                    <option [ngValue]="i">{{ i }}</option>
+                  }
+                </select>
+              </div>
+              <div>
+                <label class="label">Group</label>
+                <input class="input" [(ngModel)]="editForm.group" placeholder="e.g. local" />
+              </div>
+            </div>
+
+            @if (editError()) {
+              <div class="text-xs text-danger-500">{{ editError() }}</div>
+            }
+          </div>
+
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-ink-100">
+            <button class="btn-secondary" (click)="closeEditModal()" [disabled]="savingEdit()">Cancel</button>
+            <button class="btn-primary" (click)="saveEdit()"
+                    [disabled]="savingEdit() || !editForm.text?.trim()">
+              {{ savingEdit() ? 'Saving…' : 'Save changes' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
 
     <!-- Pull from GSC modal -->
     @if (pullModal()) {
@@ -351,6 +423,12 @@ export class ClientKeywordsTab implements OnChanges {
 
   newKw: Partial<Keyword> = { text: '', targetUrl: '', volume: undefined, difficulty: undefined, intent: undefined, group: '' };
 
+  // Edit-keyword modal state
+  editingKeyword = signal<Keyword | null>(null);
+  editForm: Partial<Keyword> = {};
+  savingEdit = signal(false);
+  editError = signal<string | null>(null);
+
   // GSC pull state
   pullModal = signal(false);
   pullPreset = signal<'last7' | 'last28' | 'last90' | 'custom'>('last28');
@@ -405,6 +483,62 @@ export class ClientKeywordsTab implements OnChanges {
   remove(k: Keyword) {
     if (!k._id) return;
     this.svc.remove(k._id).subscribe(() => this.load());
+  }
+
+  openEditModal(k: Keyword) {
+    this.editingKeyword.set(k);
+    this.editForm = {
+      text: k.text,
+      targetUrl: k.targetUrl ?? '',
+      volume: k.volume,
+      difficulty: k.difficulty,
+      intent: k.intent,
+      group: k.group ?? '',
+    };
+    this.editError.set(null);
+  }
+
+  closeEditModal() {
+    if (this.savingEdit()) return;
+    this.editingKeyword.set(null);
+    this.editError.set(null);
+  }
+
+  saveEdit() {
+    const k = this.editingKeyword();
+    if (!k?._id) return;
+    const text = this.editForm.text?.trim();
+    if (!text) {
+      this.editError.set('Keyword text is required.');
+      return;
+    }
+    const patch: Partial<Keyword> = {
+      text,
+      targetUrl: this.editForm.targetUrl?.trim() || undefined,
+      volume: typeof this.editForm.volume === 'number' ? this.editForm.volume : undefined,
+      difficulty:
+        typeof this.editForm.difficulty === 'number'
+          ? this.editForm.difficulty
+          : undefined,
+      intent: this.editForm.intent || undefined,
+      group: this.editForm.group?.trim() || undefined,
+    };
+    this.savingEdit.set(true);
+    this.editError.set(null);
+    this.svc.update(k._id, patch).subscribe({
+      next: () => {
+        this.savingEdit.set(false);
+        this.editingKeyword.set(null);
+        this.load();
+      },
+      error: (err) => {
+        this.savingEdit.set(false);
+        const m = err?.error?.message;
+        this.editError.set(
+          Array.isArray(m) ? m.join(', ') : m || 'Could not save changes.',
+        );
+      },
+    });
   }
 
   gscCount(): number {
