@@ -382,7 +382,9 @@ export class ReportsService {
     // Recompute the "previous" comparison series at read time so changes
     // to the client baseline (or new prior-cycle reports) are reflected
     // without re-saving this report.
-    const reportOut = await this.applyKpisPreviousFallback(report, client);
+    const reportOut = this.sanitizeReportRichText(
+      await this.applyKpisPreviousFallback(report, client),
+    );
 
     return {
       report: reportOut,
@@ -517,13 +519,14 @@ export class ReportsService {
   }
 
   async findOneByCycle(clientId: string, cycleId: string) {
-    return this.model
+    const doc = await this.model
       .findOne({
         clientId: new Types.ObjectId(clientId),
         cycleId: new Types.ObjectId(cycleId),
       })
       .lean()
       .exec();
+    return this.sanitizeReportRichText(doc);
   }
 
   async upsert(dto: UpsertReportDto) {
@@ -729,10 +732,53 @@ export class ReportsService {
     'g',
   );
 
+  /**
+   * Normalizes rich-text content before it hits Mongo.
+   *  - Removes invisible chars (soft hyphens, zero-width chars, BOM, etc.)
+   *    that travel with Word / Google Docs / Claude Desktop pastes and cause
+   *    mid-word line breaks in the rendered output.
+   *  - Converts non-breaking spaces (&nbsp; and the literal U+00A0) into
+   *    regular spaces. Claude Desktop and similar apps insert &nbsp;
+   *    between every word when text is copied, which fuses the whole
+   *    paragraph into a single unbreakable string — the browser then has
+   *    to break wherever it can, producing wraps like "im-pressions" and
+   *    "structured-\ndata" even though the underlying words are fine.
+   *
+   * Regular hyphens, tabs and newlines are intentionally preserved so the
+   * editor and copy/paste flows keep working naturally.
+   */
+  private static readonly NBSP_RE = new RegExp('\u00A0', 'g');
+
+  private static readonly RICH_TEXT_FIELDS = [
+    'executiveSummary',
+    'findings',
+    'nextPeriodPlan',
+    'clientBlockers',
+    'finalConsiderations',
+  ] as const;
+
+  /**
+   * Read-time normalization: runs the same strip we do on save against any
+   * stored rich-text field, so legacy reports written before the save-time
+   * fix still render cleanly without forcing a re-save. Returns the input
+   * untouched (including null/undefined) so it composes safely.
+   */
+  private sanitizeReportRichText<T>(doc: T): T {
+    if (!doc || typeof doc !== 'object') return doc;
+    const obj = doc as Record<string, unknown>;
+    for (const k of ReportsService.RICH_TEXT_FIELDS) {
+      const v = obj[k];
+      if (typeof v === 'string') obj[k] = this.stripInvisibleChars(v);
+    }
+    return doc;
+  }
+
   private stripInvisibleChars(value: string): string {
     if (typeof value !== 'string') return value;
     return value
       .replace(/&shy;/gi, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(ReportsService.NBSP_RE, ' ')
       .replace(ReportsService.INVISIBLE_BREAKERS, '');
   }
 
