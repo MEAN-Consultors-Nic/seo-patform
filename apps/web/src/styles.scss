@@ -49,20 +49,26 @@ quill-editor .ql-toolbar {
 .ql-snow .ql-toolbar button:hover,
 .ql-snow .ql-toolbar button.ql-active { background: rgba(255, 122, 89, 0.08); border-radius: 4px; }
 
-/* Render rich content (read-only) safely */
+/* Render rich content (read-only) safely.
+   IMPORTANT: hyphens: auto and word-break: break-word will both split
+   words at hyphens (real and inserted), producing "im-pressions" /
+   "structured-data" wraps. Keep overflow-wrap so very long unbreakable
+   strings (urls, etc.) still wrap, but otherwise wrap only at spaces. */
 .rich-content {
   color: #334155;
   line-height: 1.65;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
   word-wrap: break-word;
-  word-break: break-word;
-  hyphens: auto;
+  word-break: normal;
+  hyphens: manual;
   min-width: 0;
   max-width: 100%;
 }
 .rich-content * {
   max-width: 100%;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: manual;
 }
 .rich-content p { margin-bottom: 0.6em; }
 .rich-content p:last-child { margin-bottom: 0; }
