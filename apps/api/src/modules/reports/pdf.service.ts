@@ -654,7 +654,11 @@ export class PdfService {
       ['conversions', 'Conversions'],
     ];
     const showCompare = (report as { comparePeriods?: boolean }).comparePeriods !== false;
+    const hidden = new Set(
+      (report as { hiddenKpis?: string[] }).hiddenKpis ?? [],
+    );
     const cards = main
+      .filter(([k]) => !hidden.has(k))
       .filter(([k]) => report.kpis?.[k] !== undefined || report.kpisPrevious?.[k] !== undefined)
       .map(([k, label]) =>
         this.kpiCard(
@@ -773,7 +777,11 @@ export class PdfService {
       ['gbpWebsiteClicks', 'GBP — Website clicks'],
       ['gbpReviews', 'GBP — New reviews'],
     ];
+    const hidden2 = new Set(
+      (report as { hiddenKpis?: string[] }).hiddenKpis ?? [],
+    );
     const rows = labels
+      .filter(([k]) => !hidden2.has(k as string))
       .filter(
         ([k]) => report.kpis?.[k] !== undefined || report.kpisPrevious?.[k] !== undefined,
       )

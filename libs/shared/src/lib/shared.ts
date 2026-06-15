@@ -478,6 +478,11 @@ export interface Report {
   comparePeriods?: boolean;
   /** Sort criterion for the Locations Performance grid. Defaults to clicks. */
   locationsSort?: LocationsSortKey;
+  /**
+   * KPI keys to exclude from the public report and PDF. Empty/undefined =
+   * show every KPI that has a value (legacy behavior).
+   */
+  hiddenKpis?: string[];
   serviceAreasSnapshot?: ServiceAreaSnapshot[];
   generatedAt: Date;
   sentAt?: Date;

@@ -70,6 +70,9 @@ export class Report {
   })
   locationsSort?: 'clicks' | 'impressions' | 'ctr' | 'position';
 
+  @Prop({ type: [String], default: undefined })
+  hiddenKpis?: string[];
+
   @Prop({ type: [Object], default: undefined })
   serviceAreasSnapshot?: ServiceAreaSnapshot[];
 

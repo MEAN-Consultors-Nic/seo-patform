@@ -412,9 +412,21 @@ interface KpiGroup {
                 </div>
                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                   @for (k of group.fields; track k.key) {
-                    <div>
-                      <label class="label">{{ k.label }}</label>
-                      <div class="relative">
+                    <div [class.opacity-50]="isKpiHidden(k.key)">
+                      <div class="flex items-center justify-between gap-1">
+                        <label class="label !mb-0">{{ k.label }}</label>
+                        <button type="button"
+                                class="text-[10px] leading-none px-1 py-0.5 rounded transition"
+                                [class.text-ink-300]="isKpiHidden(k.key)"
+                                [class.hover:text-ink-700]="isKpiHidden(k.key)"
+                                [class.text-positive-500]="!isKpiHidden(k.key)"
+                                [class.hover:text-ink-400]="!isKpiHidden(k.key)"
+                                (click)="toggleKpiHidden(k.key)"
+                                [title]="isKpiHidden(k.key) ? 'Hidden from public report — click to show' : 'Visible in public report — click to hide'">
+                          {{ isKpiHidden(k.key) ? '👁‍🗨' : '👁' }}
+                        </button>
+                      </div>
+                      <div class="relative mt-1.5">
                         <input type="number"
                                class="input"
                                [name]="'kpi_' + k.key"
@@ -858,6 +870,8 @@ export class ReportEditorComponent implements OnInit {
   comparePeriods = true;
   locationsSort: LocationsSortKey = 'clicks';
   locationsSortOptions = LOCATIONS_SORT_OPTIONS;
+  /** Set of KPI keys hidden from the public report + PDF. */
+  hiddenKpis = new Set<string>();
 
   // Previous-period preview shown next to each KPI input so the user can
   // sanity-check the comparison before saving. Populated by
@@ -1032,6 +1046,17 @@ export class ReportEditorComponent implements OnInit {
     return this.previousKpisSource() === 'baseline' ? 'vs baseline' : 'vs prev';
   }
 
+  isKpiHidden(key: string): boolean {
+    return this.hiddenKpis.has(key);
+  }
+
+  toggleKpiHidden(key: string) {
+    if (this.hiddenKpis.has(key)) this.hiddenKpis.delete(key);
+    else this.hiddenKpis.add(key);
+    // Reassign so OnPush change detection picks it up in the template.
+    this.hiddenKpis = new Set(this.hiddenKpis);
+  }
+
   /**
    * Returns the rendering cell for a KPI's previous value + delta — or null
    * when there's no comparison data so the input row stays compact.
@@ -1091,6 +1116,7 @@ export class ReportEditorComponent implements OnInit {
     // Default true for legacy reports without the field set.
     this.comparePeriods = r?.comparePeriods !== false;
     this.locationsSort = (r?.locationsSort as LocationsSortKey) || 'clicks';
+    this.hiddenKpis = new Set<string>(r?.hiddenKpis ?? []);
     this.kpis = { ...(r?.kpis || {}) };
     this.coverImageUrl.set(r?.coverImageUrl || '');
     this.shareToken.set(r?.shareToken || null);
@@ -1269,6 +1295,7 @@ export class ReportEditorComponent implements OnInit {
           includeServiceAreas: this.includeServiceAreas,
           comparePeriods: this.comparePeriods,
           locationsSort: this.locationsSort,
+          hiddenKpis: Array.from(this.hiddenKpis),
           kpis: this.cleanKpis(),
         })
         .subscribe({
@@ -1409,6 +1436,7 @@ export class ReportEditorComponent implements OnInit {
           includeServiceAreas: this.includeServiceAreas,
           comparePeriods: this.comparePeriods,
           locationsSort: this.locationsSort,
+          hiddenKpis: Array.from(this.hiddenKpis),
             kpis: this.cleanKpis(),
           })
           .subscribe({
@@ -1597,6 +1625,7 @@ export class ReportEditorComponent implements OnInit {
           includeServiceAreas: this.includeServiceAreas,
           comparePeriods: this.comparePeriods,
           locationsSort: this.locationsSort,
+          hiddenKpis: Array.from(this.hiddenKpis),
         kpis: this.cleanKpis(),
       })
       .subscribe({
@@ -1639,6 +1668,7 @@ export class ReportEditorComponent implements OnInit {
           clientBlockers: this.clientBlockers,
           comparePeriods: this.comparePeriods,
           locationsSort: this.locationsSort,
+          hiddenKpis: Array.from(this.hiddenKpis),
           kpis: this.cleanKpis(),
         })
         .subscribe({

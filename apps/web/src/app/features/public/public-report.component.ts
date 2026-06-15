@@ -29,6 +29,7 @@ interface PublicPayload {
     kpisPreviousSource?: 'previous' | 'baseline' | null;
     comparePeriods?: boolean;
     locationsSort?: 'clicks' | 'impressions' | 'ctr' | 'position';
+    hiddenKpis?: string[];
     coverImageUrl?: string;
     executiveSummary: string | string[];
     findings: string;
@@ -1601,7 +1602,9 @@ export class PublicReportComponent implements OnInit {
   kpiCards() {
     const d = this.data();
     if (!d) return [];
+    const hidden = new Set(d.report.hiddenKpis ?? []);
     return this.kpiFields
+      .filter((f) => !hidden.has(f.key))
       .filter((f) => d.report.kpis?.[f.key] !== undefined)
       .map((f) => {
         const current = d.report.kpis?.[f.key];

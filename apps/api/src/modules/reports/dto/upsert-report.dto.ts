@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsBoolean,
   IsEnum,
   IsMongoId,
@@ -47,4 +48,9 @@ export class UpsertReportDto {
   @IsOptional()
   @IsEnum(['clicks', 'impressions', 'ctr', 'position'])
   locationsSort?: 'clicks' | 'impressions' | 'ctr' | 'position';
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  hiddenKpis?: string[];
 }
