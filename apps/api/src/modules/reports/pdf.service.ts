@@ -3,7 +3,14 @@ import { Injectable, Logger } from '@nestjs/common';
 const pdfmake = require('pdfmake');
 import { format } from 'date-fns';
 import { enUS } from 'date-fns/locale';
-import { Client, Cycle, Report, ReportKpis } from '@seo/shared';
+import {
+  Client,
+  Cycle,
+  Report,
+  ReportKpis,
+  ReportSectionConfig,
+  ReportSectionKey,
+} from '@seo/shared';
 
 // --- Brand palette ----------------------------------------------------------
 const BRAND = '#FF7A59';
@@ -22,6 +29,21 @@ const DANGER_BG = '#FEE2E2';
 const WARNING = '#D97706';
 const WARNING_BG = '#FEF3C7';
 const SKY = '#0EA5E9';
+
+/**
+ * Default section order when the caller doesn't pass a layout. Matches the
+ * historical hard-coded order of the PDF so legacy reports look identical.
+ */
+const DEFAULT_PDF_LAYOUT: ReportSectionKey[] = [
+  'executive-summary',
+  'key-metrics',
+  'search-rankings',
+  'actions-taken',
+  'next-period-plan',
+  'backlinks-profile',
+  'client-blockers',
+  'final-considerations',
+];
 
 interface PdfContext {
   tasks: Array<{
@@ -49,6 +71,11 @@ interface PdfContext {
     dofollow: number;
     perStatus: Array<{ _id: string; count: number; avgDr: number }>;
   };
+  /**
+   * Section visibility/order resolved from Settings → Report layout.
+   * When omitted, every section renders in the legacy default order.
+   */
+  layout?: ReportSectionConfig[];
 }
 
 @Injectable()
@@ -118,109 +145,157 @@ export class PdfService {
         currentPage === 1 ? null : this.pageHeader(client, cycle),
       footer: (currentPage: number, pageCount: number) =>
         this.pageFooter(currentPage, pageCount, client, generatedAt),
-      content: [
-        // 1. Cover page
-        this.coverPage(client, cycle, logoDataUrl, tierColor, generatedAt),
-
-        // 2. Executive summary
-        this.sectionHeader('01', 'Executive Summary'),
-        this.executiveSummaryBlock(report),
-
-        // 3. KPIs
-        this.sectionHeader('02', 'Key Metrics (KPIs)'),
-        this.kpisGrid(report),
-        this.kpisDetailedTable(report),
-
-        // 4. Keywords (only if data)
-        ...(ctx.keywords.length > 0
-          ? [
-              { text: '', pageBreak: 'before' as const },
-              this.sectionHeader('03', 'Keywords and positions'),
-              this.keywordsSummary(ctx.keywords),
-              this.keywordsTable(ctx.keywords),
-              ...(ctx.gainers.length || ctx.losers.length
-                ? [this.movementsTable(ctx.gainers, ctx.losers)]
-                : []),
-            ]
-          : []),
-
-        // 5. Actions taken
-        { text: '', pageBreak: 'before' as const },
-        this.sectionHeader('04', 'Actions Taken'),
-        this.completedTasksTable(ctx.tasks),
-
-        // 6. Next period plan
-        this.sectionHeader('05', 'Next Period Plan'),
-        this.upcomingTasksTable(ctx.tasks),
-
-        // 7. Backlinks (if any) — keep section header with cards
-        ...(ctx.backlinks.total > 0
-          ? [
-              {
-                stack: [
-                  this.sectionHeader('06', 'Backlinks Profile'),
-                  this.backlinksBlock(ctx.backlinks),
-                ],
-                unbreakable: true,
-              },
-            ]
-          : []),
-
-        // 7. Client Pending Items
-        ...(this.htmlToText(report.clientBlockers).trim()
-          ? [
-              {
-                stack: [
-                  this.sectionHeader('07', 'Client Pending Items'),
-                  {
-                    table: {
-                      widths: ['*'],
-                      body: [
-                        [
-                          {
-                            text: this.htmlToText(report.clientBlockers),
-                            margin: [14, 10, 14, 10],
-                            color: INK_700,
-                          },
-                        ],
-                      ],
-                    },
-                    layout: {
-                      hLineWidth: () => 0,
-                      vLineWidth: () => 0,
-                      fillColor: () => WARNING_BG,
-                    },
-                    margin: [0, 4, 0, 12],
-                  },
-                ],
-                unbreakable: true,
-              },
-            ]
-          : []),
-
-        // 8. Final Considerations
-        ...(this.htmlToText(report.finalConsiderations || '').trim()
-          ? [
-              {
-                stack: [
-                  this.sectionHeader('08', 'Final Considerations'),
-                  {
-                    text: this.htmlToText(report.finalConsiderations || ''),
-                    color: INK_700,
-                    fontSize: 10,
-                    lineHeight: 1.5,
-                    margin: [0, 4, 0, 12],
-                  },
-                ],
-                unbreakable: true,
-              },
-            ]
-          : []),
-      ],
+      content: this.buildSections(client, cycle, report, ctx, logoDataUrl, tierColor, generatedAt),
     };
 
     const pdfDoc = pdfmake.createPdf(docDefinition);
     return pdfDoc.getBuffer();
+  }
+
+  /**
+   * Assemble the PDF content array honoring Settings → Report layout. The
+   * layout drives both the **order** sections appear in and which sections
+   * are **omitted**. Sections that the PDF doesn't currently render
+   * (locations-performance) are skipped silently. Section number prefix
+   * counts only visible-rendered sections so the prefix is always
+   * sequential ("01", "02"…) regardless of which sections are hidden.
+   */
+  private buildSections(
+    client: Client,
+    cycle: Cycle,
+    report: Report,
+    ctx: PdfContext,
+    logoDataUrl: string | null,
+    tierColor: string,
+    generatedAt: Date,
+  ): unknown[] {
+    const layout = ctx.layout?.length
+      ? ctx.layout
+      : DEFAULT_PDF_LAYOUT.map((k) => ({ key: k, visible: true }));
+
+    const content: unknown[] = [
+      this.coverPage(client, cycle, logoDataUrl, tierColor, generatedAt),
+    ];
+
+    let counter = 0;
+    const num = () => String(++counter).padStart(2, '0');
+
+    for (const section of layout) {
+      if (!section.visible) continue;
+      const block = this.renderSection(section.key, num, report, ctx);
+      if (block) content.push(...block);
+    }
+    return content;
+  }
+
+  private renderSection(
+    key: ReportSectionKey,
+    num: () => string,
+    report: Report,
+    ctx: PdfContext,
+  ): unknown[] | null {
+    switch (key) {
+      case 'executive-summary':
+        return [
+          this.sectionHeader(num(), 'Executive Summary'),
+          this.executiveSummaryBlock(report),
+        ];
+      case 'key-metrics':
+        return [
+          this.sectionHeader(num(), 'Key Metrics (KPIs)'),
+          this.kpisGrid(report),
+          this.kpisDetailedTable(report),
+        ];
+      case 'search-rankings':
+        if (ctx.keywords.length === 0) return null;
+        return [
+          { text: '', pageBreak: 'before' as const },
+          this.sectionHeader(num(), 'Keywords and positions'),
+          this.keywordsSummary(ctx.keywords),
+          this.keywordsTable(ctx.keywords),
+          ...(ctx.gainers.length || ctx.losers.length
+            ? [this.movementsTable(ctx.gainers, ctx.losers)]
+            : []),
+        ];
+      case 'actions-taken':
+        return [
+          { text: '', pageBreak: 'before' as const },
+          this.sectionHeader(num(), 'Actions Taken'),
+          this.completedTasksTable(ctx.tasks),
+        ];
+      case 'next-period-plan':
+        return [
+          this.sectionHeader(num(), 'Next Period Plan'),
+          this.upcomingTasksTable(ctx.tasks),
+        ];
+      case 'backlinks-profile':
+        if (ctx.backlinks.total === 0) return null;
+        return [
+          {
+            stack: [
+              this.sectionHeader(num(), 'Backlinks Profile'),
+              this.backlinksBlock(ctx.backlinks),
+            ],
+            unbreakable: true,
+          },
+        ];
+      case 'client-blockers': {
+        const text = this.htmlToText(report.clientBlockers).trim();
+        if (!text) return null;
+        return [
+          {
+            stack: [
+              this.sectionHeader(num(), 'Client Pending Items'),
+              {
+                table: {
+                  widths: ['*'],
+                  body: [
+                    [
+                      {
+                        text,
+                        margin: [14, 10, 14, 10],
+                        color: INK_700,
+                      },
+                    ],
+                  ],
+                },
+                layout: {
+                  hLineWidth: () => 0,
+                  vLineWidth: () => 0,
+                  fillColor: () => WARNING_BG,
+                },
+                margin: [0, 4, 0, 12],
+              },
+            ],
+            unbreakable: true,
+          },
+        ];
+      }
+      case 'final-considerations': {
+        const text = this.htmlToText(report.finalConsiderations || '').trim();
+        if (!text) return null;
+        return [
+          {
+            stack: [
+              this.sectionHeader(num(), 'Final Considerations'),
+              {
+                text,
+                color: INK_700,
+                fontSize: 10,
+                lineHeight: 1.5,
+                margin: [0, 4, 0, 12],
+              },
+            ],
+            unbreakable: true,
+          },
+        ];
+      }
+      case 'locations-performance':
+        // Not implemented in the PDF — service areas are web-only for now.
+        return null;
+      default:
+        return null;
+    }
   }
 
   // --- Styles ----------------------------------------------------------------

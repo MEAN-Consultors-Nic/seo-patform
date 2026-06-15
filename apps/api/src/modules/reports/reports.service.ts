@@ -856,16 +856,25 @@ export class ReportsService {
   }
 
   async generatePdf(clientId: string, cycleId: string): Promise<Buffer> {
-    const [client, cycle, report, tasks, keywords, movements, backlinksSummary] =
-      await Promise.all([
-        this.clients.findOne(clientId),
-        this.cycles.findOne(cycleId),
-        this.findOneByCycle(clientId, cycleId),
-        this.tasks.findAll({ clientId, cycleId }),
-        this.keywords.byClient(clientId),
-        this.keywords.movements(clientId),
-        this.backlinks.summary(clientId),
-      ]);
+    const [
+      client,
+      cycle,
+      report,
+      tasks,
+      keywords,
+      movements,
+      backlinksSummary,
+      layout,
+    ] = await Promise.all([
+      this.clients.findOne(clientId),
+      this.cycles.findOne(cycleId),
+      this.findOneByCycle(clientId, cycleId),
+      this.tasks.findAll({ clientId, cycleId }),
+      this.keywords.byClient(clientId),
+      this.keywords.movements(clientId),
+      this.backlinks.summary(clientId),
+      this.appSettings.getReportLayout(),
+    ]);
     if (!report)
       throw new NotFoundException(
         'Report for that client/cycle does not exist yet. Save it first.',
@@ -897,6 +906,7 @@ export class ReportsService {
         gainers: movements.gainers,
         losers: movements.losers,
         backlinks: backlinksSummary,
+        layout,
       },
     );
   }
