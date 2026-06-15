@@ -539,11 +539,22 @@ export class ReportsService {
     }
     if (dto.kpisPrevious !== undefined) $set.kpisPrevious = dto.kpisPrevious;
     if (dto.coverImageUrl !== undefined) $set.coverImageUrl = dto.coverImageUrl;
-    if (dto.executiveSummary !== undefined) $set.executiveSummary = dto.executiveSummary;
-    if (dto.findings !== undefined) $set.findings = dto.findings;
-    if (dto.nextPeriodPlan !== undefined) $set.nextPeriodPlan = dto.nextPeriodPlan;
-    if (dto.clientBlockers !== undefined) $set.clientBlockers = dto.clientBlockers;
-    if (dto.finalConsiderations !== undefined) $set.finalConsiderations = dto.finalConsiderations;
+    // Clean invisible/break-trigger characters from every rich-text field
+    // BEFORE writing to Mongo. Soft hyphens (U+00AD) and zero-width chars
+    // sneak in from Word / Google Docs pastes and cause mid-word line
+    // breaks both in the rich-text editor and in the PDF.
+    if (dto.executiveSummary !== undefined)
+      $set.executiveSummary = this.stripInvisibleChars(dto.executiveSummary);
+    if (dto.findings !== undefined)
+      $set.findings = this.stripInvisibleChars(dto.findings);
+    if (dto.nextPeriodPlan !== undefined)
+      $set.nextPeriodPlan = this.stripInvisibleChars(dto.nextPeriodPlan);
+    if (dto.clientBlockers !== undefined)
+      $set.clientBlockers = this.stripInvisibleChars(dto.clientBlockers);
+    if (dto.finalConsiderations !== undefined)
+      $set.finalConsiderations = this.stripInvisibleChars(
+        dto.finalConsiderations,
+      );
     if (dto.includeServiceAreas !== undefined) $set.includeServiceAreas = dto.includeServiceAreas;
     if (dto.comparePeriods !== undefined) $set.comparePeriods = dto.comparePeriods;
     if (dto.locationsSort !== undefined) $set.locationsSort = dto.locationsSort;
@@ -690,6 +701,39 @@ export class ReportsService {
       return { kpisPrevious: baseline, kpisPreviousSource: 'baseline' };
     }
     return { kpisPrevious: null, kpisPreviousSource: null };
+  }
+
+  /**
+   * Invisible characters that pdfmake (and rich-text editors) honor as
+   * line-break opportunities but that users never typed intentionally. Most
+   * commonly soft hyphens that travel with pastes from Word / Google Docs
+   * and break "position" into "posi-tion" in the rendered output.
+   *
+   * Declared inline so the source file stays ASCII-only.
+   */
+  private static readonly INVISIBLE_BREAKERS = new RegExp(
+    `[${[
+      '­', // SOFT HYPHEN (U+00AD)
+      '​', // ZERO WIDTH SPACE
+      '‌', // ZERO WIDTH NON-JOINER
+      '‍', // ZERO WIDTH JOINER
+      '‎', // LTR MARK
+      '‏', // RTL MARK
+      '⁠', // WORD JOINER
+      '⁡',
+      '⁢',
+      '⁣',
+      '⁤',
+      '﻿', // ZERO WIDTH NO-BREAK SPACE / BOM
+    ].join('')}]`,
+    'g',
+  );
+
+  private stripInvisibleChars(value: string): string {
+    if (typeof value !== 'string') return value;
+    return value
+      .replace(/&shy;/gi, '')
+      .replace(ReportsService.INVISIBLE_BREAKERS, '');
   }
 
   private async findPriorCycleKpis(

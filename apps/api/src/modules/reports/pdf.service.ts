@@ -672,6 +672,32 @@ export class PdfService {
 
   // --- Executive summary -----------------------------------------------------
   // Strip HTML tags and decode common entities — for plain-text rendering in PDF.
+  /**
+   * Invisible characters pdfmake treats as soft break points but that users
+   * never see in their editor. Listed as explicit code points so the source
+   * file stays ASCII-only and the regex isn't sensitive to file encoding.
+   */
+  private static readonly INVISIBLE_BREAKERS = new RegExp(
+    `[${[
+      '­', // SOFT HYPHEN
+      '​', // ZERO WIDTH SPACE
+      '‌', // ZERO WIDTH NON-JOINER
+      '‍', // ZERO WIDTH JOINER
+      '‎', // LEFT-TO-RIGHT MARK
+      '‏', // RIGHT-TO-LEFT MARK
+      '⁠', // WORD JOINER
+      '⁡', // FUNCTION APPLICATION
+      '⁢', // INVISIBLE TIMES
+      '⁣', // INVISIBLE SEPARATOR
+      '⁤', // INVISIBLE PLUS
+      '﻿', // ZERO WIDTH NO-BREAK SPACE / BOM
+    ].join('')}]`,
+    'g',
+  );
+
+  /** Non-breaking hyphen — visually identical to "-" but keeps words intact. */
+  private static readonly NON_BREAKING_HYPHEN = '‑';
+
   private htmlToText(html: string | undefined | null): string {
     if (!html) return '';
     if (typeof html !== 'string') return '';
@@ -684,22 +710,22 @@ export class PdfService {
         .replace(/<[^>]+>/g, '')
         // Decode common HTML entities
         .replace(/&nbsp;/g, ' ')
+        .replace(/&shy;/gi, '') // explicit soft hyphen entity
         .replace(/&amp;/g, '&')
         .replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>')
         .replace(/&quot;/g, '"')
         .replace(/&#39;/g, "'")
-        // Drop invisible characters that pdfmake treats as break points.
-        // Soft hyphens (U+00AD) sneak in when users paste from Word or
-        // Google Docs and cause "posi-tion" / "per-formance" mid-word
-        // wraps. Zero-width chars / BOMs also confuse word boundaries.
-        .replace(/[­​‌‍⁠﻿]/g, '')
-        // Convert intra-word hyphens to non-breaking hyphens (U+2011)
-        // so compound words like "high-priority" or "structured-data"
-        // never split across lines. Hyphens flanked by spaces (em-dash
-        // alternatives) are left alone so natural sentence breaks still
+        // Drop invisible characters — most importantly soft hyphens which
+        // sneak in from Word/Google Docs pastes and cause "posi-tion" /
+        // "per-formance" mid-word wraps in the PDF.
+        .replace(PdfService.INVISIBLE_BREAKERS, '')
+        // Convert intra-word hyphens to non-breaking hyphens so compound
+        // words like "high-priority" or "structured-data" never split
+        // across lines. Hyphens flanked by spaces (used as em-dash
+        // substitutes) are left alone so natural sentence breaks still
         // work.
-        .replace(/(\w)-(\w)/g, '$1‑$2')
+        .replace(/(\w)-(\w)/g, `$1${PdfService.NON_BREAKING_HYPHEN}$2`)
         // Collapse multiple blank lines
         .replace(/\n{3,}/g, '\n\n')
         .trim()
