@@ -571,12 +571,12 @@ interface PublicPayload {
                       <div class="mt-4 pt-3 border-t border-ink-100 flex items-center gap-3 text-xs">
                         @if (a.landingPageUrl) {
                           <a [href]="a.landingPageUrl" target="_blank" class="text-brand-500 hover:underline inline-flex items-center gap-1">
-                            🔗 Landing page
+                            Landing page
                           </a>
                         }
                         @if (a.googleMapsUrl) {
                           <a [href]="a.googleMapsUrl" target="_blank" class="text-sky-600 hover:underline inline-flex items-center gap-1">
-                            📍 Google Maps
+                            Google Maps
                           </a>
                         }
                       </div>
@@ -809,7 +809,7 @@ interface PublicPayload {
                             </td>
                             <td class="py-2.5 px-4 text-ink-700">
                               @if (p.targetKeyword) {
-                                🎯 <span class="font-mono text-xs">{{ p.targetKeyword }}</span>
+                                <span class="font-mono text-xs">{{ p.targetKeyword }}</span>
                               } @else {
                                 <span class="text-ink-400 italic text-xs">—</span>
                               }
@@ -891,7 +891,7 @@ interface PublicPayload {
                             </td>
                             <td class="py-2.5 px-4 text-ink-700">
                               @if (idea.targetKeyword) {
-                                🎯 <span class="font-mono text-xs">{{ idea.targetKeyword }}</span>
+                                <span class="font-mono text-xs">{{ idea.targetKeyword }}</span>
                               } @else {
                                 <span class="text-ink-400 italic text-xs">—</span>
                               }

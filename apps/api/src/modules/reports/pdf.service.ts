@@ -581,11 +581,16 @@ export class PdfService {
           ],
         },
 
-        // Bottom band — matching top accent
+        // Bottom band — matching top accent. Anchored to the actual
+        // bottom of the LETTER page (792pt tall, 60pt bottom margin),
+        // so the band is flush at the page edge no matter how tall the
+        // cover stack ends up. Without absolutePosition the band sat at
+        // the cursor and left a visible white gap below it.
         {
+          absolutePosition: { x: 40, y: 758 },
           canvas: [
-            { type: 'rect', x: -40, y: 30, w: 612, h: 4, color: BRAND },
-            { type: 'rect', x: -40, y: 34, w: 612, h: 24, color: INK_900 },
+            { type: 'rect', x: -40, y: 0, w: 612, h: 4, color: BRAND },
+            { type: 'rect', x: -40, y: 4, w: 612, h: 24, color: INK_900 },
           ],
         },
       ],
@@ -1314,7 +1319,9 @@ export class PdfService {
           ...ideas.map((p) => [
             { text: p.title, style: 'tableCell' },
             {
-              text: p.targetKeyword ? `🎯 ${p.targetKeyword}` : '—',
+              // Emoji glyphs aren't in Helvetica — they overlap with the
+              // text in the PDF. Use plain text instead.
+              text: p.targetKeyword || '—',
               style: 'tableCell',
               color: p.targetKeyword ? BRAND : INK_500,
             },
@@ -1342,14 +1349,15 @@ export class PdfService {
           ...published.map((p) => [
             p.publishedUrl
               ? {
-                  text: `${p.title} ↗`,
+                  text: p.title,
                   link: p.publishedUrl,
                   color: BRAND,
+                  decoration: 'underline',
                   style: 'tableCell',
                 }
               : { text: p.title, style: 'tableCell' },
             {
-              text: p.targetKeyword ? `🎯 ${p.targetKeyword}` : '—',
+              text: p.targetKeyword || '—',
               style: 'tableCell',
               color: p.targetKeyword ? BRAND : INK_500,
             },
