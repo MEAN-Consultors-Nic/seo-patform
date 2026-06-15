@@ -675,22 +675,35 @@ export class PdfService {
   private htmlToText(html: string | undefined | null): string {
     if (!html) return '';
     if (typeof html !== 'string') return '';
-    return html
-      // Convert block tags to newlines
-      .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n')
-      .replace(/<br\s*\/?>/gi, '\n')
-      // Strip all remaining tags
-      .replace(/<[^>]+>/g, '')
-      // Decode common HTML entities
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      // Collapse multiple blank lines
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    return (
+      html
+        // Convert block tags to newlines
+        .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        // Strip all remaining tags
+        .replace(/<[^>]+>/g, '')
+        // Decode common HTML entities
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        // Drop invisible characters that pdfmake treats as break points.
+        // Soft hyphens (U+00AD) sneak in when users paste from Word or
+        // Google Docs and cause "posi-tion" / "per-formance" mid-word
+        // wraps. Zero-width chars / BOMs also confuse word boundaries.
+        .replace(/[­​‌‍⁠﻿]/g, '')
+        // Convert intra-word hyphens to non-breaking hyphens (U+2011)
+        // so compound words like "high-priority" or "structured-data"
+        // never split across lines. Hyphens flanked by spaces (em-dash
+        // alternatives) are left alone so natural sentence breaks still
+        // work.
+        .replace(/(\w)-(\w)/g, '$1‑$2')
+        // Collapse multiple blank lines
+        .replace(/\n{3,}/g, '\n\n')
+        .trim()
+    );
   }
 
   private executiveSummaryBlock(report: Report) {
