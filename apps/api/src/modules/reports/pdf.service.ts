@@ -76,6 +76,15 @@ interface PdfContext {
    * When omitted, every section renders in the legacy default order.
    */
   layout?: ReportSectionConfig[];
+  /** Content pipeline pieces in `idea` status — for Next Period Plan. */
+  contentIdeas?: Array<{ title: string; targetKeyword?: string }>;
+  /** Pieces published during the cycle — for Actions Taken. */
+  contentPublished?: Array<{
+    title: string;
+    targetKeyword?: string;
+    publishedUrl?: string;
+    publishedAt?: Date | string;
+  }>;
 }
 
 @Injectable()
@@ -217,17 +226,47 @@ export class PdfService {
             ? [this.movementsTable(ctx.gainers, ctx.losers)]
             : []),
         ];
-      case 'actions-taken':
+      case 'actions-taken': {
+        const published = ctx.contentPublished ?? [];
         return [
           { text: '', pageBreak: 'before' as const },
           this.sectionHeader(num(), 'Actions Taken'),
           this.completedTasksTable(ctx.tasks),
+          ...(published.length > 0
+            ? [
+                {
+                  text: `CONTENT PUBLISHED THIS PERIOD  ·  ${published.length} live`,
+                  color: INK_500,
+                  fontSize: 8,
+                  bold: true,
+                  characterSpacing: 1.5,
+                  margin: [0, 12, 0, 6],
+                },
+                this.contentPublishedTable(published),
+              ]
+            : []),
         ];
-      case 'next-period-plan':
+      }
+      case 'next-period-plan': {
+        const ideas = ctx.contentIdeas ?? [];
         return [
           this.sectionHeader(num(), 'Next Period Plan'),
           this.upcomingTasksTable(ctx.tasks),
+          ...(ideas.length > 0
+            ? [
+                {
+                  text: `CONTENT PIPELINE · IDEAS  ·  ${ideas.length} planned`,
+                  color: INK_500,
+                  fontSize: 8,
+                  bold: true,
+                  characterSpacing: 1.5,
+                  margin: [0, 12, 0, 6],
+                },
+                this.contentIdeasTable(ideas),
+              ]
+            : []),
         ];
+      }
       case 'backlinks-profile':
         if (ctx.backlinks.total === 0) return null;
         return [
@@ -1254,6 +1293,78 @@ export class PdfService {
           layout: this.zebraTableLayout(),
         },
       ],
+      margin: [0, 0, 0, 14],
+    };
+  }
+
+  // --- Content pipeline (Next Period Plan + Actions Taken) -------------------
+
+  private contentIdeasTable(
+    ideas: NonNullable<PdfContext['contentIdeas']>,
+  ): unknown {
+    return {
+      table: {
+        widths: ['*', 220],
+        headerRows: 1,
+        body: [
+          [
+            { text: 'PIECE TITLE', style: 'tableHeader' },
+            { text: 'TARGET KEYWORD', style: 'tableHeader' },
+          ],
+          ...ideas.map((p) => [
+            { text: p.title, style: 'tableCell' },
+            {
+              text: p.targetKeyword ? `🎯 ${p.targetKeyword}` : '—',
+              style: 'tableCell',
+              color: p.targetKeyword ? BRAND : INK_500,
+            },
+          ]),
+        ],
+      },
+      layout: this.zebraTableLayout(),
+      margin: [0, 0, 0, 14],
+    };
+  }
+
+  private contentPublishedTable(
+    published: NonNullable<PdfContext['contentPublished']>,
+  ): unknown {
+    return {
+      table: {
+        widths: ['*', 180, 80],
+        headerRows: 1,
+        body: [
+          [
+            { text: 'PIECE TITLE', style: 'tableHeader' },
+            { text: 'TARGET KEYWORD', style: 'tableHeader' },
+            { text: 'PUBLISHED', style: 'tableHeader', alignment: 'right' },
+          ],
+          ...published.map((p) => [
+            p.publishedUrl
+              ? {
+                  text: `${p.title} ↗`,
+                  link: p.publishedUrl,
+                  color: BRAND,
+                  style: 'tableCell',
+                }
+              : { text: p.title, style: 'tableCell' },
+            {
+              text: p.targetKeyword ? `🎯 ${p.targetKeyword}` : '—',
+              style: 'tableCell',
+              color: p.targetKeyword ? BRAND : INK_500,
+            },
+            {
+              text: p.publishedAt
+                ? format(new Date(p.publishedAt), 'MMM d, yyyy', { locale: enUS })
+                : '—',
+              style: 'tableCell',
+              alignment: 'right',
+              color: INK_500,
+            },
+          ]),
+        ],
+      },
+      layout: this.zebraTableLayout(),
       margin: [0, 0, 0, 14],
     };
   }

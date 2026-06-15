@@ -865,6 +865,7 @@ export class ReportsService {
       movements,
       backlinksSummary,
       layout,
+      contentIdeas,
     ] = await Promise.all([
       this.clients.findOne(clientId),
       this.cycles.findOne(cycleId),
@@ -874,11 +875,19 @@ export class ReportsService {
       this.keywords.movements(clientId),
       this.backlinks.summary(clientId),
       this.appSettings.getReportLayout(),
+      this.content.list({ clientId, status: 'idea' }),
     ]);
     if (!report)
       throw new NotFoundException(
         'Report for that client/cycle does not exist yet. Save it first.',
       );
+    // Content pieces published during the cycle window — used by Actions
+    // Taken in the PDF (parity with the web report).
+    const contentPublished = await this.content.publishedInRange(
+      clientId,
+      new Date(cycle.startDate),
+      new Date(cycle.endDate),
+    );
     const reportForPdf = await this.applyKpisPreviousFallback(report, client);
     return this.pdf.generate(
       client as unknown as ClientType,
@@ -907,6 +916,16 @@ export class ReportsService {
         losers: movements.losers,
         backlinks: backlinksSummary,
         layout,
+        contentIdeas: contentIdeas.map((p) => ({
+          title: p.title,
+          targetKeyword: p.targetKeyword,
+        })),
+        contentPublished: contentPublished.map((p) => ({
+          title: p.title,
+          targetKeyword: p.targetKeyword,
+          publishedUrl: p.publishedUrl,
+          publishedAt: p.publishedAt,
+        })),
       },
     );
   }
