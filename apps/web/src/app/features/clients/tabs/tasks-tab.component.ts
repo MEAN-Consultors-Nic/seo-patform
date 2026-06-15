@@ -789,13 +789,19 @@ export class ClientTasksTab implements OnChanges {
     }
     this.savingEdit.set(true);
     this.editError.set(null);
+    // Match the patch shape used by saveEdit so a "cleared" rich-text
+    // editor doesn't get stored as `<p><br></p>` on create either.
+    const description = this.sanitizer.hasVisibleContent(this.editForm.description)
+      ? this.editForm.description
+      : undefined;
+    const notes = this.editForm.notes?.trim() || undefined;
     const payload: Partial<Task> = {
       title,
-      description: this.editForm.description || undefined,
+      description,
       category: this.editForm.category,
       priority: this.editForm.priority,
       estimatedHours: Number(this.editForm.estimatedHours) || 0,
-      notes: this.editForm.notes?.trim() || undefined,
+      notes,
       subtasks: this.cleanSubtasks(),
       status: 'pending',
       clientId: this.clientId,
@@ -902,13 +908,21 @@ export class ClientTasksTab implements OnChanges {
     }
     this.savingEdit.set(true);
     this.editError.set(null);
+    // Use empty strings (not undefined) for clearable fields so Mongoose
+    // overwrites the existing value instead of dropping the key from the
+    // patch. Quill emits "<p><br></p>" for an empty editor, so we treat
+    // any visually-empty HTML as empty too.
+    const description = this.sanitizer.hasVisibleContent(this.editForm.description)
+      ? this.editForm.description
+      : '';
+    const notes = (this.editForm.notes ?? '').trim();
     const patch: Partial<Task> = {
       title,
-      description: this.editForm.description || undefined,
+      description,
       category: this.editForm.category,
       priority: this.editForm.priority,
       estimatedHours: Number(this.editForm.estimatedHours) || 0,
-      notes: this.editForm.notes?.trim() || undefined,
+      notes,
       subtasks: this.cleanSubtasks(),
     };
     this.tasksSvc.update(t._id, patch).subscribe({
