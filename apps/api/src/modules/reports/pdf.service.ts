@@ -531,8 +531,11 @@ export class PdfService {
         // interactive web version with charts, locations data, etc.
         ...(share ? [this.liveReportPanel(share)] : []),
 
-        // Spacer to push footer down
-        { text: '', margin: [0, share ? 50 : 90, 0, 0] },
+        // Spacer between the cards above and the PREPARED BY / GENERATED
+        // footer. Tuned so the cover fits on a single LETTER page in both
+        // share/no-share variants — when the live-report panel is present
+        // it already takes ~140pt, so the spacer shrinks to compensate.
+        { text: '', margin: [0, share ? 16 : 90, 0, 0] },
 
         // Footer: prepared by + generated
         {
