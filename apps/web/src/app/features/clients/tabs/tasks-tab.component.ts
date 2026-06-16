@@ -9,7 +9,7 @@ import {
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { QuillEditorComponent } from 'ngx-quill';
+import { RichTextEditorComponent } from '../../../shared/rich-text-editor.component';
 import {
   Cycle,
   Subtask,
@@ -81,7 +81,7 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
     CommonModule,
     FormsModule,
     DatePipe,
-    QuillEditorComponent,
+    RichTextEditorComponent,
     AttachmentsStripComponent,
   ],
   template: `
@@ -386,11 +386,10 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
 
             <div>
               <label class="label">Description</label>
-              <quill-editor
-                [(ngModel)]="editForm.description"
-                [modules]="quillModules"
+              <app-rich-text-editor
+                [(value)]="editForm.description"
                 placeholder="Why this task is needed, scope, success criteria…"
-                [styles]="{ minHeight: '160px' }"></quill-editor>
+                [styles]="{ minHeight: '160px' }"></app-rich-text-editor>
             </div>
 
             <div>

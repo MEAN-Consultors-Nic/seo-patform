@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { QuillEditorComponent } from 'ngx-quill';
+import { RichTextEditorComponent } from '../../shared/rich-text-editor.component';
 import {
   Client,
   Cycle,
@@ -28,7 +28,7 @@ interface KpiGroup {
 @Component({
   selector: 'app-report-editor',
   standalone: true,
-  imports: [CommonModule, FormsModule, QuillEditorComponent, RouterLink],
+  imports: [CommonModule, FormsModule, RichTextEditorComponent, RouterLink],
   template: `
     <div class="page-container max-w-6xl">
       <!-- Sticky action bar -->
@@ -296,10 +296,9 @@ interface KpiGroup {
               }
             </div>
 
-            <quill-editor
-              [(ngModel)]="summaryText"
-              format="html"
-              placeholder="During this period we focused on…"></quill-editor>
+            <app-rich-text-editor
+              [(value)]="summaryText"
+              placeholder="During this period we focused on…"></app-rich-text-editor>
           </section>
 
           <!-- 2. KPIs grouped -->
@@ -597,8 +596,8 @@ interface KpiGroup {
                 Things you need from the client: access, approvals, content…
               </p>
             </div>
-            <quill-editor [(ngModel)]="clientBlockers" format="html"
-                          placeholder="Example: Waiting for approval of the new home copy…"></quill-editor>
+            <app-rich-text-editor [(value)]="clientBlockers"
+                                  placeholder="Example: Waiting for approval of the new home copy…"></app-rich-text-editor>
           </section>
 
           <!-- 6. Service Areas / Locations -->
@@ -681,8 +680,8 @@ interface KpiGroup {
                 Wrap up the report on a professional note — takeaways, strategic recommendations, gratitude, next-quarter outlook.
               </p>
             </div>
-            <quill-editor [(ngModel)]="finalConsiderations" format="html"
-                          placeholder="To wrap up this period, we want to highlight…"></quill-editor>
+            <app-rich-text-editor [(value)]="finalConsiderations"
+                                  placeholder="To wrap up this period, we want to highlight…"></app-rich-text-editor>
           </section>
         </div>
       } @else {
