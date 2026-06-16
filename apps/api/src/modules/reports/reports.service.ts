@@ -971,7 +971,7 @@ export class ReportsService {
       new Date(cycle.endDate),
     );
     const reportForPdf = await this.applyKpisPreviousFallback(report, client);
-    const share = this.buildShareInfo(report);
+    const share = await this.buildShareInfo(report);
     return this.pdf.generate(
       client as unknown as ClientType,
       cycle as unknown as CycleType,
@@ -1016,21 +1016,46 @@ export class ReportsService {
 
   /**
    * Returns the public share URL + PIN to print on the PDF cover. Returns
-   * undefined when the report has never been shared — the cover section
-   * is skipped in that case. Legacy reports that have a shareToken but
-   * no stored sharePin (pre-this-change) show URL only.
+   * undefined when the report has never been shared — the cover panel is
+   * skipped in that case.
+   *
+   * Backfill behavior: when a report has a shareToken but no raw
+   * sharePin (legacy data shared before the PDF-cover panel existed,
+   * which stored only the hash), this regenerates the PIN in-place so
+   * the rendered PDF can include it. This invalidates any PIN told
+   * verbally to the client out-of-band — but the new PIN is what's
+   * printed on the very PDF being generated, so the recipient gets a
+   * working PIN as long as they have this PDF.
    */
-  private buildShareInfo(report: {
+  private async buildShareInfo(report: {
+    _id?: unknown;
     shareToken?: string;
     sharePin?: string;
-  }): { url: string; pin?: string } | undefined {
+  }): Promise<{ url: string; pin?: string } | undefined> {
     if (!report.shareToken) return undefined;
     const webBase = (
       this.configSvc.get<string>('PUBLIC_WEB_URL') || 'http://localhost:4200'
     ).replace(/\/+$/, '');
+    let pin = report.sharePin;
+    if (!pin && report._id) {
+      pin = this.generatePin();
+      await this.model
+        .updateOne(
+          { _id: report._id as Types.ObjectId },
+          {
+            $set: {
+              sharePin: pin,
+              sharePinHash: await bcrypt.hash(pin, 10),
+              pinAttempts: 0,
+            },
+            $unset: { pinLockedUntil: '' },
+          },
+        )
+        .exec();
+    }
     return {
       url: `${webBase}/r/${report.shareToken}`,
-      pin: report.sharePin,
+      pin,
     };
   }
 
