@@ -289,18 +289,21 @@ export class WordService {
   }
 
   /**
-   * Decomposes Quill-style HTML into a list of Word paragraphs. Each
-   * block-level tag becomes a paragraph; inline <strong>/<em>/<u> runs
-   * become styled TextRuns. Anything beyond that is flattened to plain
-   * text. Empty input emits a single placeholder paragraph so the
-   * section never reads "missing".
+   * Flattens Quill HTML into newline-separated plain text. Runs the
+   * shared invisibles sanitizer first, then turns every block boundary
+   * (`<br>`, `</p>`, `</div>`, `</li>`, `</h1>`–`</h6>`) into a newline
+   * so downstream paragraph splitting preserves list structure, strips
+   * the remaining tags, and decodes the common HTML entities Quill
+   * emits — `&quot;` / `&#39;` / `&amp;` / `&lt;` / `&gt;` / `&nbsp;`.
+   * Returns "" for empty/null input.
    */
-  private richTextBlock(html: unknown): Paragraph[] {
+  private htmlToPlain(html: unknown): string {
     let raw = '';
     if (Array.isArray(html)) raw = html.join(' ');
     else if (typeof html === 'string') raw = html;
+    if (!raw) return '';
 
-    const clean = sanitizeText(raw)
+    return sanitizeText(raw)
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/(p|div|h[1-6]|li)>/gi, '\n')
       .replace(/<[^>]+>/g, '')
@@ -311,7 +314,27 @@ export class WordService {
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
+      .replace(/&#(\d+);/g, (_, code) =>
+        String.fromCodePoint(parseInt(code, 10)),
+      )
+      .replace(/&#x([0-9a-f]+);/gi, (_, hex) =>
+        String.fromCodePoint(parseInt(hex, 16)),
+      )
+      .replace(/[ \t]+/g, ' ')
+      .replace(/ *\n */g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
       .trim();
+  }
+
+  /**
+   * Decomposes Quill-style HTML into a list of Word paragraphs. Each
+   * block-level tag becomes a paragraph; inline <strong>/<em>/<u> runs
+   * become styled TextRuns. Anything beyond that is flattened to plain
+   * text. Empty input emits a single placeholder paragraph so the
+   * section never reads "missing".
+   */
+  private richTextBlock(html: unknown): Paragraph[] {
+    const clean = this.htmlToPlain(html);
 
     if (!clean) {
       return [
@@ -502,18 +525,19 @@ export class WordService {
           ],
         }),
       );
-      const desc = sanitizeText(t.description || '')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/  +/g, ' ')
-        .trim();
+      const desc = this.htmlToPlain(t.description);
       if (desc) {
-        out.push(
-          new Paragraph({
-            indent: { left: 720 },
-            spacing: { after: 100 },
-            children: [new TextRun({ text: desc, color: INK_700, size: 20 })],
-          }),
-        );
+        for (const line of desc.split('\n').filter((l) => l.trim())) {
+          out.push(
+            new Paragraph({
+              indent: { left: 720 },
+              spacing: { after: 60 },
+              children: [
+                new TextRun({ text: line.trim(), color: INK_700, size: 20 }),
+              ],
+            }),
+          );
+        }
       }
     }
     return out;
