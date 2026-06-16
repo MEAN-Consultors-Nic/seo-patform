@@ -86,6 +86,15 @@ interface PdfContext {
     publishedUrl?: string;
     publishedAt?: Date | string;
   }>;
+  /**
+   * Public share details for the live web report. When present, the
+   * cover page renders a "View live report" panel with the URL and
+   * (optionally) the access PIN.
+   */
+  share?: {
+    url: string;
+    pin?: string;
+  };
 }
 
 @Injectable()
@@ -184,7 +193,7 @@ export class PdfService {
       : DEFAULT_PDF_LAYOUT.map((k) => ({ key: k, visible: true }));
 
     const content: unknown[] = [
-      this.coverPage(client, cycle, logoDataUrl, tierColor, generatedAt),
+      this.coverPage(client, cycle, logoDataUrl, tierColor, generatedAt, ctx.share),
     ];
 
     let counter = 0;
@@ -387,6 +396,7 @@ export class PdfService {
     logoDataUrl: string | null,
     tierColor: string,
     generatedAt: Date,
+    share?: { url: string; pin?: string },
   ) {
     return {
       stack: [
@@ -515,8 +525,14 @@ export class PdfService {
           margin: [40, 0, 40, 0],
         },
 
+        // Live-report access panel (only when the report has been shared).
+        // Sits between the reporting-period card and the footer so a
+        // client opening the PDF immediately knows where to view the
+        // interactive web version with charts, locations data, etc.
+        ...(share ? [this.liveReportPanel(share)] : []),
+
         // Spacer to push footer down
-        { text: '', margin: [0, 90, 0, 0] },
+        { text: '', margin: [0, share ? 50 : 90, 0, 0] },
 
         // Footer: prepared by + generated
         {
@@ -596,6 +612,91 @@ export class PdfService {
         },
       ],
       pageBreak: 'after',
+    };
+  }
+
+  /**
+   * Small panel on the cover page pointing the client to the live web
+   * report (charts, location data, interactive elements that don't
+   * translate to a flat PDF). Rendered only when the report has a
+   * shareToken so it stays out of the way for un-shared drafts.
+   */
+  private liveReportPanel(share: { url: string; pin?: string }) {
+    const rows: unknown[] = [
+      [
+        {
+          text: 'VIEW LIVE REPORT',
+          color: BRAND,
+          fontSize: 9,
+          bold: true,
+          characterSpacing: 2.5,
+          alignment: 'center',
+          margin: [0, 0, 0, 8],
+        },
+      ],
+      [
+        {
+          text: 'Interactive version with charts, location data and the full activity timeline.',
+          color: INK_500,
+          fontSize: 9,
+          italics: true,
+          alignment: 'center',
+          margin: [0, 0, 0, 10],
+        },
+      ],
+      [
+        {
+          text: share.url,
+          link: share.url,
+          color: SKY,
+          fontSize: 11,
+          bold: true,
+          alignment: 'center',
+          decoration: 'underline',
+          margin: [0, 0, 0, share.pin ? 8 : 0],
+        },
+      ],
+    ];
+    if (share.pin) {
+      rows.push([
+        {
+          columns: [
+            { text: '', width: '*' },
+            {
+              width: 'auto',
+              stack: [
+                {
+                  text: 'ACCESS PIN',
+                  color: INK_500,
+                  fontSize: 8,
+                  bold: true,
+                  characterSpacing: 2,
+                  alignment: 'center',
+                  margin: [0, 0, 0, 4],
+                },
+                {
+                  text: share.pin,
+                  color: INK_900,
+                  fontSize: 22,
+                  bold: true,
+                  characterSpacing: 4,
+                  alignment: 'center',
+                },
+              ],
+            },
+            { text: '', width: '*' },
+          ],
+        },
+      ]);
+    }
+    return {
+      table: { widths: ['*'], body: rows },
+      layout: {
+        hLineWidth: () => 0,
+        vLineWidth: () => 0,
+        fillColor: () => '#FFF7F3',
+      },
+      margin: [40, 14, 40, 0],
     };
   }
 

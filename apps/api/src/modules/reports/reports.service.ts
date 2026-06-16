@@ -83,6 +83,7 @@ export class ReportsService {
       report.shareToken = randomBytes(18).toString('base64url');
       report.sharedAt = new Date();
       pin = this.generatePin();
+      report.sharePin = pin;
       report.sharePinHash = await bcrypt.hash(pin, 10);
       report.pinAttempts = 0;
       report.pinLockedUntil = undefined;
@@ -133,6 +134,7 @@ export class ReportsService {
 
     // Always regenerate the PIN on send.
     const pin = this.generatePin();
+    report.sharePin = pin;
     report.sharePinHash = await bcrypt.hash(pin, 10);
     report.pinAttempts = 0;
     report.pinLockedUntil = undefined;
@@ -175,6 +177,7 @@ export class ReportsService {
     if (!report || !report.shareToken)
       throw new NotFoundException('Active share link not found.');
     const pin = this.generatePin();
+    report.sharePin = pin;
     report.sharePinHash = await bcrypt.hash(pin, 10);
     report.pinAttempts = 0;
     report.pinLockedUntil = undefined;
@@ -194,6 +197,7 @@ export class ReportsService {
             shareToken: '',
             sharedAt: '',
             sharePinHash: '',
+            sharePin: '',
             pinLockedUntil: '',
           },
           $set: { pinAttempts: 0 },
@@ -967,6 +971,7 @@ export class ReportsService {
       new Date(cycle.endDate),
     );
     const reportForPdf = await this.applyKpisPreviousFallback(report, client);
+    const share = this.buildShareInfo(report);
     return this.pdf.generate(
       client as unknown as ClientType,
       cycle as unknown as CycleType,
@@ -1004,8 +1009,29 @@ export class ReportsService {
           publishedUrl: p.publishedUrl,
           publishedAt: p.publishedAt,
         })),
+        share,
       },
     );
+  }
+
+  /**
+   * Returns the public share URL + PIN to print on the PDF cover. Returns
+   * undefined when the report has never been shared — the cover section
+   * is skipped in that case. Legacy reports that have a shareToken but
+   * no stored sharePin (pre-this-change) show URL only.
+   */
+  private buildShareInfo(report: {
+    shareToken?: string;
+    sharePin?: string;
+  }): { url: string; pin?: string } | undefined {
+    if (!report.shareToken) return undefined;
+    const webBase = (
+      this.configSvc.get<string>('PUBLIC_WEB_URL') || 'http://localhost:4200'
+    ).replace(/\/+$/, '');
+    return {
+      url: `${webBase}/r/${report.shareToken}`,
+      pin: report.sharePin,
+    };
   }
 
   /**

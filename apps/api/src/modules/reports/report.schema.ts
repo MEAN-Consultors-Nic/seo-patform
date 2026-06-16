@@ -97,6 +97,15 @@ export class Report {
   @Prop()
   sharePinHash?: string;
 
+  /**
+   * Raw PIN. Kept so the cover page of the generated PDF can display
+   * "View live report → URL + PIN" without forcing the user to copy the
+   * PIN by hand every time. The hashed version above is still the
+   * authoritative one used to verify unlock attempts.
+   */
+  @Prop()
+  sharePin?: string;
+
   @Prop({ default: 0 })
   pinAttempts!: number;
 
