@@ -773,13 +773,33 @@ export class ReportsService {
     return doc;
   }
 
+  /**
+   * Sanitizes rich-text/plain content before it lands in Mongo or in a
+   * rendered PDF/public report.
+   *  - Converts &nbsp; and the literal U+00A0 to regular spaces. Claude
+   *    Desktop and similar apps insert &nbsp; between every word when
+   *    text is copied, fusing the whole paragraph into one unbreakable
+   *    run for the renderer.
+   *  - Replaces invisible chars (soft hyphens, zero-width chars, word
+   *    joiners, BOM, etc.) with a SPACE rather than removing them. With
+   *    plain removal, "SEO­friendly and" becomes "SEOfriendly and" —
+   *    fusing the two words. With space-replacement plus the multi-space
+   *    collapse below we get back "SEO friendly and".
+   *  - Collapses runs of regular spaces to a single space. Only horizontal
+   *    spaces are collapsed — newlines/tabs are preserved so paragraph
+   *    structure in Quill HTML stays intact.
+   *
+   * Regular hyphens and natural punctuation are untouched so normal
+   * editing/copy-paste keeps working.
+   */
   private stripInvisibleChars(value: string): string {
     if (typeof value !== 'string') return value;
     return value
-      .replace(/&shy;/gi, '')
+      .replace(/&shy;/gi, ' ')
       .replace(/&nbsp;/gi, ' ')
       .replace(ReportsService.NBSP_RE, ' ')
-      .replace(ReportsService.INVISIBLE_BREAKERS, '');
+      .replace(ReportsService.INVISIBLE_BREAKERS, ' ')
+      .replace(/  +/g, ' ');
   }
 
   private async findPriorCycleKpis(

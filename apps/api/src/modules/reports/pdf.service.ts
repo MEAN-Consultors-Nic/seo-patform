@@ -698,6 +698,9 @@ export class PdfService {
   /** Non-breaking hyphen — visually identical to "-" but keeps words intact. */
   private static readonly NON_BREAKING_HYPHEN = '‑';
 
+  /** Matches the literal U+00A0 (non-breaking space). */
+  private static readonly NBSP_LITERAL = new RegExp('\u00A0', 'g');
+
   private htmlToText(html: string | undefined | null): string {
     if (!html) return '';
     if (typeof html !== 'string') return '';
@@ -708,24 +711,34 @@ export class PdfService {
         .replace(/<br\s*\/?>/gi, '\n')
         // Strip all remaining tags
         .replace(/<[^>]+>/g, '')
-        // Decode common HTML entities
+        // Decode common HTML entities. nbsp/shy become space (rather than
+        // empty / non-breaking space) so they can't fuse adjacent words.
         .replace(/&nbsp;/g, ' ')
-        .replace(/&shy;/gi, '') // explicit soft hyphen entity
+        .replace(/&shy;/gi, ' ')
         .replace(/&amp;/g, '&')
         .replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>')
         .replace(/&quot;/g, '"')
         .replace(/&#39;/g, "'")
-        // Drop invisible characters — most importantly soft hyphens which
-        // sneak in from Word/Google Docs pastes and cause "posi-tion" /
-        // "per-formance" mid-word wraps in the PDF.
-        .replace(PdfService.INVISIBLE_BREAKERS, '')
+        // Normalize the literal U+00A0 too — pdfmake renders it with
+        // different metrics than a regular space, producing the
+        // "auto  generated" / "AI  powered" double-space artifact users
+        // see in pasted-from-Claude-Desktop content.
+        .replace(PdfService.NBSP_LITERAL, ' ')
+        // Replace invisible characters with a SPACE rather than removing
+        // them. With plain removal, content like "SEO­friendly and"
+        // (where ­ is a soft hyphen) renders as "SEOfriendly and" in the
+        // PDF — the two words fuse. Space-replacement plus the multi-
+        // space collapse below restores the word boundary. Most common
+        // sources: Word, Google Docs, and Claude Desktop pastes.
+        .replace(PdfService.INVISIBLE_BREAKERS, ' ')
         // Convert intra-word hyphens to non-breaking hyphens so compound
         // words like "high-priority" or "structured-data" never split
-        // across lines. Hyphens flanked by spaces (used as em-dash
-        // substitutes) are left alone so natural sentence breaks still
-        // work.
+        // across lines. Hyphens flanked by spaces (em-dash substitutes)
+        // are left alone so natural sentence breaks still work.
         .replace(/(\w)-(\w)/g, `$1${PdfService.NON_BREAKING_HYPHEN}$2`)
+        // Collapse runs of horizontal spaces to one (newlines preserved).
+        .replace(/[ \t]{2,}/g, ' ')
         // Collapse multiple blank lines
         .replace(/\n{3,}/g, '\n\n')
         .trim()

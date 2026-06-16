@@ -22,6 +22,63 @@ export class TasksService {
     private readonly clients: ClientsService,
   ) {}
 
+  /**
+   * Matches the family of invisible characters that travel with Word /
+   * Google Docs / Claude Desktop pastes and fuse adjacent words in the
+   * PDF: soft hyphens, zero-width spaces/joiners, bidi marks, word
+   * joiners, invisible math operators, BOM.
+   */
+  private static readonly INVISIBLE_BREAKERS = new RegExp(
+    '[' +
+      '\u00AD' + // SOFT HYPHEN
+      '\u200B\u200C\u200D' + // ZERO WIDTH SPACE / NON-JOINER / JOINER
+      '\u200E\u200F' + // LTR / RTL MARK
+      '\u2060\u2061\u2062\u2063\u2064' + // WORD JOINER + invisible math
+      '\uFEFF' + // BOM / ZERO WIDTH NO-BREAK SPACE
+      ']',
+    'g',
+  );
+
+  /** Literal non-breaking space (U+00A0). */
+  private static readonly NBSP_LITERAL = new RegExp('\u00A0', 'g');
+
+  /**
+   * Same sanitizer used in ReportsService.stripInvisibleChars. Kept local
+   * so the tasks module doesn't depend on reports. Converts &nbsp;/U+00A0
+   * to regular spaces, replaces invisible chars with space (so removing
+   * a soft hyphen between two words doesn't fuse them), and collapses
+   * runs of horizontal spaces. Newlines and tabs are preserved.
+   */
+  private cleanText<T extends string | undefined | null>(value: T): T {
+    if (typeof value !== 'string') return value;
+    return value
+      .replace(/&shy;/gi, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(TasksService.NBSP_LITERAL, ' ')
+      .replace(TasksService.INVISIBLE_BREAKERS, ' ')
+      .replace(/  +/g, ' ') as T;
+  }
+
+  /**
+   * Applies cleanText to every free-text field on a task DTO/patch:
+   * title, description, notes, and subtask titles. Returns a shallow
+   * clone so the caller's DTO isn't mutated.
+   */
+  private sanitizeTaskFields<T extends Partial<CreateTaskDto>>(dto: T): T {
+    const out: T = { ...dto };
+    if (typeof out.title === 'string') out.title = this.cleanText(out.title);
+    if (typeof out.description === 'string')
+      out.description = this.cleanText(out.description);
+    if (typeof out.notes === 'string') out.notes = this.cleanText(out.notes);
+    if (Array.isArray(out.subtasks)) {
+      out.subtasks = out.subtasks.map((s) => ({
+        ...s,
+        title: this.cleanText(s.title) as string,
+      }));
+    }
+    return out;
+  }
+
   private async ensureAccessToTask(
     id: string,
     user?: AuthenticatedUser,
@@ -68,8 +125,9 @@ export class TasksService {
 
   async create(dto: CreateTaskDto, user?: AuthenticatedUser) {
     if (user) await this.clients.assertAccess(dto.clientId, user);
+    const clean = this.sanitizeTaskFields(dto);
     return this.model.create({
-      ...dto,
+      ...clean,
       clientId: new Types.ObjectId(dto.clientId),
       cycleId: new Types.ObjectId(dto.cycleId),
     });
@@ -77,7 +135,8 @@ export class TasksService {
 
   async update(id: string, dto: UpdateTaskDto, user?: AuthenticatedUser) {
     await this.ensureAccessToTask(id, user);
-    const patch: Record<string, unknown> = { ...dto };
+    const clean = this.sanitizeTaskFields(dto);
+    const patch: Record<string, unknown> = { ...clean };
     if (dto.clientId) patch.clientId = new Types.ObjectId(dto.clientId);
     if (dto.cycleId) patch.cycleId = new Types.ObjectId(dto.cycleId);
     if (dto.status === 'completed') {
@@ -118,7 +177,14 @@ export class TasksService {
     const updated = await this.model
       .findByIdAndUpdate(
         id,
-        { $push: { subtasks: { title: subtask.title, done: !!subtask.done } } },
+        {
+          $push: {
+            subtasks: {
+              title: this.cleanText(subtask.title) ?? '',
+              done: !!subtask.done,
+            },
+          },
+        },
         { new: true },
       )
       .lean()
