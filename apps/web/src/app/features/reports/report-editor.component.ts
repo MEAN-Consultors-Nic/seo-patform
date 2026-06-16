@@ -311,25 +311,39 @@ interface KpiGroup {
                   KPIs with a previous period are compared automatically and show a green/red arrow.
                 </p>
               </div>
-              <div class="flex items-center gap-2">
-                <select class="input input-sm text-xs"
-                        [ngModel]="pullRangePreset()"
-                        (ngModelChange)="setPullRangePreset($event)">
-                  @for (opt of pullRangeOptions; track opt.value) {
-                    <option [value]="opt.value">{{ opt.label }}</option>
-                  }
-                </select>
-                <button class="btn-secondary text-xs"
-                        type="button"
-                        (click)="pullKpisFromGoogle()"
-                        [disabled]="pullingKpis() || !clientId() || !cycleId()"
-                        title="Fetch KPIs from Google Search Console + Google Analytics for the selected range.">
-                  @if (pullingKpis()) {
-                    <span class="inline-flex items-center gap-1.5"><span class="spinner" style="width:10px;height:10px;"></span> Pulling…</span>
-                  } @else {
-                    ⚡ Pull KPIs from Google
-                  }
-                </button>
+              <div class="flex flex-col items-end gap-1.5">
+                <div class="flex items-center gap-2">
+                  <select class="input input-sm text-xs"
+                          [ngModel]="pullRangePreset()"
+                          (ngModelChange)="setPullRangePreset($event)">
+                    @for (opt of pullRangeOptions(); track opt.value) {
+                      <option [value]="opt.value">{{ opt.label }}</option>
+                    }
+                  </select>
+                  <button class="btn-secondary text-xs"
+                          type="button"
+                          (click)="pullKpisFromGoogle()"
+                          [disabled]="pullingKpis() || !clientId() || !cycleId()"
+                          title="Fetch KPIs from Google Search Console + Google Analytics for the selected range.">
+                    @if (pullingKpis()) {
+                      <span class="inline-flex items-center gap-1.5"><span class="spinner" style="width:10px;height:10px;"></span> Pulling…</span>
+                    } @else {
+                      ⚡ Pull KPIs from Google
+                    }
+                  </button>
+                </div>
+                @if (pullRangePreview(); as pre) {
+                  <div class="text-[11px] text-ink-500">
+                    Will pull <strong class="text-ink-700">{{ pre.from }}</strong>
+                    → <strong class="text-ink-700">{{ pre.to }}</strong>
+                    ({{ pre.days }} day{{ pre.days === 1 ? '' : 's' }})
+                  </div>
+                }
+                @if (pullHasGscLagPre() && !pullingKpis()) {
+                  <div class="text-[11px] text-warning-500">
+                    ⚠ GSC has a ~2-day lag — the last 1–2 days of this range may come back empty.
+                  </div>
+                }
               </div>
             </div>
 
@@ -899,13 +913,75 @@ export class ReportEditorComponent implements OnInit {
   pullRangeUsed = signal<{ from: string; to: string; days: number } | null>(null);
   pullHasRecentDates = signal(false);
 
-  pullRangeOptions = [
-    { value: 'cycle', label: 'This cycle' },
-    { value: 'last7', label: 'Last 7 days' },
-    { value: 'last28', label: 'Last 28 days' },
-    { value: 'lastCycle', label: 'Previous cycle' },
-    { value: 'custom', label: 'Custom range' },
-  ] as const;
+  /**
+   * Dropdown options for the KPI pull range. Labels embed the actual
+   * resolved dates so the user can see what each option will pull
+   * without having to click and check. Computed because the spans
+   * depend on the currently selected cycle.
+   */
+  pullRangeOptions = computed(() => {
+    const cycle = this.cycles().find((c) => c._id === this.cycleId());
+    const cycleLabel = cycle
+      ? this.shortRange(cycle.startDate, cycle.endDate)
+      : '';
+    const prev = this.resolvePullRange('lastCycle');
+    const last7 = this.resolvePullRange('last7');
+    const last28 = this.resolvePullRange('last28');
+    return [
+      {
+        value: 'cycle' as const,
+        label: cycleLabel
+          ? `This report's cycle (${cycleLabel})`
+          : "This report's cycle",
+      },
+      {
+        value: 'last7' as const,
+        label: last7
+          ? `Last 7 days (${this.shortRange(last7.from, last7.to)})`
+          : 'Last 7 days',
+      },
+      {
+        value: 'last28' as const,
+        label: last28
+          ? `Last 28 days (${this.shortRange(last28.from, last28.to)})`
+          : 'Last 28 days',
+      },
+      {
+        value: 'lastCycle' as const,
+        label: prev
+          ? `Previous cycle (${this.shortRange(prev.from, prev.to)})`
+          : 'Previous cycle (none yet)',
+      },
+      { value: 'custom' as const, label: 'Custom range…' },
+    ];
+  });
+
+  /**
+   * The from/to that *would* be pulled with the currently selected preset,
+   * shown to the user before they click Pull. Returns null for `custom`
+   * which has its own dedicated date inputs.
+   */
+  pullRangePreview = computed(() => {
+    const preset = this.pullRangePreset();
+    if (preset === 'custom') return null;
+    const range = this.resolvePullRange(preset);
+    if (!range) return null;
+    return {
+      from: range.from,
+      to: range.to,
+      days: this.daysBetween(range.from, range.to),
+    };
+  });
+
+  /**
+   * GSC has a ~2-day processing lag. When the selected range ends within
+   * that window, surface a pre-warning next to the Pull button so the user
+   * knows the last 1–2 days may come back empty.
+   */
+  pullHasGscLagPre = computed(() => {
+    const p = this.pullRangePreview();
+    return !!p && this.isRecent(p.to);
+  });
 
   cycleTasks = signal<Task[]>([]);
   completedTasks = computed(() =>
@@ -1123,6 +1199,36 @@ export class ReportEditorComponent implements OnInit {
     this.sharePin.set(null);
     this.pinCopied.set(false);
     this.copied.set(false);
+    this.maybeAutoPullKpis(r);
+  }
+
+  /** Cycles for which we've already triggered an auto-pull this session. */
+  private autoPulledFor = new Set<string>();
+
+  /**
+   * On first load of a report whose cycle has already ended, automatically
+   * trigger a KPI pull from Google for the report's own date range. Skipped
+   * when the report already has any KPI values stored (so we never overwrite
+   * the user's work) and skipped for cycles that haven't ended yet. A short
+   * defer lets the cycles list signal settle before we look it up.
+   */
+  private maybeAutoPullKpis(r: Report | null) {
+    setTimeout(() => {
+      const cycleId = this.cycleId();
+      if (!cycleId || this.autoPulledFor.has(cycleId)) return;
+      const stored = r?.kpis ?? {};
+      const hasAnyKpi = Object.values(stored).some(
+        (v) => typeof v === 'number' && !Number.isNaN(v) && v !== 0,
+      );
+      if (hasAnyKpi) return;
+      const cycle = this.cycles().find((c) => c._id === cycleId);
+      if (!cycle) return;
+      const endsAt = new Date(cycle.endDate).getTime();
+      if (endsAt > Date.now()) return;
+      this.autoPulledFor.add(cycleId);
+      this.pullRangePreset.set('cycle');
+      this.pullKpisFromGoogle();
+    }, 250);
   }
 
   async share() {
@@ -1605,6 +1711,24 @@ export class ReportEditorComponent implements OnInit {
     const target = new Date(`${iso}T00:00:00Z`).getTime();
     const twoDaysAgo = Date.now() - 2 * 86_400_000;
     return target >= twoDaysAgo;
+  }
+
+  /**
+   * Human-readable short range like "Jun 1 – 15" (same year/month) or
+   * "May 31 – Jun 14" (spanning months). Used inside dropdown labels.
+   */
+  private shortRange(from: Date | string, to: Date | string): string {
+    const a = new Date(typeof from === 'string' ? from : from.toISOString());
+    const b = new Date(typeof to === 'string' ? to : to.toISOString());
+    const mon = (d: Date) =>
+      d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
+    const aMon = mon(a);
+    const bMon = mon(b);
+    const aDay = a.getUTCDate();
+    const bDay = b.getUTCDate();
+    return aMon === bMon
+      ? `${aMon} ${aDay}–${bDay}`
+      : `${aMon} ${aDay} – ${bMon} ${bDay}`;
   }
 
   save() {
