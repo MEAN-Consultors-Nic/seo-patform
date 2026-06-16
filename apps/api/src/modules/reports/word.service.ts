@@ -157,10 +157,15 @@ export class WordService {
       : DEFAULT_LAYOUT.map((k) => ({ key: k, visible: true }));
 
     let counter = 0;
+    const num = () => String(++counter).padStart(2, '0');
     for (const section of layout) {
       if (!section.visible) continue;
-      const blocks = this.renderSection(section.key, ++counter, report, ctx);
-      for (const b of blocks) children.push(b);
+      const body = this.renderSectionBody(section.key, report, ctx);
+      if (!body.length) continue;
+      children.push(
+        this.sectionHeader(num(), SECTION_LABELS[section.key]),
+        ...body,
+      );
     }
 
     const doc = new Document({
@@ -189,37 +194,42 @@ export class WordService {
     return Packer.toBuffer(doc);
   }
 
-  private renderSection(
+  /**
+   * Builds just the body of a section (no header). Returns an empty
+   * array when the section has nothing meaningful to render — the caller
+   * skips the whole section (header and counter) when that happens, so
+   * the Word doc never contains "No content registered" placeholders or
+   * gaps in section numbering.
+   */
+  private renderSectionBody(
     key: ReportSectionKey,
-    num: number,
     report: Report,
     ctx: WordContext,
   ): (Paragraph | Table)[] {
-    const label = SECTION_LABELS[key];
-    const out: (Paragraph | Table)[] = [this.sectionHeader(num, label)];
     switch (key) {
       case 'executive-summary':
-        out.push(...this.richTextBlock(report.executiveSummary));
-        break;
+        return this.richTextBlock(report.executiveSummary);
       case 'key-metrics':
-        out.push(this.kpisTable(report));
-        break;
-      case 'search-rankings':
-        if (ctx.keywords.length) out.push(this.keywordsTable(ctx.keywords));
+        return this.hasAnyKpi(report) ? [this.kpisTable(report)] : [];
+      case 'search-rankings': {
+        const body: (Paragraph | Table)[] = [];
+        if (ctx.keywords.length) body.push(this.keywordsTable(ctx.keywords));
         if (ctx.gainers.length || ctx.losers.length)
-          out.push(this.movementsTable(ctx.gainers, ctx.losers));
-        break;
-      case 'actions-taken':
-        out.push(
-          ...this.tasksList(
-            ctx.tasks.filter((t) => t.status === 'completed'),
-            'No actions completed in this cycle.',
-          ),
-        );
-        if (ctx.contentPublished?.length) {
-          out.push(this.heading3('Content Published'));
-          out.push(
-            ...ctx.contentPublished.map(
+          body.push(this.movementsTable(ctx.gainers, ctx.losers));
+        return body;
+      }
+      case 'actions-taken': {
+        const completed = ctx.tasks.filter((t) => t.status === 'completed');
+        const published = ctx.contentPublished ?? [];
+        if (!completed.length && !published.length) return [];
+        const body: (Paragraph | Table)[] = [];
+        if (completed.length) {
+          body.push(...this.tasksList(completed));
+        }
+        if (published.length) {
+          body.push(this.heading3('Content Published'));
+          body.push(
+            ...published.map(
               (p) =>
                 new Paragraph({
                   numbering: { reference: 'bullets', level: 0 },
@@ -228,13 +238,17 @@ export class WordService {
             ),
           );
         }
-        break;
-      case 'next-period-plan':
-        out.push(...this.richTextBlock(report.nextPeriodPlan));
-        if (ctx.contentIdeas?.length) {
-          out.push(this.heading3('Content Pipeline'));
-          out.push(
-            ...ctx.contentIdeas.map(
+        return body;
+      }
+      case 'next-period-plan': {
+        const ideas = ctx.contentIdeas ?? [];
+        const text = this.richTextBlock(report.nextPeriodPlan);
+        if (!text.length && !ideas.length) return [];
+        const body: (Paragraph | Table)[] = [...text];
+        if (ideas.length) {
+          body.push(this.heading3('Content Pipeline'));
+          body.push(
+            ...ideas.map(
               (p) =>
                 new Paragraph({
                   numbering: { reference: 'bullets', level: 0 },
@@ -243,33 +257,37 @@ export class WordService {
             ),
           );
         }
-        break;
+        return body;
+      }
       case 'backlinks-profile':
-        out.push(...this.backlinksBlock(ctx.backlinks));
-        break;
+        return ctx.backlinks.total > 0 ? this.backlinksBlock(ctx.backlinks) : [];
       case 'client-blockers':
-        out.push(...this.richTextBlock(report.clientBlockers));
-        break;
+        return this.richTextBlock(report.clientBlockers);
       case 'final-considerations':
-        out.push(...this.richTextBlock(report.finalConsiderations));
-        break;
+        return this.richTextBlock(report.finalConsiderations);
       case 'locations-performance':
         // Not rendered in Word v1
-        out.pop();
-        break;
+        return [];
     }
-    return out;
+  }
+
+  /** True when at least one stored KPI is a non-zero finite number. */
+  private hasAnyKpi(report: Report): boolean {
+    const k = (report.kpis || {}) as Record<string, unknown>;
+    return Object.values(k).some(
+      (v) => typeof v === 'number' && Number.isFinite(v) && v !== 0,
+    );
   }
 
   // --- Building blocks ----------------------------------------------------
 
-  private sectionHeader(num: number, label: string): Paragraph {
+  private sectionHeader(num: string, label: string): Paragraph {
     return new Paragraph({
       heading: HeadingLevel.HEADING_1,
       spacing: { before: 360, after: 120 },
       children: [
         new TextRun({
-          text: `${String(num).padStart(2, '0')}  ${label}`,
+          text: `${num}  ${label}`,
           color: INK_900,
           bold: true,
           size: 28,
@@ -327,29 +345,13 @@ export class WordService {
   }
 
   /**
-   * Decomposes Quill-style HTML into a list of Word paragraphs. Each
-   * block-level tag becomes a paragraph; inline <strong>/<em>/<u> runs
-   * become styled TextRuns. Anything beyond that is flattened to plain
-   * text. Empty input emits a single placeholder paragraph so the
-   * section never reads "missing".
+   * Decomposes Quill-style HTML into a list of Word paragraphs. Returns
+   * an empty array when the input has no real content so the caller can
+   * skip the whole section instead of emitting a placeholder.
    */
   private richTextBlock(html: unknown): Paragraph[] {
     const clean = this.htmlToPlain(html);
-
-    if (!clean) {
-      return [
-        new Paragraph({
-          children: [
-            new TextRun({
-              text: '— No content registered for this section.',
-              color: INK_700,
-              italics: true,
-            }),
-          ],
-        }),
-      ];
-    }
-
+    if (!clean) return [];
     return clean
       .split(/\n+/)
       .filter((p) => p.trim())
@@ -495,19 +497,8 @@ export class WordService {
     });
   }
 
-  private tasksList(
-    tasks: WordContext['tasks'],
-    emptyMsg: string,
-  ): Paragraph[] {
-    if (!tasks.length) {
-      return [
-        new Paragraph({
-          children: [
-            new TextRun({ text: emptyMsg, color: INK_700, italics: true }),
-          ],
-        }),
-      ];
-    }
+  private tasksList(tasks: WordContext['tasks']): Paragraph[] {
+    if (!tasks.length) return [];
     const out: Paragraph[] = [];
     for (const t of tasks) {
       out.push(
