@@ -90,11 +90,29 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
       @if (cycle(); as c) {
         <div class="card flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
           <div class="min-w-0">
-            <div class="text-xs font-semibold text-ink-500 uppercase tracking-wider">Current cycle</div>
-            <div class="flex items-baseline gap-2 mt-0.5 flex-wrap">
-              <span class="text-lg font-bold text-ink-900">{{ c.label }}</span>
+            <div class="text-xs font-semibold text-ink-500 uppercase tracking-wider mb-1">
+              {{ isCurrentCycle() ? 'Current cycle' : 'Viewing cycle' }}
+            </div>
+            <div class="flex items-baseline gap-2 flex-wrap">
+              <select
+                class="input input-sm font-bold text-base text-ink-900 max-w-xs"
+                [ngModel]="cycle()?._id"
+                (ngModelChange)="onCycleChange($event)"
+                [disabled]="!cycles().length">
+                @for (opt of cycles(); track opt._id) {
+                  <option [value]="opt._id">
+                    {{ opt.label }} ({{ opt.startDate | date: 'MMM d' }} – {{ opt.endDate | date: 'MMM d, y' }})
+                  </option>
+                }
+              </select>
               <span class="badge-neutral capitalize">{{ c.status }}</span>
-              <span class="text-xs text-ink-500">closes {{ c.endDate | date: 'mediumDate' }}</span>
+              @if (!isCurrentCycle()) {
+                <button type="button"
+                        class="text-xs text-brand-600 hover:underline"
+                        (click)="jumpToCurrentCycle()">
+                  ← back to current
+                </button>
+              }
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-3 sm:gap-4 text-sm">
@@ -169,7 +187,9 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
       @if (filteredTasks().length === 0) {
         <div class="card text-center py-12 text-ink-400 italic">
           @if (tasks().length === 0) {
-            No tasks in this cycle yet. Add one above or use "Generate cycle tasks" in the Dashboard.
+            No tasks in {{ isCurrentCycle() ? 'this cycle' : 'cycle ' + (cycle()?.label || '') }} yet. Add one above
+            @if (isCurrentCycle()) { or use "Generate cycle tasks" in the Dashboard }
+            — or switch to a different cycle using the selector above.
           } @else {
             No tasks match the current filter.
           }
@@ -594,6 +614,12 @@ export class ClientTasksTab implements OnChanges {
   private sanitizer = inject(SanitizerService);
 
   cycle = signal<Cycle | null>(null);
+  cycles = signal<Cycle[]>([]);
+  /** Id of the cycle marked as "current" — used to label the selector. */
+  currentCycleId = signal<string | null>(null);
+  isCurrentCycle = computed(
+    () => this.cycle()?._id != null && this.cycle()?._id === this.currentCycleId(),
+  );
   tasks = signal<Task[]>([]);
   statusFilter = signal<StatusFilter>('all');
   searchQuery = signal('');
@@ -698,13 +724,46 @@ export class ClientTasksTab implements OnChanges {
   ]);
 
   ngOnChanges() {
+    // Load the full list so the user can switch between cycles (the common
+    // case: edit a closed cycle's tasks to finalize the report after the
+    // new cycle has already started). Default the dropdown to the current
+    // cycle so this remains a no-op for the usual workflow.
+    this.cyclesSvc.list().subscribe({
+      next: (all) =>
+        this.cycles.set(
+          all
+            .slice()
+            .sort(
+              (a, b) =>
+                new Date(b.startDate).getTime() -
+                new Date(a.startDate).getTime(),
+            ),
+        ),
+      error: () => null,
+    });
     this.cyclesSvc.current().subscribe({
       next: (c) => {
-        this.cycle.set(c);
-        this.loadTasks();
+        this.currentCycleId.set(c?._id ?? null);
+        if (!this.cycle()) {
+          this.cycle.set(c);
+          this.loadTasks();
+        }
       },
       error: () => null,
     });
+  }
+
+  onCycleChange(cycleId: string) {
+    const c = this.cycles().find((x) => x._id === cycleId);
+    if (!c) return;
+    this.cycle.set(c);
+    this.tasks.set([]);
+    this.loadTasks();
+  }
+
+  jumpToCurrentCycle() {
+    const id = this.currentCycleId();
+    if (id) this.onCycleChange(id);
   }
 
   loadTasks() {
