@@ -65,6 +65,15 @@ const VARIATION_SELECTORS = new RegExp(
 );
 
 /**
+ * Private-use marker used as a temporary placeholder while sanitizeText
+ * decides whether each invisible run should collapse to a space (between
+ * two word chars) or to nothing (next to punctuation/whitespace).
+ * Picked from the BMP private-use area so it can't collide with any
+ * legitimate user input.
+ */
+const MARKER = '\uE000';
+
+/**
  * Applies the full normalization pipeline. Safe for any value type — if
  * the input isn't a string, it's returned untouched so callers can use it
  * directly inside optional-field assignments.
@@ -73,12 +82,22 @@ export function sanitizeText<T extends string | undefined | null>(
   value: T,
 ): T {
   if (typeof value !== 'string') return value;
+  // Stage 1: stamp every invisible-breaker run with a single private-use
+  // marker so we can decide what to replace it with based on context.
+  // Stage 2: a marker BETWEEN two word chars becomes a single space
+  // (preserves word boundaries when invisibles replaced a real space).
+  // Stage 3: any other marker — adjacent to punctuation like "-" or to
+  // existing whitespace — is removed without inserting a space, so
+  // compound words like "non-SEO-friendly" don't grow to "non - SEO -
+  // friendly" just because the source had ZWSPs flanking the hyphens.
   return value
     .replace(/&nbsp;/gi, ' ')
-    .replace(/&shy;/gi, ' ')
+    .replace(/&shy;/gi, MARKER)
     .replace(NBSP_FAMILY, ' ')
-    .replace(INVISIBLE_BREAKERS, ' ')
+    .replace(INVISIBLE_BREAKERS, MARKER)
     .replace(VARIATION_SELECTORS, '')
+    .replace(/(\w)\uE000+(\w)/g, '$1 $2')
+    .replace(/\uE000+/g, '')
     .replace(/  +/g, ' ') as T;
 }
 
