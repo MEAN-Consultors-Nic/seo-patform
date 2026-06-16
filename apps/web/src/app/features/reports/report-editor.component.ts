@@ -65,6 +65,9 @@ interface KpiGroup {
             <button class="btn-secondary text-xs sm:text-sm" (click)="downloadPdf()" [disabled]="!ready() || downloading()">
               ⬇
             </button>
+            <button class="btn-secondary text-xs sm:text-sm" (click)="downloadWord()" [disabled]="!ready() || downloadingWord()" title="Download as Microsoft Word (.docx)">
+              {{ downloadingWord() ? '…' : '⬇ Word' }}
+            </button>
             <button class="btn-primary text-xs sm:text-sm" (click)="share()" [disabled]="!ready() || sharing()">
               {{ sharing() ? '…' : '🔗 Share' }}
             </button>
@@ -838,6 +841,7 @@ export class ReportEditorComponent implements OnInit {
   cycleId = signal<string>('');
   report = signal<Report | null>(null);
   downloading = signal(false);
+  downloadingWord = signal(false);
   pdfError = signal<string | null>(null);
   saving = signal(false);
   saveMessage = signal<string | null>(null);
@@ -1864,6 +1868,39 @@ export class ReportEditorComponent implements OnInit {
       error: (err) => {
         this.downloading.set(false);
         this.pdfError.set(err?.error?.message || 'Error downloading the PDF');
+      },
+    });
+  }
+
+  async downloadWord() {
+    if (!this.ready()) return;
+    this.pdfError.set(null);
+    this.downloadingWord.set(true);
+
+    const saved = await this.ensureReportSaved();
+    if (!saved) {
+      this.downloadingWord.set(false);
+      this.pdfError.set('Could not save the report before downloading.');
+      return;
+    }
+
+    this.reportsSvc.wordBlob(this.clientId(), this.cycleId()).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const clientName = this.clients().find((c) => c._id === this.clientId())?.name || 'report';
+        const cycleLabel = this.cycles().find((c) => c._id === this.cycleId())?.label || '';
+        a.download = `${clientName}-${cycleLabel}.docx`.replace(/\s+/g, '_');
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        this.downloadingWord.set(false);
+      },
+      error: (err) => {
+        this.downloadingWord.set(false);
+        this.pdfError.set(err?.error?.message || 'Error downloading the Word file');
       },
     });
   }

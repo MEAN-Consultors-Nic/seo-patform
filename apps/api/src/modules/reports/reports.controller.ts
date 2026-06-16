@@ -110,6 +110,26 @@ export class ReportsController {
     res.send(buf);
   }
 
+  @Get('word/:clientId/:cycleId')
+  async word(
+    @Param('clientId') clientId: string,
+    @Param('cycleId') cycleId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    await this.clients.assertAccess(clientId, user);
+    const buf = await this.reports.generateWord(clientId, cycleId);
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="report-${clientId}-${cycleId}.docx"`,
+    );
+    res.send(buf);
+  }
+
   // --- Share (auth required to manage) -------------------------------------
   @Post('share')
   async share(

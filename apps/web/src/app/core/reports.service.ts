@@ -52,6 +52,12 @@ export class ReportsService {
     });
   }
 
+  wordBlob(clientId: string, cycleId: string) {
+    return this.http.get(`${this.base}/reports/word/${clientId}/${cycleId}`, {
+      responseType: 'blob',
+    });
+  }
+
   share(clientId: string, cycleId: string) {
     return this.http.post<{
       shareToken: string;

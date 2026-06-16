@@ -5,6 +5,7 @@ import { Report, ReportSchema } from './report.schema';
 import { ReportsService } from './reports.service';
 import { ReportsController, PublicReportsController } from './reports.controller';
 import { PdfService } from './pdf.service';
+import { WordService } from './word.service';
 import { ClientsModule } from '../clients/clients.module';
 import { CyclesModule } from '../cycles/cycles.module';
 import { TasksModule } from '../tasks/tasks.module';
@@ -28,6 +29,6 @@ import { ContentModule } from '../content/content.module';
     ContentModule,
   ],
   controllers: [ReportsController, PublicReportsController],
-  providers: [ReportsService, PdfService],
+  providers: [ReportsService, PdfService, WordService],
 })
 export class ReportsModule {}

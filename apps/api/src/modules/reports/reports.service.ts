@@ -21,6 +21,7 @@ import {
 import { Report, ReportDocument } from './report.schema';
 import { UpsertReportDto } from './dto/upsert-report.dto';
 import { PdfService } from './pdf.service';
+import { WordService } from './word.service';
 import { ClientsService } from '../clients/clients.service';
 import { CyclesService } from '../cycles/cycles.service';
 import { TasksService } from '../tasks/tasks.service';
@@ -45,6 +46,7 @@ export class ReportsService {
     private readonly keywords: KeywordsService,
     private readonly backlinks: BacklinksService,
     private readonly pdf: PdfService,
+    private readonly word: WordService,
     private readonly jwt: JwtService,
     private readonly mail: MailService,
     private readonly appSettings: AppSettingsService,
@@ -986,6 +988,82 @@ export class ReportsService {
           currentPosition?: number;
           previousPosition?: number;
           currentRankingUrl?: string;
+          volume?: number;
+        }>,
+        gainers: movements.gainers,
+        losers: movements.losers,
+        backlinks: backlinksSummary,
+        layout,
+        contentIdeas: contentIdeas.map((p) => ({
+          title: p.title,
+          targetKeyword: p.targetKeyword,
+        })),
+        contentPublished: contentPublished.map((p) => ({
+          title: p.title,
+          targetKeyword: p.targetKeyword,
+          publishedUrl: p.publishedUrl,
+          publishedAt: p.publishedAt,
+        })),
+      },
+    );
+  }
+
+  /**
+   * Word (.docx) export. Honors the same Settings → Report Layout
+   * (section ordering + visibility) as the PDF, so a customer's PDF
+   * and Word file are structurally aligned. The cover image is embedded
+   * inline at the top of the document.
+   */
+  async generateWord(clientId: string, cycleId: string): Promise<Buffer> {
+    const [
+      client,
+      cycle,
+      report,
+      tasks,
+      keywords,
+      movements,
+      backlinksSummary,
+      layout,
+      contentIdeas,
+    ] = await Promise.all([
+      this.clients.findOne(clientId),
+      this.cycles.findOne(cycleId),
+      this.findOneByCycle(clientId, cycleId),
+      this.tasks.findAll({ clientId, cycleId }),
+      this.keywords.byClient(clientId),
+      this.keywords.movements(clientId),
+      this.backlinks.summary(clientId),
+      this.appSettings.getReportLayout(),
+      this.content.list({ clientId, status: 'idea' }),
+    ]);
+    if (!report)
+      throw new NotFoundException(
+        'Report for that client/cycle does not exist yet. Save it first.',
+      );
+    const contentPublished = await this.content.publishedInRange(
+      clientId,
+      new Date(cycle.startDate),
+      new Date(cycle.endDate),
+    );
+    const reportForWord = await this.applyKpisPreviousFallback(report, client);
+    return this.word.generate(
+      client as unknown as ClientType,
+      cycle as unknown as CycleType,
+      reportForWord as unknown as ReportType,
+      {
+        tasks: tasks as unknown as Array<{
+          title: string;
+          category: string;
+          status: string;
+          priority: string;
+          notes?: string;
+          description?: string;
+        }>,
+        keywords: keywords as unknown as Array<{
+          text: string;
+          group?: string;
+          currentPosition?: number;
+          previousPosition?: number;
           volume?: number;
         }>,
         gainers: movements.gainers,
