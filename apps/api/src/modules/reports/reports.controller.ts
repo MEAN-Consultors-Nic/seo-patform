@@ -14,7 +14,7 @@ import { ReportsService } from './reports.service';
 import { UpsertReportDto } from './dto/upsert-report.dto';
 import { Public } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { AuthenticatedUser } from '../auth/roles.guard';
+import { AuthenticatedUser, Roles } from '../auth/roles.guard';
 import { ClientsService } from '../clients/clients.service';
 
 @Controller('reports')
@@ -79,6 +79,18 @@ export class ReportsController {
   ) {
     await this.clients.assertAccess(body.clientId, user);
     return this.reports.autoCompose(body.clientId, body.cycleId);
+  }
+
+  /**
+   * One-shot DB cleanup that re-saves every report and task through the
+   * shared text sanitizer. Use this after the sanitizer is updated or
+   * when legacy contamination needs to be purged in bulk. Restricted to
+   * root since it touches every doc and is intended to run manually.
+   */
+  @Post('cleanup-text')
+  @Roles('root')
+  async cleanupText() {
+    return this.reports.cleanupAllText();
   }
 
   @Get('pdf/:clientId/:cycleId')

@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { TaskAttachment } from '@seo/shared';
+import { TaskAttachment, sanitizeText } from '@seo/shared';
 import { Task, TaskDocument } from './task.schema';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -23,40 +23,13 @@ export class TasksService {
   ) {}
 
   /**
-   * Matches the family of invisible characters that travel with Word /
-   * Google Docs / Claude Desktop pastes and fuse adjacent words in the
-   * PDF: soft hyphens, zero-width spaces/joiners, bidi marks, word
-   * joiners, invisible math operators, BOM.
-   */
-  private static readonly INVISIBLE_BREAKERS = new RegExp(
-    '[' +
-      '\u00AD' + // SOFT HYPHEN
-      '\u200B\u200C\u200D' + // ZERO WIDTH SPACE / NON-JOINER / JOINER
-      '\u200E\u200F' + // LTR / RTL MARK
-      '\u2060\u2061\u2062\u2063\u2064' + // WORD JOINER + invisible math
-      '\uFEFF' + // BOM / ZERO WIDTH NO-BREAK SPACE
-      ']',
-    'g',
-  );
-
-  /** Literal non-breaking space (U+00A0). */
-  private static readonly NBSP_LITERAL = new RegExp('\u00A0', 'g');
-
-  /**
-   * Same sanitizer used in ReportsService.stripInvisibleChars. Kept local
-   * so the tasks module doesn't depend on reports. Converts &nbsp;/U+00A0
-   * to regular spaces, replaces invisible chars with space (so removing
-   * a soft hyphen between two words doesn't fuse them), and collapses
-   * runs of horizontal spaces. Newlines and tabs are preserved.
+   * Same shared sanitizer used by ReportsService and PdfService. Strips
+   * the family of invisible/space-variant characters that travel with
+   * Word / Google Docs / Claude Desktop pastes and fuse adjacent words in
+   * the rendered report. See libs/shared/src/lib/text-sanitizer.ts.
    */
   private cleanText<T extends string | undefined | null>(value: T): T {
-    if (typeof value !== 'string') return value;
-    return value
-      .replace(/&shy;/gi, ' ')
-      .replace(/&nbsp;/gi, ' ')
-      .replace(TasksService.NBSP_LITERAL, ' ')
-      .replace(TasksService.INVISIBLE_BREAKERS, ' ')
-      .replace(/  +/g, ' ') as T;
+    return sanitizeText(value);
   }
 
   /**
@@ -121,6 +94,44 @@ export class TasksService {
     const task = await this.model.findById(id).lean().exec();
     if (!task) throw new NotFoundException(`Task ${id} not found`);
     return task;
+  }
+
+  /**
+   * One-shot bulk cleanup: walks every task, re-runs the shared sanitizer
+   * over title/description/notes/subtask titles, and writes back only the
+   * docs that actually changed. Returns a summary so the caller can show
+   * "X tasks scanned, Y cleaned" to the admin.
+   *
+   * Safe to re-run — a task whose fields are already clean stays untouched.
+   */
+  async cleanupAllText(): Promise<{ scanned: number; cleaned: number }> {
+    const tasks = await this.model.find({}).lean().exec();
+    let cleaned = 0;
+    for (const t of tasks) {
+      const set: Record<string, unknown> = {};
+      const title = sanitizeText(t.title || '');
+      if (title !== t.title) set.title = title;
+      if (typeof t.description === 'string') {
+        const d = sanitizeText(t.description);
+        if (d !== t.description) set.description = d;
+      }
+      if (typeof t.notes === 'string') {
+        const n = sanitizeText(t.notes);
+        if (n !== t.notes) set.notes = n;
+      }
+      if (Array.isArray(t.subtasks)) {
+        const next = t.subtasks.map((s) => ({
+          ...s,
+          title: sanitizeText(s.title || ''),
+        }));
+        const changed = next.some((s, i) => s.title !== t.subtasks![i].title);
+        if (changed) set.subtasks = next;
+      }
+      if (Object.keys(set).length === 0) continue;
+      await this.model.updateOne({ _id: t._id }, { $set: set }).exec();
+      cleaned++;
+    }
+    return { scanned: tasks.length, cleaned };
   }
 
   async create(dto: CreateTaskDto, user?: AuthenticatedUser) {

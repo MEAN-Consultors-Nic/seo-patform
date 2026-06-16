@@ -10,6 +10,7 @@ import {
   ReportKpis,
   ReportSectionConfig,
   ReportSectionKey,
+  sanitizeText,
 } from '@seo/shared';
 
 // --- Brand palette ----------------------------------------------------------
@@ -671,78 +672,34 @@ export class PdfService {
   }
 
   // --- Executive summary -----------------------------------------------------
-  // Strip HTML tags and decode common entities — for plain-text rendering in PDF.
-  /**
-   * Invisible characters pdfmake treats as soft break points but that users
-   * never see in their editor. Listed as explicit code points so the source
-   * file stays ASCII-only and the regex isn't sensitive to file encoding.
-   */
-  private static readonly INVISIBLE_BREAKERS = new RegExp(
-    `[${[
-      '­', // SOFT HYPHEN
-      '​', // ZERO WIDTH SPACE
-      '‌', // ZERO WIDTH NON-JOINER
-      '‍', // ZERO WIDTH JOINER
-      '‎', // LEFT-TO-RIGHT MARK
-      '‏', // RIGHT-TO-LEFT MARK
-      '⁠', // WORD JOINER
-      '⁡', // FUNCTION APPLICATION
-      '⁢', // INVISIBLE TIMES
-      '⁣', // INVISIBLE SEPARATOR
-      '⁤', // INVISIBLE PLUS
-      '﻿', // ZERO WIDTH NO-BREAK SPACE / BOM
-    ].join('')}]`,
-    'g',
-  );
 
   /** Non-breaking hyphen — visually identical to "-" but keeps words intact. */
-  private static readonly NON_BREAKING_HYPHEN = '‑';
+  private static readonly NON_BREAKING_HYPHEN = '\u2011';
 
-  /** Matches the literal U+00A0 (non-breaking space). */
-  private static readonly NBSP_LITERAL = new RegExp('\u00A0', 'g');
-
+  /**
+   * Strips HTML tags and decodes entities for plain-text rendering inside
+   * pdfmake. Runs the shared sanitizeText pipeline first so every flavour
+   * of invisible / Unicode-space contamination is normalized before tags
+   * are stripped, then converts intra-word hyphens to non-breaking hyphens
+   * so compound words ("high-priority", "structured-data") don't split
+   * across PDF lines.
+   */
   private htmlToText(html: string | undefined | null): string {
     if (!html) return '';
     if (typeof html !== 'string') return '';
-    return (
-      html
-        // Convert block tags to newlines
-        .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n')
-        .replace(/<br\s*\/?>/gi, '\n')
-        // Strip all remaining tags
-        .replace(/<[^>]+>/g, '')
-        // Decode common HTML entities. nbsp/shy become space (rather than
-        // empty / non-breaking space) so they can't fuse adjacent words.
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&shy;/gi, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        // Normalize the literal U+00A0 too — pdfmake renders it with
-        // different metrics than a regular space, producing the
-        // "auto  generated" / "AI  powered" double-space artifact users
-        // see in pasted-from-Claude-Desktop content.
-        .replace(PdfService.NBSP_LITERAL, ' ')
-        // Replace invisible characters with a SPACE rather than removing
-        // them. With plain removal, content like "SEO­friendly and"
-        // (where ­ is a soft hyphen) renders as "SEOfriendly and" in the
-        // PDF — the two words fuse. Space-replacement plus the multi-
-        // space collapse below restores the word boundary. Most common
-        // sources: Word, Google Docs, and Claude Desktop pastes.
-        .replace(PdfService.INVISIBLE_BREAKERS, ' ')
-        // Convert intra-word hyphens to non-breaking hyphens so compound
-        // words like "high-priority" or "structured-data" never split
-        // across lines. Hyphens flanked by spaces (em-dash substitutes)
-        // are left alone so natural sentence breaks still work.
-        .replace(/(\w)-(\w)/g, `$1${PdfService.NON_BREAKING_HYPHEN}$2`)
-        // Collapse runs of horizontal spaces to one (newlines preserved).
-        .replace(/[ \t]{2,}/g, ' ')
-        // Collapse multiple blank lines
-        .replace(/\n{3,}/g, '\n\n')
-        .trim()
-    );
+    return sanitizeText(html)
+      .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/(\w)-(\w)/g, `$1${PdfService.NON_BREAKING_HYPHEN}$2`)
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   private executiveSummaryBlock(report: Report) {

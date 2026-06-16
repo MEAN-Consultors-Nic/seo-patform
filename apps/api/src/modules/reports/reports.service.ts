@@ -16,6 +16,7 @@ import {
   Cycle as CycleType,
   Report as ReportType,
   ReportKpis,
+  sanitizeText,
 } from '@seo/shared';
 import { Report, ReportDocument } from './report.schema';
 import { UpsertReportDto } from './dto/upsert-report.dto';
@@ -706,49 +707,6 @@ export class ReportsService {
     return { kpisPrevious: null, kpisPreviousSource: null };
   }
 
-  /**
-   * Invisible characters that pdfmake (and rich-text editors) honor as
-   * line-break opportunities but that users never typed intentionally. Most
-   * commonly soft hyphens that travel with pastes from Word / Google Docs
-   * and break "position" into "posi-tion" in the rendered output.
-   *
-   * Declared inline so the source file stays ASCII-only.
-   */
-  private static readonly INVISIBLE_BREAKERS = new RegExp(
-    `[${[
-      '­', // SOFT HYPHEN (U+00AD)
-      '​', // ZERO WIDTH SPACE
-      '‌', // ZERO WIDTH NON-JOINER
-      '‍', // ZERO WIDTH JOINER
-      '‎', // LTR MARK
-      '‏', // RTL MARK
-      '⁠', // WORD JOINER
-      '⁡',
-      '⁢',
-      '⁣',
-      '⁤',
-      '﻿', // ZERO WIDTH NO-BREAK SPACE / BOM
-    ].join('')}]`,
-    'g',
-  );
-
-  /**
-   * Normalizes rich-text content before it hits Mongo.
-   *  - Removes invisible chars (soft hyphens, zero-width chars, BOM, etc.)
-   *    that travel with Word / Google Docs / Claude Desktop pastes and cause
-   *    mid-word line breaks in the rendered output.
-   *  - Converts non-breaking spaces (&nbsp; and the literal U+00A0) into
-   *    regular spaces. Claude Desktop and similar apps insert &nbsp;
-   *    between every word when text is copied, which fuses the whole
-   *    paragraph into a single unbreakable string — the browser then has
-   *    to break wherever it can, producing wraps like "im-pressions" and
-   *    "structured-\ndata" even though the underlying words are fine.
-   *
-   * Regular hyphens, tabs and newlines are intentionally preserved so the
-   * editor and copy/paste flows keep working naturally.
-   */
-  private static readonly NBSP_RE = new RegExp('\u00A0', 'g');
-
   private static readonly RICH_TEXT_FIELDS = [
     'executiveSummary',
     'findings',
@@ -758,48 +716,24 @@ export class ReportsService {
   ] as const;
 
   /**
-   * Read-time normalization: runs the same strip we do on save against any
-   * stored rich-text field, so legacy reports written before the save-time
-   * fix still render cleanly without forcing a re-save. Returns the input
-   * untouched (including null/undefined) so it composes safely.
+   * Read-time normalization. Runs the same sanitizer we use at save time
+   * across every rich-text field of a stored report, so legacy data with
+   * lingering invisibles still renders clean without forcing a re-save.
+   * Composes safely with null/undefined inputs.
    */
   private sanitizeReportRichText<T>(doc: T): T {
     if (!doc || typeof doc !== 'object') return doc;
     const obj = doc as Record<string, unknown>;
     for (const k of ReportsService.RICH_TEXT_FIELDS) {
       const v = obj[k];
-      if (typeof v === 'string') obj[k] = this.stripInvisibleChars(v);
+      if (typeof v === 'string') obj[k] = sanitizeText(v);
     }
     return doc;
   }
 
-  /**
-   * Sanitizes rich-text/plain content before it lands in Mongo or in a
-   * rendered PDF/public report.
-   *  - Converts &nbsp; and the literal U+00A0 to regular spaces. Claude
-   *    Desktop and similar apps insert &nbsp; between every word when
-   *    text is copied, fusing the whole paragraph into one unbreakable
-   *    run for the renderer.
-   *  - Replaces invisible chars (soft hyphens, zero-width chars, word
-   *    joiners, BOM, etc.) with a SPACE rather than removing them. With
-   *    plain removal, "SEO­friendly and" becomes "SEOfriendly and" —
-   *    fusing the two words. With space-replacement plus the multi-space
-   *    collapse below we get back "SEO friendly and".
-   *  - Collapses runs of regular spaces to a single space. Only horizontal
-   *    spaces are collapsed — newlines/tabs are preserved so paragraph
-   *    structure in Quill HTML stays intact.
-   *
-   * Regular hyphens and natural punctuation are untouched so normal
-   * editing/copy-paste keeps working.
-   */
+  /** Thin alias kept so the upsert call sites read naturally. */
   private stripInvisibleChars(value: string): string {
-    if (typeof value !== 'string') return value;
-    return value
-      .replace(/&shy;/gi, ' ')
-      .replace(/&nbsp;/gi, ' ')
-      .replace(ReportsService.NBSP_RE, ' ')
-      .replace(ReportsService.INVISIBLE_BREAKERS, ' ')
-      .replace(/  +/g, ' ');
+    return sanitizeText(value);
   }
 
   private async findPriorCycleKpis(
@@ -931,6 +865,38 @@ export class ReportsService {
       .exec();
     if (!prev.length) return [];
     return (prev[0].serviceAreasSnapshot as Array<Record<string, unknown>> | undefined) || [];
+  }
+
+  /**
+   * Bulk cleanup that re-runs the shared sanitizer across every report's
+   * rich-text fields AND delegates the same pass to TasksService for the
+   * task collection. Used after the sanitizer is upgraded so legacy
+   * contamination is purged in one admin-triggered pass.
+   */
+  async cleanupAllText(): Promise<{
+    reports: { scanned: number; cleaned: number };
+    tasks: { scanned: number; cleaned: number };
+  }> {
+    const docs = await this.model.find({}).lean().exec();
+    let cleaned = 0;
+    for (const d of docs) {
+      const set: Record<string, unknown> = {};
+      for (const k of ReportsService.RICH_TEXT_FIELDS) {
+        const v = (d as unknown as Record<string, unknown>)[k];
+        if (typeof v === 'string') {
+          const next = sanitizeText(v);
+          if (next !== v) set[k] = next;
+        }
+      }
+      if (Object.keys(set).length === 0) continue;
+      await this.model.updateOne({ _id: d._id }, { $set: set }).exec();
+      cleaned++;
+    }
+    const tasks = await this.tasks.cleanupAllText();
+    return {
+      reports: { scanned: docs.length, cleaned },
+      tasks,
+    };
   }
 
   async autoCompose(clientId: string, cycleId: string) {
