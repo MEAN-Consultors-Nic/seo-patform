@@ -3,7 +3,6 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
-  AutoPlanSummary,
   Client,
   Cycle,
   Task,
@@ -13,7 +12,10 @@ import {
 import { CyclesService } from '../../core/cycles.service';
 import { ClientsService } from '../../core/clients.service';
 import { TasksService } from '../../core/tasks.service';
-import { TimeBlocksService } from '../../core/time-blocks.service';
+import {
+  PullFromCalendarSummary,
+  TimeBlocksService,
+} from '../../core/time-blocks.service';
 import { WorkingHoursService } from '../../core/working-hours.service';
 
 interface DayColumn {
@@ -95,8 +97,11 @@ function weekdayLabel(iso: string): { weekday: string; label: string } {
         </div>
         <div class="flex items-center gap-2">
           <a routerLink="/settings/working-hours" class="btn-secondary">⚙ Working hours</a>
-          <button class="btn-primary" (click)="openAutoPlan()" [disabled]="!cycle()">
-            ⚡ Auto-plan cycle
+          <button class="btn-primary"
+                  (click)="runPullFromCalendar()"
+                  [disabled]="!cycle() || pulling()"
+                  title="Sync events from your connected Google Calendar into this cycle.">
+            {{ pulling() ? 'Pulling…' : '📅 Pull from Calendar' }}
           </button>
         </div>
       </header>
@@ -143,23 +148,46 @@ function weekdayLabel(iso: string): { weekday: string; label: string } {
         </div>
       </div>
 
-      @if (autoPlanResult(); as r) {
+      @if (pullResult(); as r) {
         <div class="card mb-4 border-l-4 border-positive-500 bg-positive-100/30 text-sm">
           <div class="font-semibold text-ink-900 mb-1">
-            ✓ Auto-plan complete · {{ r.created }} block(s) created
-            @if (r.removed) { · {{ r.removed }} previous replaced }
+            ✓ Pulled {{ r.totalEvents }} event(s) from Google Calendar
           </div>
           <div class="text-xs text-ink-600">
-            Scheduled {{ (r.totalMinutesScheduled / 60) | number: '1.1-1' }}h of
-            {{ (r.totalMinutesAvailable / 60) | number: '1.0-0' }}h available capacity.
+            {{ r.created }} block(s) created
+            @if (r.removed) { · {{ r.removed }} previous planned block(s) replaced }
+            @if (r.skippedKept) { · {{ r.skippedKept }} kept (in-progress / completed) }
           </div>
-          @if (r.warnings.length) {
-            <ul class="mt-2 text-xs text-warning-500 list-disc pl-5">
-              @for (w of r.warnings; track w) { <li>{{ w }}</li> }
-            </ul>
+          @if (r.unmatched.length) {
+            <div class="mt-2 text-xs text-warning-500">
+              <strong>{{ r.unmatched.length }} event(s) skipped — no matching client name in title:</strong>
+              <ul class="list-disc pl-5 mt-1">
+                @for (u of r.unmatched.slice(0, 6); track u.startsAt) {
+                  <li>{{ u.title }} <span class="text-ink-500">· {{ u.startsAt | date: 'short' }}</span></li>
+                }
+                @if (r.unmatched.length > 6) {
+                  <li class="text-ink-500">…and {{ r.unmatched.length - 6 }} more</li>
+                }
+              </ul>
+            </div>
           }
           <button class="text-[11px] text-ink-500 hover:text-ink-900 mt-2"
-                  (click)="autoPlanResult.set(null)">
+                  (click)="pullResult.set(null)">
+            Dismiss
+          </button>
+        </div>
+      }
+      @if (pullError(); as e) {
+        <div class="card mb-4 border-l-4 border-danger-500 bg-danger-100/30 text-sm">
+          <div class="font-semibold text-ink-900 mb-1">Pull failed</div>
+          <div class="text-xs text-ink-600">{{ e }}</div>
+          @if (e.includes('Calendar') || e.includes('Google')) {
+            <a routerLink="/settings/integrations" class="text-xs text-brand-600 underline mt-2 inline-block">
+              Connect Google Calendar →
+            </a>
+          }
+          <button class="text-[11px] text-ink-500 hover:text-ink-900 mt-2 block"
+                  (click)="pullError.set(null)">
             Dismiss
           </button>
         </div>
@@ -266,72 +294,6 @@ function weekdayLabel(iso: string): { weekday: string; label: string } {
         </div>
       }
 
-      <!-- Auto-plan confirm modal -->
-      @if (autoPlanModal()) {
-        <div class="fixed inset-0 bg-ink-900/60 z-50 flex items-center justify-center p-4"
-             (click)="autoPlanModal.set(false)">
-          <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6"
-               (click)="$event.stopPropagation()">
-            <h2 class="text-lg font-bold text-ink-900 mb-1">Auto-plan this cycle</h2>
-            <p class="text-sm text-ink-600 mb-4">
-              We will distribute your assigned client hours across the working days of
-              <strong>{{ cycle()?.label }}</strong>.
-            </p>
-
-            <div class="grid grid-cols-2 gap-3 mb-3">
-              <div>
-                <label class="label">From</label>
-                <input type="date" class="input"
-                       [min]="cycleStartIso()" [max]="cycleEndIso()"
-                       [(ngModel)]="autoPlanFromDate" />
-              </div>
-              <div>
-                <label class="label">To</label>
-                <input type="date" class="input"
-                       [min]="cycleStartIso()" [max]="cycleEndIso()"
-                       [(ngModel)]="autoPlanToDate" />
-              </div>
-            </div>
-
-            @if (autoPlanCompressed()) {
-              <div class="rounded-md bg-warning-100/60 border border-warning-500/30 text-xs text-warning-500 px-3 py-2 mb-4">
-                <strong>Compressed window.</strong> The planner will use variable-size
-                sessions (Tier A: 2h, B: 1.5h, C: 1.25h) to fit your client hours
-                into the remaining {{ autoPlanWorkingDays() }} working day(s).
-              </div>
-            } @else {
-              <div class="rounded-md bg-ink-50 border border-ink-200 text-xs text-ink-600 px-3 py-2 mb-4">
-                <strong>Full cycle.</strong> The planner will use equal-size slots
-                (2 morning + 2 afternoon sessions per day) with Tier A clients
-                always in the earliest slots.
-              </div>
-            }
-
-            <label class="flex items-start gap-2 text-sm text-ink-700 mb-4 cursor-pointer">
-              <input type="checkbox" [(ngModel)]="autoPlanReplace" class="mt-0.5" />
-              <span>
-                Wipe all planned blocks of this cycle before replanning
-                (in-progress and completed blocks are always kept).
-              </span>
-            </label>
-
-            <div class="flex items-center justify-between">
-              <button type="button"
-                      class="text-xs text-ink-500 hover:text-ink-900"
-                      (click)="resetAutoPlanDates()">
-                Reset dates
-              </button>
-              <div class="flex gap-2">
-                <button class="btn-secondary" (click)="autoPlanModal.set(false)">Cancel</button>
-                <button class="btn-primary" (click)="runAutoPlan()" [disabled]="autoPlanning()">
-                  {{ autoPlanning() ? 'Planning…' : 'Run auto-plan' }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      }
-
       <!-- Block editor modal -->
       @if (editor(); as e) {
         <div class="fixed inset-0 bg-ink-900/60 z-50 flex items-center justify-center p-4"
@@ -432,12 +394,9 @@ export class ScheduleComponent implements OnInit {
   weekStart = signal<string>('');
   nowOffsetMin = signal<number | null>(null);
 
-  autoPlanModal = signal(false);
-  autoPlanReplace = true;
-  autoPlanFromDate = '';
-  autoPlanToDate = '';
-  autoPlanning = signal(false);
-  autoPlanResult = signal<AutoPlanSummary | null>(null);
+  pulling = signal(false);
+  pullResult = signal<PullFromCalendarSummary | null>(null);
+  pullError = signal<string | null>(null);
 
   editor = signal<BlockEditor | null>(null);
   editingStatus = signal<string | null>(null);
@@ -652,90 +611,26 @@ export class ScheduleComponent implements OnInit {
     else this.weekStart.set(addDays(todayIso(), -((new Date().getDay() || 7) - 1)));
   }
 
-  // --- Auto-plan ------------------------------------------------------------
+  // --- Pull from Google Calendar -------------------------------------------
 
-  cycleStartIso(): string {
-    const c = this.cycle();
-    if (!c) return '';
-    const d = new Date(c.startDate);
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-  }
-
-  cycleEndIso(): string {
-    const c = this.cycle();
-    if (!c) return '';
-    const d = new Date(c.endDate);
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-  }
-
-  autoPlanCompressed(): boolean {
-    return (
-      (!!this.autoPlanFromDate && this.autoPlanFromDate !== this.cycleStartIso()) ||
-      (!!this.autoPlanToDate && this.autoPlanToDate !== this.cycleEndIso())
-    );
-  }
-
-  autoPlanWorkingDays(): number {
-    const wh = this.workingHours();
-    if (!wh) return 0;
-    const startIso = this.autoPlanFromDate || this.cycleStartIso();
-    const endIso = this.autoPlanToDate || this.cycleEndIso();
-    if (!startIso || !endIso || startIso > endIso) return 0;
-    const workDays = new Set(wh.workDays || []);
-    const daysOff = new Set(wh.daysOff || []);
-    const [sy, sm, sd] = startIso.split('-').map(Number);
-    const [ey, em, ed] = endIso.split('-').map(Number);
-    const start = new Date(Date.UTC(sy, sm - 1, sd));
-    const end = new Date(Date.UTC(ey, em - 1, ed));
-    let count = 0;
-    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-      const iso = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-      if (!workDays.has(d.getUTCDay())) continue;
-      if (daysOff.has(iso)) continue;
-      count++;
-    }
-    return count;
-  }
-
-  openAutoPlan() {
-    // Default the window to today→cycle end so the user sees a sensible range
-    // without losing the option to cover the full cycle.
-    const today = todayIso();
-    const start = this.cycleStartIso();
-    const end = this.cycleEndIso();
-    this.autoPlanFromDate = today > start && today <= end ? today : start;
-    this.autoPlanToDate = end;
-    this.autoPlanModal.set(true);
-  }
-
-  resetAutoPlanDates() {
-    this.autoPlanFromDate = this.cycleStartIso();
-    this.autoPlanToDate = this.cycleEndIso();
-  }
-
-  runAutoPlan() {
+  runPullFromCalendar() {
     const c = this.cycle();
     if (!c?._id) return;
-    const opts: { replace: boolean; fromDate?: string; toDate?: string } = {
-      replace: this.autoPlanReplace,
-    };
-    if (this.autoPlanFromDate && this.autoPlanFromDate !== this.cycleStartIso()) {
-      opts.fromDate = this.autoPlanFromDate;
-    }
-    if (this.autoPlanToDate && this.autoPlanToDate !== this.cycleEndIso()) {
-      opts.toDate = this.autoPlanToDate;
-    }
-    this.autoPlanning.set(true);
-    this.blocksSvc.autoPlan(c._id, opts).subscribe({
+    this.pulling.set(true);
+    this.pullResult.set(null);
+    this.pullError.set(null);
+    this.blocksSvc.pullFromCalendar(c._id).subscribe({
       next: (res) => {
-        this.autoPlanResult.set(res);
-        this.autoPlanning.set(false);
-        this.autoPlanModal.set(false);
+        this.pullResult.set(res);
+        this.pulling.set(false);
         this.loadCycleData(c._id!);
       },
       error: (err) => {
-        this.autoPlanning.set(false);
-        alert(err?.error?.message || 'Auto-plan failed');
+        this.pulling.set(false);
+        this.pullError.set(
+          err?.error?.message ||
+            'Could not pull events from Google Calendar. Make sure Google Calendar is connected in Settings → Integrations.',
+        );
       },
     });
   }

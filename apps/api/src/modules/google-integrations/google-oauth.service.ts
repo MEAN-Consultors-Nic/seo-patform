@@ -19,12 +19,14 @@ const GSC_SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly';
 const GA4_SCOPE = 'https://www.googleapis.com/auth/analytics.readonly';
 const MERCHANT_SCOPE = 'https://www.googleapis.com/auth/content';
 const GBP_SCOPE = 'https://www.googleapis.com/auth/business.manage';
+const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
 const PROFILE_SCOPES = ['openid', 'email', 'profile'];
 const SCOPES = [
   GSC_SCOPE,
   GA4_SCOPE,
   MERCHANT_SCOPE,
   GBP_SCOPE,
+  CALENDAR_SCOPE,
   ...PROFILE_SCOPES,
 ];
 
@@ -169,6 +171,9 @@ export class GoogleOAuthService {
     const hasGbpScope = !!doc?.scopes?.some((s) =>
       s.includes('auth/business.manage'),
     );
+    const hasCalendarScope = !!doc?.scopes?.some((s) =>
+      s.includes('auth/calendar'),
+    );
     return {
       // GSC, GA4, Merchant Center, and Business Profile share the same
       // OAuth credentials — one connect grants access to all four. The
@@ -187,6 +192,15 @@ export class GoogleOAuthService {
         : { connected: false },
       gbp: doc
         ? hasGbpScope
+          ? linked
+          : {
+              connected: false,
+              needsReconnect: true,
+              email: doc.googleEmail,
+            }
+        : { connected: false },
+      calendar: doc
+        ? hasCalendarScope
           ? linked
           : {
               connected: false,

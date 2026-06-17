@@ -61,6 +61,20 @@ export class TimeBlock {
 
   @Prop()
   notes?: string;
+
+  /**
+   * Identifier of the Google Calendar event this block was pulled from.
+   * When present, the block was synced from the user's calendar rather
+   * than created manually — re-running the pull upserts by this id so
+   * sync is idempotent. Indexed sparsely so manual blocks (without the
+   * field) don't collide.
+   */
+  @Prop({ index: true, sparse: true })
+  googleEventId?: string;
+
+  /** Direct link back to the Google Calendar event for quick navigation. */
+  @Prop()
+  googleEventLink?: string;
 }
 
 export const TimeBlockSchema = SchemaFactory.createForClass(TimeBlock);

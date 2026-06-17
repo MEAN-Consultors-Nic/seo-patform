@@ -546,22 +546,6 @@ export interface TimeBlock {
   updatedAt?: Date;
 }
 
-export interface AutoPlanSummary {
-  created: number;
-  removed: number;
-  totalMinutesScheduled: number;
-  totalMinutesAvailable: number;
-  perClient: Array<{
-    clientId: string;
-    name: string;
-    tier: ClientTier;
-    targetMinutes: number;
-    scheduledMinutes: number;
-    sessions: number;
-  }>;
-  warnings: string[];
-}
-
 export interface PublicReportPayload {
   report: Report;
   client: Pick<Client, 'name' | 'tier' | 'url' | 'logoUrl' | 'industry'>;

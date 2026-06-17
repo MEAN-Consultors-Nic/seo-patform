@@ -9,7 +9,6 @@ import {
   Query,
 } from '@nestjs/common';
 import {
-  IsBoolean,
   IsIn,
   IsNumber,
   IsOptional,
@@ -48,11 +47,8 @@ class UpdateBlockDto {
   @IsOptional() @IsNumber() @Min(0) actualMinutes?: number;
 }
 
-class AutoPlanDto {
+class PullFromCalendarDto {
   @IsString() cycleId!: string;
-  @IsOptional() @IsBoolean() replace?: boolean;
-  @IsOptional() @Matches(DATE) fromDate?: string;
-  @IsOptional() @Matches(DATE) toDate?: string;
 }
 
 class CompleteDto {
@@ -112,12 +108,11 @@ export class TimeBlocksController {
     return this.svc.skip(id, user.userId);
   }
 
-  @Post('auto-plan')
-  autoPlan(@Body() dto: AutoPlanDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.svc.autoPlan(user.userId, dto.cycleId, {
-      replace: dto.replace,
-      fromDate: dto.fromDate,
-      toDate: dto.toDate,
-    });
+  @Post('pull-from-calendar')
+  pullFromCalendar(
+    @Body() dto: PullFromCalendarDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.svc.pullFromCalendar(user.userId, dto.cycleId);
   }
 }

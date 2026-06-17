@@ -11,6 +11,7 @@ import { GscService } from './gsc.service';
 import { Ga4Service } from './ga4.service';
 import { MerchantCenterService } from './merchant-center.service';
 import { GbpService } from './gbp.service';
+import { CalendarService } from './calendar.service';
 import { GoogleIntegrationsService } from './google-integrations.service';
 import { GoogleIntegrationsController } from './google-integrations.controller';
 import { ClientsModule } from '../clients/clients.module';
@@ -36,6 +37,7 @@ import { ClientsModule } from '../clients/clients.module';
     Ga4Service,
     MerchantCenterService,
     GbpService,
+    CalendarService,
     GoogleIntegrationsService,
   ],
   exports: [
@@ -45,6 +47,7 @@ import { ClientsModule } from '../clients/clients.module';
     Ga4Service,
     MerchantCenterService,
     GbpService,
+    CalendarService,
   ],
 })
 export class GoogleIntegrationsModule {}
