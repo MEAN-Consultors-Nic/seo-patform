@@ -166,6 +166,8 @@ export interface Client {
   baselineDate?: Date;
   hoursPerCycle: number;
   active: boolean;
+  /** Optional last day of the engagement (month-to-month clients). */
+  endingDate?: Date | string;
   /** Alt names that should also match this client during Calendar pulls. */
   calendarAliases?: string[];
   ga4PropertyId?: string;

@@ -127,6 +127,12 @@ interface KpiField {
                   <span>Owner: <span class="font-semibold text-ink-700">{{ on }}</span></span>
                 </div>
               }
+              @if (endingInfo(c); as ei) {
+                <div [class]="'mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-semibold ' + ei.cls">
+                  <span>⏳</span>
+                  <span>{{ ei.label }}</span>
+                </div>
+              }
             </div>
 
             <!-- KPI grid -->
@@ -552,5 +558,54 @@ export class ClientsListComponent implements OnInit {
     if (pct >= 80) return 'bg-warning-500';
     if (pct >= 50) return 'bg-positive-500';
     return 'bg-ink-300';
+  }
+
+  /**
+   * Renders the "ends on" badge for the client card when an endingDate
+   * is set. Returns null otherwise so the card stays clean for
+   * open-ended engagements. Color-codes by urgency: red after the end
+   * date passed (probably should have been deactivated), red for <=7
+   * days out, orange for <=30, neutral grey for further out.
+   */
+  endingInfo(c: ClientWithStats): { label: string; cls: string } | null {
+    if (!c.endingDate) return null;
+    const end = new Date(c.endingDate);
+    if (isNaN(end.getTime())) return null;
+    const now = new Date();
+    const dayMs = 86_400_000;
+    const daysOut = Math.ceil((end.getTime() - now.getTime()) / dayMs);
+    const dateLabel = end.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+    if (daysOut < 0) {
+      return {
+        label: `Ended ${dateLabel} (${Math.abs(daysOut)}d ago)`,
+        cls: 'bg-danger-100 text-danger-500',
+      };
+    }
+    if (daysOut === 0) {
+      return {
+        label: `Ends today (${dateLabel})`,
+        cls: 'bg-danger-100 text-danger-500',
+      };
+    }
+    if (daysOut <= 7) {
+      return {
+        label: `Ends ${dateLabel} · ${daysOut}d left`,
+        cls: 'bg-danger-100 text-danger-500',
+      };
+    }
+    if (daysOut <= 30) {
+      return {
+        label: `Ends ${dateLabel} · ${daysOut}d left`,
+        cls: 'bg-warning-100 text-warning-500',
+      };
+    }
+    return {
+      label: `Ends ${dateLabel}`,
+      cls: 'bg-ink-100 text-ink-600',
+    };
   }
 }

@@ -114,6 +114,7 @@ export class CreateClientDto {
   @IsOptional() baselineDate?: Date;
   @IsOptional() @IsNumber() hoursPerCycle?: number;
   @IsOptional() @IsBoolean() active?: boolean;
+  @IsOptional() endingDate?: Date;
   @IsOptional() @IsArray() @IsString({ each: true }) calendarAliases?: string[];
   @IsOptional() @IsString() ga4PropertyId?: string;
   @IsOptional() @IsString() gscSiteUrl?: string;

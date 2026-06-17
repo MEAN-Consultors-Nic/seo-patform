@@ -158,6 +158,16 @@ export class Client {
   active!: boolean;
 
   /**
+   * Optional last day of the engagement. Month-to-month clients
+   * sometimes cancel on short notice, so this surfaces "ends soon"
+   * indicators on the clients list and lets reporting flag the
+   * remaining cycles. Stored as a UTC date — only the date matters,
+   * not the time. Cleared when the client renews or is reactivated.
+   */
+  @Prop()
+  endingDate?: Date;
+
+  /**
    * Alternative spellings of the client's name that should still match
    * during Google Calendar pulls. Useful when calendar events use a
    * shorthand or different formatting from the canonical client name

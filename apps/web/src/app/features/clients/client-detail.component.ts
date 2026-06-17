@@ -243,6 +243,15 @@ interface TabDef {
                     <option [ngValue]="false">Inactive</option>
                   </select>
                 </div>
+                <div>
+                  <label class="label">Ending date</label>
+                  <input type="date" class="input"
+                         [(ngModel)]="form.endingDate"
+                         placeholder="(no end set)" />
+                  <p class="text-[10px] text-ink-500 mt-1 leading-tight">
+                    Last day of the engagement. Leave blank for open-ended.
+                  </p>
+                </div>
               </div>
               <div>
                 <label class="label">URL</label>
@@ -398,6 +407,7 @@ export class ClientDetailComponent implements OnInit {
     industry: string;
     hoursPerCycle: number;
     active: boolean;
+    endingDate: string;
     isEcommerce: boolean;
     websitePlatform: '' | 'shopify' | 'wordpress' | 'custom';
     calendarAliases: string[];
@@ -409,6 +419,7 @@ export class ClientDetailComponent implements OnInit {
     industry: '',
     hoursPerCycle: 0,
     active: true,
+    endingDate: '',
     isEcommerce: false,
     websitePlatform: '',
     calendarAliases: [],
@@ -449,6 +460,9 @@ export class ClientDetailComponent implements OnInit {
     this.form.isEcommerce = !!c.isEcommerce;
     this.form.websitePlatform = (c.websitePlatform as '' | 'shopify' | 'wordpress' | 'custom') || '';
     this.form.calendarAliases = (c.calendarAliases ?? []).slice();
+    this.form.endingDate = c.endingDate
+      ? new Date(c.endingDate).toISOString().slice(0, 10)
+      : '';
     this.dataError.set(null);
     this.dataSaved.set(false);
     this.editOpen.set(true);
@@ -500,6 +514,11 @@ export class ClientDetailComponent implements OnInit {
         isEcommerce: !!this.form.isEcommerce,
         websitePlatform: this.form.websitePlatform || undefined,
         calendarAliases: this.form.calendarAliases.filter((a) => a.trim()),
+        // Send null (not undefined) when cleared so Mongoose actually
+        // wipes the field instead of leaving the old date in place.
+        endingDate: this.form.endingDate
+          ? (new Date(`${this.form.endingDate}T00:00:00Z`) as unknown as Date)
+          : (null as unknown as Date | undefined),
       })
       .subscribe({
         next: (u) => {
