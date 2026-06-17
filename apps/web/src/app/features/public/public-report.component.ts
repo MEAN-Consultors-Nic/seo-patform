@@ -1017,10 +1017,7 @@ interface PublicPayload {
                 }
               </button>
             </div>
-            <div class="border-t border-white/10 mt-10 pt-6 flex items-center justify-between text-xs text-white/50">
-              <div>
-                Prepared by <strong class="text-white">Joseph O.</strong> · Media Spearhead
-              </div>
+            <div class="border-t border-white/10 mt-10 pt-6 flex items-center justify-end text-xs text-white/50">
               <div>
                 © {{ year() }} Media Spearhead
               </div>

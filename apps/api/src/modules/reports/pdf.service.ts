@@ -531,72 +531,39 @@ export class PdfService {
         // interactive web version with charts, locations data, etc.
         ...(share ? [this.liveReportPanel(share)] : []),
 
-        // Spacer between the cards above and the PREPARED BY / GENERATED
-        // footer. Tuned so the cover fits on a single LETTER page in both
-        // share/no-share variants — when the live-report panel is present
-        // it already takes ~140pt, so the spacer shrinks to compensate.
-        { text: '', margin: [0, share ? 16 : 90, 0, 0] },
+        // Spacer between the cards above and the GENERATED footer.
+        // Tuned so the cover fits on a single LETTER page in both
+        // share/no-share variants — when the live-report panel is
+        // present it already takes ~140pt, so the spacer shrinks.
+        { text: '', margin: [0, share ? 40 : 110, 0, 0] },
 
-        // Footer: prepared by + generated
+        // Footer: generated timestamp only, right-aligned. The
+        // PREPARED BY column was removed at the user's request to
+        // keep the cover neutral / impersonal.
         {
-          columns: [
+          stack: [
             {
-              stack: [
-                {
-                  text: 'PREPARED BY',
-                  color: INK_500,
-                  fontSize: 8,
-                  bold: true,
-                  characterSpacing: 1.5,
-                  margin: [0, 0, 0, 6],
-                },
-                {
-                  text: 'Joseph O.',
-                  fontSize: 16,
-                  bold: true,
-                  color: INK_900,
-                },
-                {
-                  text: 'SEO Specialist',
-                  fontSize: 9,
-                  color: INK_500,
-                  margin: [0, 2, 0, 6],
-                },
-                {
-                  text: 'MEDIA SPEARHEAD',
-                  fontSize: 9,
-                  bold: true,
-                  color: BRAND,
-                  characterSpacing: 2,
-                },
-              ],
+              text: 'GENERATED',
+              color: INK_500,
+              fontSize: 8,
+              bold: true,
+              characterSpacing: 1.5,
+              alignment: 'right',
+              margin: [0, 0, 0, 6],
             },
             {
-              stack: [
-                {
-                  text: 'GENERATED',
-                  color: INK_500,
-                  fontSize: 8,
-                  bold: true,
-                  characterSpacing: 1.5,
-                  alignment: 'right',
-                  margin: [0, 0, 0, 6],
-                },
-                {
-                  text: format(generatedAt, 'MMMM dd, yyyy', { locale: enUS }),
-                  fontSize: 11,
-                  color: INK_900,
-                  bold: true,
-                  alignment: 'right',
-                },
-                {
-                  text: format(generatedAt, 'HH:mm'),
-                  fontSize: 9,
-                  color: INK_500,
-                  alignment: 'right',
-                  margin: [0, 2, 0, 0],
-                },
-              ],
+              text: format(generatedAt, 'MMMM dd, yyyy', { locale: enUS }),
+              fontSize: 11,
+              color: INK_900,
+              bold: true,
+              alignment: 'right',
+            },
+            {
+              text: format(generatedAt, 'HH:mm'),
+              fontSize: 9,
+              color: INK_500,
+              alignment: 'right',
+              margin: [0, 2, 0, 0],
             },
           ],
         },
