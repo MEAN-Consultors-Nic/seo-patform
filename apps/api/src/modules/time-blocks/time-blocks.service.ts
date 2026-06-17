@@ -432,12 +432,38 @@ export class TimeBlocksService {
 
     const totalMinutesAvailable = allSlots.reduce((acc, s) => acc + s.durationMinutes, 0);
 
-    // 7. Pre-fetch open tasks once so we can incorporate pending count +
-    //    priority into the allocation. Tier still gates the broad ordering
-    //    (A > B > C) but within a tier, clients with more pending
-    //    high-priority work get scheduled first and clients with zero open
-    //    tasks are skipped altogether (no point burning a slot on a client
-    //    who has nothing to do).
+    // 7a. Carry over unfinished work from the previous cycle. Any task
+    //     that was still pending / in-progress when the previous cycle
+    //     closed gets re-tagged with the current cycle id so the planner
+    //     (and the rest of the app) sees it as live work in the new
+    //     cycle. Without this, an entire cycle's worth of unfinished
+    //     tasks would be invisible the moment a new cycle starts.
+    let carriedOver = 0;
+    const prevCycle = await this.cycleModel
+      .findOne({ endDate: { $lt: cycle.startDate } })
+      .sort({ endDate: -1 })
+      .lean()
+      .exec();
+    if (prevCycle) {
+      const res = await this.taskModel
+        .updateMany(
+          {
+            cycleId: prevCycle._id,
+            clientId: { $in: clients.map((c) => c._id) },
+            status: { $in: ['pending', 'in_progress'] },
+          },
+          { $set: { cycleId: cycleObjId } },
+        )
+        .exec();
+      carriedOver = res.modifiedCount || 0;
+    }
+
+    // 7b. Pre-fetch open tasks once so we can incorporate pending count +
+    //     priority into the allocation. Tier still gates the broad
+    //     ordering (A > B > C) but within a tier, clients with more
+    //     pending high-priority work get scheduled first. Clients with
+    //     zero open tasks still get their tier allocation so the user
+    //     can use those slots to plan the cycle's task list.
     const openTasks = await this.taskModel
       .find({
         cycleId: cycleObjId,
@@ -490,7 +516,6 @@ export class TimeBlocksService {
     const plansByTier: Record<ClientTier, ClientPlan[]> = { A: [], B: [], C: [] };
     const avgSlotMin =
       allSlots.length > 0 ? totalMinutesAvailable / allSlots.length : 120;
-    const skippedNoWork: string[] = [];
     for (const c of clients) {
       const tier = c.tier as ClientTier;
       const targetMinutes = Math.round((c.hoursPerCycle ?? HOURS_PER_TIER[tier]) * 60);
@@ -508,19 +533,17 @@ export class TimeBlocksService {
         pendingCount: demand.count,
         pendingScore: demand.score,
       });
-      // Skip clients with no open work — they shouldn't take a slot.
-      if (demand.count === 0) {
-        skippedNoWork.push(c.name);
-        continue;
-      }
-      // Slots are capped by actual remaining work so we don't schedule
-      // 9h for a client whose pending tasks only need 4h. The target
-      // hours still acts as a ceiling for clients with lots of work.
+      // Every active client gets its tier allocation — even one with no
+      // open tasks. The user reserves part of that slot to plan the
+      // cycle's task list, so an empty queue isn't a reason to skip the
+      // client. When tasks DO exist, the demand-based cap below keeps
+      // us from over-allocating to a client whose pending work fits in
+      // fewer hours than the tier target.
       const targetSlots = Math.max(1, Math.round(targetMinutes / avgSlotMin));
-      const demandSlots = Math.max(
-        1,
-        Math.ceil((demand.remainingHours * 60) / avgSlotMin),
-      );
+      const demandSlots =
+        demand.count > 0
+          ? Math.max(1, Math.ceil((demand.remainingHours * 60) / avgSlotMin))
+          : targetSlots;
       const slotsNeeded = Math.min(targetSlots, demandSlots);
       plansByTier[tier].push({
         clientId: String(c._id),
@@ -535,9 +558,9 @@ export class TimeBlocksService {
         remainingHours: demand.remainingHours,
       });
     }
-    if (skippedNoWork.length > 0) {
+    if (carriedOver > 0) {
       warnings.push(
-        `Skipped ${skippedNoWork.length} client(s) with no open tasks this cycle: ${skippedNoWork.slice(0, 5).join(', ')}${skippedNoWork.length > 5 ? '…' : ''}.`,
+        `Carried over ${carriedOver} pending task(s) from the previous cycle (${prevCycle?.label ?? 'previous'}) into ${cycle.label}.`,
       );
     }
 
