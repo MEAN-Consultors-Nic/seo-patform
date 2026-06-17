@@ -516,9 +516,20 @@ export class TimeBlocksService {
     const plansByTier: Record<ClientTier, ClientPlan[]> = { A: [], B: [], C: [] };
     const avgSlotMin =
       allSlots.length > 0 ? totalMinutesAvailable / allSlots.length : 120;
+    // Equitable distribution. Every active client gets the SAME amount of
+    // time per cycle regardless of tier — total scheduled capacity ÷ active
+    // client count. Tier no longer dictates duration; it only influences
+    // ordering inside each slot pass (A clients still get the first pick
+    // when several plans are tied). When fewer slots are available than
+    // clients, we still guarantee one slot per client via the
+    // `Math.max(1, …)` floor on slotsNeeded.
+    const equitableMinutesPerClient =
+      clients.length > 0
+        ? Math.floor(totalMinutesAvailable / clients.length)
+        : 0;
     for (const c of clients) {
       const tier = c.tier as ClientTier;
-      const targetMinutes = Math.round((c.hoursPerCycle ?? HOURS_PER_TIER[tier]) * 60);
+      const targetMinutes = equitableMinutesPerClient;
       const demand = demandByClient.get(String(c._id)) || {
         count: 0,
         score: 0,
@@ -533,12 +544,11 @@ export class TimeBlocksService {
         pendingCount: demand.count,
         pendingScore: demand.score,
       });
-      // Every active client gets its tier allocation — even one with no
-      // open tasks. The user reserves part of that slot to plan the
-      // cycle's task list, so an empty queue isn't a reason to skip the
-      // client. When tasks DO exist, the demand-based cap below keeps
-      // us from over-allocating to a client whose pending work fits in
-      // fewer hours than the tier target.
+      // Demand-based cap still applies — a client whose pending work
+      // only needs 2h shouldn't burn 8h of the user's calendar — but
+      // the equitable target replaces the tier-based one. Clients with
+      // no open tasks still receive the full equitable allocation so
+      // the user can use that time to plan the cycle's task list.
       const targetSlots = Math.max(1, Math.round(targetMinutes / avgSlotMin));
       const demandSlots =
         demand.count > 0
@@ -786,9 +796,18 @@ export class TimeBlocksService {
         sessions: number;
       }
     >();
+    // Equitable distribution (same rule as the equal-slots path):
+    // total capacity ÷ active client count. Tier still controls
+    // session BLOCK size (A=2h, B=1.5h, C=1.25h) so per-session
+    // length feels appropriate to the engagement, but every client
+    // ends up with the same total minutes per cycle.
+    const equitableMinutesPerClient =
+      ctx.clients.length > 0
+        ? Math.floor(totalMinutesAvailable / ctx.clients.length)
+        : 0;
     for (const c of ctx.clients) {
       const tier = c.tier as ClientTier;
-      const targetMinutes = Math.round((c.hoursPerCycle ?? HOURS_PER_TIER[tier]) * 60);
+      const targetMinutes = equitableMinutesPerClient;
       perClient.set(String(c._id), {
         name: c.name,
         tier,
