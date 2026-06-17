@@ -166,6 +166,8 @@ export interface Client {
   baselineDate?: Date;
   hoursPerCycle: number;
   active: boolean;
+  /** Alt names that should also match this client during Calendar pulls. */
+  calendarAliases?: string[];
   ga4PropertyId?: string;
   gscSiteUrl?: string;
   isEcommerce?: boolean;

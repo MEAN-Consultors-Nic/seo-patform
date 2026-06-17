@@ -259,10 +259,19 @@ export class TimeBlocksService {
       .find(clientQuery)
       .lean()
       .exec();
-    // Pre-sort by name length DESC so longest-prefix matches win.
-    const clientIndex = clients
-      .map((c) => ({ id: c._id, nameLc: c.name.toLowerCase() }))
-      .sort((a, b) => b.nameLc.length - a.nameLc.length);
+    // Build a flat index of (clientId, needle) pairs from each client's
+    // primary name plus its configured calendarAliases. Sorted by needle
+    // length DESC so the longest matching string wins — that's how
+    // "American Storage PR" beats "American Storage" when both clients
+    // exist, and how an alias like "MB Global Logistics" wins over a
+    // shorter accidental substring match.
+    const clientIndex = clients.flatMap((c) => {
+      const names = [c.name, ...(c.calendarAliases ?? [])]
+        .map((n) => (n || '').trim())
+        .filter(Boolean);
+      return names.map((n) => ({ id: c._id, needle: n.toLowerCase() }));
+    });
+    clientIndex.sort((a, b) => b.needle.length - a.needle.length);
 
     const userObjId = new Types.ObjectId(userId);
     const cycleObjId = new Types.ObjectId(cycleId);
@@ -342,20 +351,24 @@ export class TimeBlocksService {
         continue;
       }
       const titleLc = title.toLowerCase();
-      const match = clientIndex.find((c) => titleLc.includes(c.nameLc));
+      const match = clientIndex.find((c) => titleLc.includes(c.needle));
       if (!match) {
         unmatched.push({ title, startsAt: ev.startsAt.toISOString() });
         continue;
       }
+      // Use Google's raw local-time strings so the block lands at the
+      // same wall-clock time the user sees in Google Calendar. The
+      // dateTime format is `YYYY-MM-DDTHH:mm:ss±HH:mm`, so chars 0–9
+      // give the local date and 11–15 give HH:mm in that calendar's
+      // timezone. Going through Date#toISOString would convert to UTC
+      // and shift everything by the calendar's offset.
       toCreate.push({
         userId: userObjId,
         cycleId: cycleObjId,
         clientId: match.id as Types.ObjectId,
-        date: formatDate(ev.startsAt),
-        startTime: ev.startsAt
-          .toISOString()
-          .slice(11, 16), // HH:mm UTC
-        endTime: ev.endsAt.toISOString().slice(11, 16),
+        date: ev.startDateTime.slice(0, 10),
+        startTime: ev.startDateTime.slice(11, 16),
+        endTime: ev.endDateTime.slice(11, 16),
         durationMinutes: ev.durationMinutes,
         kind: 'client',
         status: 'planned' as TimeBlockStatus,

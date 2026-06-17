@@ -15,6 +15,14 @@ export interface CalendarEvent {
   startsAt: Date;
   endsAt: Date;
   durationMinutes: number;
+  /**
+   * Raw RFC 3339 dateTime string Google returned, preserving the event's
+   * original local-time offset (e.g. "2026-06-17T06:30:00-06:00"). Used
+   * by callers that need to render the event in the user's wall-clock
+   * time without converting through UTC.
+   */
+  startDateTime: string;
+  endDateTime: string;
   /** Calendar event color id (1-11) when the user assigned one. */
   colorId?: string;
   htmlLink?: string;
@@ -66,6 +74,8 @@ export class CalendarService {
           description: ev.description ?? undefined,
           startsAt,
           endsAt,
+          startDateTime: ev.start.dateTime,
+          endDateTime: ev.end.dateTime,
           durationMinutes: Math.round(durationMs / 60_000),
           colorId: ev.colorId ?? undefined,
           htmlLink: ev.htmlLink ?? undefined,

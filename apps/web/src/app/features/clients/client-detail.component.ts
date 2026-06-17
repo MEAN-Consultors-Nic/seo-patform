@@ -249,6 +249,18 @@ interface TabDef {
                 <input class="input" [(ngModel)]="form.url" placeholder="https://example.com" />
               </div>
               <div>
+                <label class="label">Calendar aliases</label>
+                <input class="input"
+                       [ngModel]="calendarAliasesText()"
+                       (ngModelChange)="setCalendarAliases($event)"
+                       placeholder="MB Global Logistics, Buck Waste" />
+                <p class="text-[11px] text-ink-500 mt-1">
+                  Comma-separated alternative names. The Calendar sync also matches event titles
+                  containing any of these — handy when your Google events use a different
+                  spelling than the client's canonical name.
+                </p>
+              </div>
+              <div>
                 <label class="label">Logo (URL)</label>
                 <input class="input" [(ngModel)]="form.logoUrl" placeholder="https://..." />
                 @if (form.logoUrl) {
@@ -388,6 +400,7 @@ export class ClientDetailComponent implements OnInit {
     active: boolean;
     isEcommerce: boolean;
     websitePlatform: '' | 'shopify' | 'wordpress' | 'custom';
+    calendarAliases: string[];
   } = {
     name: '',
     tier: 'C',
@@ -398,6 +411,7 @@ export class ClientDetailComponent implements OnInit {
     active: true,
     isEcommerce: false,
     websitePlatform: '',
+    calendarAliases: [],
   };
   editOpen = signal(false);
   savingData = signal(false);
@@ -406,6 +420,18 @@ export class ClientDetailComponent implements OnInit {
 
   ngOnInit() {
     this.reload();
+  }
+
+  /** "alias1, alias2, alias3" representation for the comma-separated input. */
+  calendarAliasesText(): string {
+    return (this.form.calendarAliases || []).join(', ');
+  }
+
+  setCalendarAliases(raw: string) {
+    this.form.calendarAliases = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
   }
 
   openEdit() {
@@ -422,6 +448,7 @@ export class ClientDetailComponent implements OnInit {
     this.form.active = c.active ?? true;
     this.form.isEcommerce = !!c.isEcommerce;
     this.form.websitePlatform = (c.websitePlatform as '' | 'shopify' | 'wordpress' | 'custom') || '';
+    this.form.calendarAliases = (c.calendarAliases ?? []).slice();
     this.dataError.set(null);
     this.dataSaved.set(false);
     this.editOpen.set(true);
@@ -472,6 +499,7 @@ export class ClientDetailComponent implements OnInit {
         active: !!this.form.active,
         isEcommerce: !!this.form.isEcommerce,
         websitePlatform: this.form.websitePlatform || undefined,
+        calendarAliases: this.form.calendarAliases.filter((a) => a.trim()),
       })
       .subscribe({
         next: (u) => {

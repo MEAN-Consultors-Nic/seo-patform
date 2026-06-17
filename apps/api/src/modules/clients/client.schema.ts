@@ -157,6 +157,17 @@ export class Client {
   @Prop({ default: true })
   active!: boolean;
 
+  /**
+   * Alternative spellings of the client's name that should still match
+   * during Google Calendar pulls. Useful when calendar events use a
+   * shorthand or different formatting from the canonical client name
+   * (e.g., client = "MBG Logistics", event title = "MB Global Logistics").
+   * Matching is case-insensitive substring against the event title,
+   * just like the primary name.
+   */
+  @Prop({ type: [String], default: [] })
+  calendarAliases?: string[];
+
   @Prop()
   ga4PropertyId?: string;
 
