@@ -92,7 +92,8 @@ function weekdayLabel(iso: string): { weekday: string; label: string } {
         <div>
           <h1 class="page-title">My Schedule</h1>
           <p class="page-subtitle">
-            Plan your work across the cycle and keep your day organized.
+            Plan in your Google Calendar (primary calendar) — put the
+            client name in the event title so the sync can match it.
           </p>
         </div>
         <div class="flex items-center gap-2">
@@ -100,7 +101,7 @@ function weekdayLabel(iso: string): { weekday: string; label: string } {
           <button class="btn-primary"
                   (click)="runPullFromCalendar()"
                   [disabled]="!cycle() || pulling()"
-                  title="Sync events from your connected Google Calendar into this cycle.">
+                  title="Reads events from the PRIMARY calendar of the Google account you connected in Settings → Integrations. Each event title must contain the client name to be matched.">
             {{ pulling() ? 'Pulling…' : '📅 Pull from Calendar' }}
           </button>
         </div>

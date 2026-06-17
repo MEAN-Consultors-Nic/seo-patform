@@ -273,7 +273,34 @@ export class TimeBlocksService {
     const from = new Date(cycle.startDate);
     const to = new Date(cycle.endDate);
     to.setUTCHours(23, 59, 59, 999);
-    const events = await this.calendarSvc.listEvents(userId, from, to);
+    let events;
+    try {
+      events = await this.calendarSvc.listEvents(userId, from, to);
+    } catch (err) {
+      // Surface useful messages instead of a generic 500 — most failures
+      // here are predictable: missing scope (user reconnected without
+      // checking the Calendar checkbox), token revoked, or Google API
+      // unavailability.
+      const e = err as { code?: number; message?: string; response?: { data?: { error?: { message?: string } } } };
+      const upstreamMsg =
+        e.response?.data?.error?.message || e.message || 'Unknown error';
+      if (
+        upstreamMsg.toLowerCase().includes('insufficient') ||
+        upstreamMsg.toLowerCase().includes('scope')
+      ) {
+        throw new BadRequestException(
+          'Google Calendar access not granted. Disconnect Google in Settings → Integrations, then reconnect and make sure the "See your calendars" checkbox stays checked.',
+        );
+      }
+      if (e.code === 401 || upstreamMsg.toLowerCase().includes('unauthorized')) {
+        throw new BadRequestException(
+          'Google session expired. Reconnect Google in Settings → Integrations.',
+        );
+      }
+      throw new BadRequestException(
+        `Could not read Google Calendar: ${upstreamMsg}`,
+      );
+    }
 
     // Wipe planned blocks for this user/cycle that came from a previous
     // pull. In-progress / completed / skipped blocks are kept so the
