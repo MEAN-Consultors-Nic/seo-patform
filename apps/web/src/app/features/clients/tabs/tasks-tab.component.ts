@@ -157,29 +157,8 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
       </div>
 
       <!-- Toolbar -->
-      <div class="card flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div class="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            (click)="setStatusFilter('all')"
-            [class]="'px-3 py-1 text-xs font-semibold rounded-md border transition ' +
-              (statusFilter() === 'all' ? 'bg-ink-900 text-white border-ink-900' : 'bg-white text-ink-600 border-ink-200 hover:border-ink-400')">
-            All
-            <span class="ml-1 text-[10px] opacity-70">{{ tasks().length }}</span>
-          </button>
-          @for (opt of statusOptions; track opt.value) {
-            <button
-              type="button"
-              (click)="setStatusFilter(opt.value)"
-              [class]="'px-3 py-1 text-xs font-semibold rounded-md border transition inline-flex items-center gap-1.5 ' +
-                (statusFilter() === opt.value ? 'border-ink-900' : 'border-ink-200 hover:border-ink-400')">
-              <span class="w-1.5 h-1.5 rounded-full" [ngClass]="opt.dot"></span>
-              {{ opt.label }}
-              <span class="text-[10px] opacity-70">{{ countByStatus(opt.value) }}</span>
-            </button>
-          }
-        </div>
-        <div class="relative md:w-72">
+      <div class="card flex items-center justify-end gap-3">
+        <div class="relative w-full md:w-96">
           <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400 text-sm">⌕</span>
           <input
             class="input pl-7"
@@ -189,20 +168,34 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
         </div>
       </div>
 
-      <!-- Cards -->
-      @if (filteredTasks().length === 0) {
+      <!-- Kanban board -->
+      @if (tasks().length === 0) {
         <div class="card text-center py-12 text-ink-400 italic">
-          @if (tasks().length === 0) {
-            No tasks in {{ isCurrentCycle() ? 'this cycle' : 'cycle ' + (cycle()?.label || '') }} yet. Add one above
-            @if (isCurrentCycle()) { or use "Generate cycle tasks" in the Dashboard }
-            — or switch to a different cycle using the selector above.
-          } @else {
-            No tasks match the current filter.
-          }
+          No tasks in {{ isCurrentCycle() ? 'this cycle' : 'cycle ' + (cycle()?.label || '') }} yet. Add one above
+          @if (isCurrentCycle()) { or use "Generate cycle tasks" in the Dashboard }
+          — or switch to a different cycle using the selector above.
         </div>
       } @else {
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          @for (t of filteredTasks(); track t._id) {
+        <div class="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+          @for (col of kanbanColumns; track col.status) {
+            <div class="flex-shrink-0 w-[320px] lg:w-[360px] rounded-lg bg-ink-50/60 border border-ink-100 p-2 flex flex-col"
+                 [style.max-height.vh]="80">
+              <div class="flex items-center justify-between px-2 py-2 mb-2">
+                <div class="inline-flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full" [ngClass]="col.dot"></span>
+                  <span class="text-sm font-bold text-ink-900">{{ col.label }}</span>
+                </div>
+                <span class="text-xs font-semibold text-ink-500 bg-white rounded-full px-2 py-0.5">
+                  {{ kanbanTasksByStatus(col.status).length }}
+                </span>
+              </div>
+              <div class="space-y-3 overflow-y-auto flex-1 pr-1">
+                @if (kanbanTasksByStatus(col.status).length === 0) {
+                  <div class="text-center text-xs text-ink-400 italic py-10">
+                    No tasks in this column.
+                  </div>
+                }
+                @for (t of kanbanTasksByStatus(col.status); track t._id) {
             <article
               class="relative rounded-lg border border-ink-200 shadow-card hover:shadow-elevated transition-all flex flex-col"
               [class.bg-white]="t.status !== 'completed'"
@@ -360,6 +353,9 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                 </div>
               </div>
             </article>
+                }
+              </div>
+            </div>
           }
         </div>
       }
@@ -737,6 +733,42 @@ export class ClientTasksTab implements OnChanges {
       return true;
     });
   });
+
+  /**
+   * Kanban column definitions in the order the user wants them
+   * shown left → right: Pending → In progress → Blocked → Completed.
+   * The same dot/label vocabulary as the rest of the component, just
+   * stripped to what the column header needs.
+   */
+  kanbanColumns: Array<{ status: TaskStatus; label: string; dot: string }> = [
+    { status: 'pending', label: 'Pending', dot: 'bg-ink-400' },
+    { status: 'in_progress', label: 'In progress', dot: 'bg-sky-500' },
+    { status: 'blocked', label: 'Blocked', dot: 'bg-danger-500' },
+    { status: 'completed', label: 'Completed', dot: 'bg-positive-500' },
+  ];
+
+  /**
+   * Tasks for one kanban column. Honors the same search input the
+   * old chip view used, but no status chip filter — the column IS
+   * the filter now. High-priority items float to the top of each
+   * column so urgent work is visible at a glance.
+   */
+  kanbanTasksByStatus(status: TaskStatus): Task[] {
+    const q = this.searchQuery().trim().toLowerCase();
+    const priorityRank: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    return this.tasks()
+      .filter((t) => t.status === status)
+      .filter((t) => !q || this.matchesQuery(t, q))
+      .sort((a, b) => {
+        const pa = priorityRank[a.priority] ?? 9;
+        const pb = priorityRank[b.priority] ?? 9;
+        if (pa !== pb) return pa - pb;
+        // Within a priority, newest-first (recent edits stay on top).
+        const da = new Date(a.updatedAt ?? 0).getTime();
+        const db = new Date(b.updatedAt ?? 0).getTime();
+        return db - da;
+      });
+  }
 
   statCards = computed(() => [
     {
