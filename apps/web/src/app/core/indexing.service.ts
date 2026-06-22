@@ -40,6 +40,17 @@ export interface PullResult {
   summary: IndexingSummary;
 }
 
+export interface RequestIndexingResult {
+  notified: boolean;
+  notifiedAt?: string;
+  inspection?: {
+    verdict: string;
+    coverageState?: string;
+    lastCrawlTime?: string;
+  };
+  warning?: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class IndexingService {
   private http = inject(HttpClient);
@@ -61,6 +72,16 @@ export class IndexingService {
     return this.http.post<PullResult>(
       `${this.base}/clients/${clientId}/indexing/pull`,
       {},
+    );
+  }
+
+  requestIndexing(
+    clientId: string,
+    url: string,
+  ): Observable<RequestIndexingResult> {
+    return this.http.post<RequestIndexingResult>(
+      `${this.base}/clients/${clientId}/indexing/request-indexing`,
+      { url },
     );
   }
 }

@@ -222,14 +222,17 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed';
                       <div (click)="$event.stopPropagation()"
                            class="absolute right-2 top-9 z-20 w-56 bg-white border border-ink-200 rounded-md shadow-elevated py-1 text-left">
                         <button type="button"
-                                (click)="openGscInspection(r.url); closeMenu()"
-                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-sm text-ink-700 flex items-start gap-2"
-                                title="Opens GSC for this property and copies the URL so you can paste it into the inspection bar.">
-                          <span class="text-positive-500 mt-0.5">↻</span>
+                                (click)="requestIndexing(r.url); closeMenu()"
+                                [disabled]="requestingUrl() === r.url"
+                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-sm text-ink-700 flex items-start gap-2 disabled:opacity-50"
+                                title="Notifies Google's Indexing API and re-inspects the URL. Officially supported for JobPosting and BroadcastEvent pages only.">
+                          <span class="text-positive-500 mt-0.5">
+                            {{ requestingUrl() === r.url ? '…' : '↻' }}
+                          </span>
                           <span>
-                            Request indexing (GSC)
+                            Request indexing
                             <div class="text-[10px] text-ink-500 leading-tight">
-                              opens GSC + copies URL
+                              notifies Google + refreshes status
                             </div>
                           </span>
                         </button>
@@ -375,39 +378,40 @@ export class ClientIndexingTab implements OnChanges {
   // --- Context menu (open external Google tools for one URL) -------------
 
   /**
-   * Google removed (or never supported) a public deep-link straight
-   * into URL Inspection with a specific URL pre-loaded — every
-   * combination of `/search-console/inspect?resource_id=&id=` 404s
-   * or bounces to a property-picker. The most reliable approach is:
-   *  1) open the property's GSC home with resource_id set, so the
-   *     right property is already selected
-   *  2) put the page URL on the user's clipboard so they paste it
-   *     into the inspection search bar with one keystroke
-   * Both happen in the same click; the toast tells the user what to
-   * do once GSC opens.
+   * One-click "Request indexing" via Google's Indexing API. The backend
+   * publishes a URL_UPDATED notification and immediately re-inspects the
+   * URL so the table row reflects the new state. No tabs opened, no
+   * manual paste. Caveat shown in the menu subtext: Google officially
+   * supports the Indexing API only for JobPosting / BroadcastEvent
+   * pages — for anything else it usually works but isn't supported.
    */
-  openGscInspection(url: string) {
-    if (this.gscSiteUrl) {
-      const resource = encodeURIComponent(this.gscSiteUrl);
-      window.open(
-        `https://search.google.com/search-console?resource_id=${resource}`,
-        '_blank',
-        'noopener,noreferrer',
-      );
-    } else {
-      window.open(
-        'https://search.google.com/search-console',
-        '_blank',
-        'noopener,noreferrer',
-      );
-    }
-    if (navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(url);
-      this.clipboardHint.set(
-        'URL copied — paste it into the inspection bar at the top of GSC.',
-      );
-      setTimeout(() => this.clipboardHint.set(null), 6000);
-    }
+  requestIndexing(url: string) {
+    if (!this.clientId) return;
+    this.requestingUrl.set(url);
+    this.clipboardHint.set(null);
+    this.error.set(null);
+    this.svc.requestIndexing(this.clientId, url).subscribe({
+      next: (res) => {
+        this.requestingUrl.set(null);
+        const verdict = res.inspection?.verdict;
+        const verdictMsg = verdict
+          ? ` Current verdict: ${this.statusLabel(verdict)}.`
+          : '';
+        this.clipboardHint.set(
+          `✓ Indexing requested for ${url}.${verdictMsg}${res.warning ? ' ' + res.warning : ''}`,
+        );
+        setTimeout(() => this.clipboardHint.set(null), 8000);
+        // Refresh the table so the row picks up the latest inspection.
+        this.svc.list(this.clientId).subscribe((rows) => this.rows.set(rows));
+      },
+      error: (err) => {
+        this.requestingUrl.set(null);
+        this.error.set(
+          err?.error?.message ||
+            'Indexing request failed. Reconnect Google in Settings → Integrations to grant the indexing scope.',
+        );
+      },
+    });
   }
 
   openPageSpeed(url: string) {
@@ -434,7 +438,8 @@ export class ClientIndexingTab implements OnChanges {
   closeMenu = () => this.menuOpenUrl.set(null);
 
   menuOpenUrl = signal<string | null>(null);
-  /** Short message shown after the GSC inspection action so the user
-   *  knows the URL was copied to their clipboard. */
+  /** Toast text shown after Request Indexing succeeds (or after a quick info hint). */
   clipboardHint = signal<string | null>(null);
+  /** URL currently being submitted to the Indexing API — used to show a spinner. */
+  requestingUrl = signal<string | null>(null);
 }

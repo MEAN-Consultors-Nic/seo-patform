@@ -20,6 +20,7 @@ const GA4_SCOPE = 'https://www.googleapis.com/auth/analytics.readonly';
 const MERCHANT_SCOPE = 'https://www.googleapis.com/auth/content';
 const GBP_SCOPE = 'https://www.googleapis.com/auth/business.manage';
 const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+const INDEXING_SCOPE = 'https://www.googleapis.com/auth/indexing';
 const PROFILE_SCOPES = ['openid', 'email', 'profile'];
 const SCOPES = [
   GSC_SCOPE,
@@ -27,6 +28,7 @@ const SCOPES = [
   MERCHANT_SCOPE,
   GBP_SCOPE,
   CALENDAR_SCOPE,
+  INDEXING_SCOPE,
   ...PROFILE_SCOPES,
 ];
 

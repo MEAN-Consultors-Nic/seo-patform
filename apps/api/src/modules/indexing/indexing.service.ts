@@ -301,6 +301,153 @@ export class IndexingService {
   }
 
   /**
+   * Notifies Google's Indexing API that a URL has been updated, then
+   * immediately re-inspects the same URL via the URL Inspection API so
+   * the platform row reflects whatever Google sees right after the
+   * notification was accepted.
+   *
+   * Caveat (worth surfacing in the UI): the Indexing API is OFFICIALLY
+   * documented as supporting only pages with JobPosting or
+   * BroadcastEvent structured data. For other page types it generally
+   * works in practice but Google may rate-limit or reject the request.
+   * Daily quota is 200 requests per project by default.
+   */
+  async requestIndexing(
+    clientId: string,
+    url: string,
+    user: AuthenticatedUser,
+  ): Promise<{
+    notified: boolean;
+    notifiedAt?: string;
+    inspection?: {
+      verdict: string;
+      coverageState?: string;
+      lastCrawlTime?: Date;
+    };
+    warning?: string;
+  }> {
+    await this.clients.assertAccess(clientId, user);
+    if (!url) throw new BadRequestException('URL is required');
+
+    const client = await this.clientModel.findById(clientId).lean().exec();
+    if (!client) throw new NotFoundException('Client not found');
+
+    const auth = await this.oauth.getAuthorizedClient(user.userId);
+
+    // 1. Publish the URL_UPDATED notification via the Indexing API.
+    let notifiedAt: string | undefined;
+    let notifyWarning: string | undefined;
+    try {
+      const indexing = google.indexing({ version: 'v3', auth });
+      const res = await indexing.urlNotifications.publish({
+        requestBody: { url, type: 'URL_UPDATED' },
+      });
+      notifiedAt =
+        res.data.urlNotificationMetadata?.latestUpdate?.notifyTime ||
+        new Date().toISOString();
+    } catch (err) {
+      const e = err as {
+        code?: number;
+        message?: string;
+        response?: { data?: { error?: { message?: string } } };
+      };
+      const upstream =
+        e.response?.data?.error?.message || e.message || 'unknown error';
+      // 403 from indexing API usually means the user hasn't granted the
+      // indexing scope OR doesn't own the property in Search Console.
+      // Surface a useful hint instead of a generic 500.
+      if (e.code === 403 || upstream.toLowerCase().includes('forbidden')) {
+        throw new BadRequestException(
+          `Google rejected the indexing request: ${upstream}. Two common causes: (1) the indexing scope wasn't granted — disconnect Google in Settings → Integrations and reconnect; (2) the Google account doesn't own this property in Search Console.`,
+        );
+      }
+      throw new BadRequestException(
+        `Indexing API error: ${upstream}. Note that the Indexing API officially supports only JobPosting and BroadcastEvent pages.`,
+      );
+    }
+
+    // 2. Re-inspect the URL so the local row reflects current state.
+    let inspection;
+    if (client.gscSiteUrl) {
+      try {
+        const sc = google.searchconsole({ version: 'v1', auth });
+        const inspectionRes = await sc.urlInspection.index.inspect({
+          requestBody: {
+            inspectionUrl: url,
+            siteUrl: client.gscSiteUrl,
+          },
+        });
+        const r = inspectionRes.data.inspectionResult?.indexStatusResult;
+        if (r) {
+          const verdict =
+            (r.verdict as
+              | 'PASS'
+              | 'NEUTRAL'
+              | 'FAIL'
+              | 'VERDICT_UNSPECIFIED') || 'VERDICT_UNSPECIFIED';
+          const lastCrawlTime = r.lastCrawlTime
+            ? new Date(r.lastCrawlTime)
+            : undefined;
+          const existing = await this.model
+            .findOne({ clientId: new Types.ObjectId(clientId), url })
+            .lean()
+            .exec();
+          const transitionToIndexed =
+            verdict === 'PASS' &&
+            !existing?.firstIndexedAt &&
+            (!existing?.previousVerdict || existing.previousVerdict !== 'PASS');
+          await this.model
+            .updateOne(
+              { clientId: new Types.ObjectId(clientId), url },
+              {
+                $set: {
+                  clientId: new Types.ObjectId(clientId),
+                  url,
+                  verdict,
+                  coverageState: r.coverageState || undefined,
+                  robotsTxtState: r.robotsTxtState || undefined,
+                  indexingState: r.indexingState || undefined,
+                  pageFetchState: r.pageFetchState || undefined,
+                  lastCrawlTime,
+                  googleCanonical: r.googleCanonical || undefined,
+                  userCanonical: r.userCanonical || undefined,
+                  canonicalMismatch:
+                    !!r.googleCanonical &&
+                    !!r.userCanonical &&
+                    r.googleCanonical !== r.userCanonical,
+                  previousVerdict: existing?.verdict,
+                  lastCheckedAt: new Date(),
+                  ...(transitionToIndexed
+                    ? { firstIndexedAt: new Date() }
+                    : {}),
+                },
+              },
+              { upsert: true },
+            )
+            .exec();
+          inspection = {
+            verdict,
+            coverageState: r.coverageState || undefined,
+            lastCrawlTime,
+          };
+        }
+      } catch (err) {
+        // Inspection refresh is best-effort — don't fail the whole
+        // request if it can't get a fresh status. The indexing
+        // notification still went through.
+        notifyWarning = `Inspection refresh failed: ${(err as Error).message}. The indexing notification was accepted, but the row status was not updated.`;
+      }
+    }
+
+    return {
+      notified: true,
+      notifiedAt,
+      inspection,
+      warning: notifyWarning,
+    };
+  }
+
+  /**
    * Downloads a sitemap XML (handles a single sitemap index by recursing
    * one level deep) and returns the list of <loc> URLs inside it. The
    * parser is intentionally simple regex-based to avoid pulling in a
