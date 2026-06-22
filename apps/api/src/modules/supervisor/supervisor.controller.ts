@@ -4,12 +4,18 @@ import {
   Get,
   Param,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
-import { IsOptional, IsString } from 'class-validator';
+import { IsString } from 'class-validator';
+import type { Request } from 'express';
 import { Public } from '../auth/jwt-auth.guard';
 import { SupervisorService } from './supervisor.service';
-import { SupervisorGuard, SupervisorPublic } from './supervisor.guard';
+import {
+  SupervisorGuard,
+  SupervisorPrincipal,
+  SupervisorPublic,
+} from './supervisor.guard';
 
 class AuthDto {
   @IsString() pin!: string;
@@ -17,7 +23,6 @@ class AuthDto {
 
 class CommentDto {
   @IsString() content!: string;
-  @IsOptional() @IsString() authorName?: string;
 }
 
 /**
@@ -65,7 +70,12 @@ export class SupervisorController {
   }
 
   @Post('tasks/:taskId/comments')
-  addComment(@Param('taskId') taskId: string, @Body() dto: CommentDto) {
-    return this.svc.addSupervisorComment(taskId, dto);
+  addComment(
+    @Param('taskId') taskId: string,
+    @Body() dto: CommentDto,
+    @Req() req: Request & { supervisor?: SupervisorPrincipal },
+  ) {
+    const name = req.supervisor?.name ?? 'Supervisor';
+    return this.svc.addSupervisorComment(taskId, dto, name);
   }
 }

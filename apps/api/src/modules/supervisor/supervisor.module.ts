@@ -6,14 +6,13 @@ import { Client, ClientSchema } from '../clients/client.schema';
 import { Cycle, CycleSchema } from '../cycles/cycle.schema';
 import { Task, TaskSchema } from '../tasks/task.schema';
 import { Report, ReportSchema } from '../reports/report.schema';
-import { AppSettingsModule } from '../app-settings/app-settings.module';
+import { Supervisor, SupervisorSchema } from './supervisor.schema';
 import { SupervisorService } from './supervisor.service';
 import { SupervisorController } from './supervisor.controller';
 import { SupervisorGuard } from './supervisor.guard';
 
 @Module({
   imports: [
-    AppSettingsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -22,6 +21,7 @@ import { SupervisorGuard } from './supervisor.guard';
       }),
     }),
     MongooseModule.forFeature([
+      { name: Supervisor.name, schema: SupervisorSchema },
       { name: Client.name, schema: ClientSchema },
       { name: Cycle.name, schema: CycleSchema },
       { name: Task.name, schema: TaskSchema },

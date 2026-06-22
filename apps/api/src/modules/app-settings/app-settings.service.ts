@@ -1,8 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import * as bcrypt from 'bcrypt';
-import { randomInt } from 'crypto';
 import {
   DEFAULT_REPORT_LAYOUT,
   ReportSectionConfig,
@@ -57,90 +55,10 @@ export class AppSettingsService {
     return cleaned;
   }
 
-  // --- Supervisor portal -------------------------------------------------
-
-  /**
-   * Returns the supervisor-portal status without ever exposing the PIN
-   * to anyone other than via regeneratePin(). The admin Settings page
-   * uses this to render the toggle + "no PIN set" / "PIN active" copy.
-   */
-  async getSupervisorState(): Promise<{
-    enabled: boolean;
-    hasPin: boolean;
-  }> {
-    const doc = await this.model.findOne().lean().exec();
-    return {
-      enabled: !!doc?.supervisorEnabled,
-      hasPin: !!doc?.supervisorPinHash,
-    };
-  }
-
-  async setSupervisorEnabled(enabled: boolean): Promise<void> {
-    await this.model
-      .findOneAndUpdate(
-        {},
-        { $set: { supervisorEnabled: enabled } },
-        { upsert: true, new: true },
-      )
-      .exec();
-  }
-
-  /**
-   * Regenerates a fresh 6-digit PIN, stores plaintext + hash, and returns
-   * the plaintext so the admin Settings page can display it ONCE. After
-   * the page is closed, the admin can re-view the plaintext via
-   * revealSupervisorPin (also a privileged endpoint).
-   */
-  async regenerateSupervisorPin(): Promise<{ pin: string }> {
-    const pin = String(randomInt(100000, 1000000));
-    const hash = await bcrypt.hash(pin, 10);
-    await this.model
-      .findOneAndUpdate(
-        {},
-        {
-          $set: {
-            supervisorPin: pin,
-            supervisorPinHash: hash,
-            supervisorEnabled: true,
-          },
-        },
-        { upsert: true, new: true },
-      )
-      .exec();
-    return { pin };
-  }
-
-  /** Reveals the stored plaintext PIN. Restricted to admins at the controller. */
-  async revealSupervisorPin(): Promise<{ pin: string | null }> {
-    const doc = await this.model.findOne().lean().exec();
-    return { pin: doc?.supervisorPin ?? null };
-  }
-
-  async clearSupervisorPin(): Promise<void> {
-    await this.model
-      .findOneAndUpdate(
-        {},
-        {
-          $unset: {
-            supervisorPin: '',
-            supervisorPinHash: '',
-          },
-          $set: { supervisorEnabled: false },
-        },
-      )
-      .exec();
-  }
-
-  /**
-   * Checks a candidate PIN against the stored hash. Returns true when the
-   * supervisor portal is enabled AND the PIN matches. Used by
-   * SupervisorAuthService at the auth endpoint.
-   */
-  async verifySupervisorPin(pin: string): Promise<boolean> {
-    const doc = await this.model.findOne().lean().exec();
-    if (!doc?.supervisorEnabled || !doc.supervisorPinHash) return false;
-    return bcrypt.compare(pin, doc.supervisorPinHash);
-  }
+  // Supervisor management lives in SupervisorService now (multi-PIN
+  // model — one Supervisor doc per registered person). The legacy
+  // single-PIN fields on AppSettings are unused and will be cleaned
+  // up on the next schema migration.
 
   /**
    * Merges a persisted layout with the defaults so that:

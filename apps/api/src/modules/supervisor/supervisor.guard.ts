@@ -19,8 +19,10 @@ export const SupervisorPublic = () => SetMetadata(IS_SUPERVISOR_PUBLIC, true);
 export interface SupervisorPrincipal {
   /** Discriminator so handlers can be sure this is a supervisor token. */
   kind: 'supervisor';
-  /** Random id baked into the token so revocations could be added later. */
-  sessionId: string;
+  /** Id of the registered Supervisor doc — used for audit + lastSeen updates. */
+  supervisorId: string;
+  /** Human-readable name carried in the JWT so handlers can stamp comments. */
+  name: string;
 }
 
 /**
@@ -58,6 +60,7 @@ export class SupervisorGuard implements CanActivate {
         sub: string;
         aud: string;
         kind?: string;
+        name?: string;
       }>(token, {
         secret:
           this.config.get<string>('JWT_SECRET') || 'dev-secret-change-me',
@@ -66,7 +69,11 @@ export class SupervisorGuard implements CanActivate {
       if (payload.kind !== 'supervisor') {
         throw new UnauthorizedException('Token is not a supervisor token');
       }
-      req.supervisor = { kind: 'supervisor', sessionId: payload.sub };
+      req.supervisor = {
+        kind: 'supervisor',
+        supervisorId: payload.sub,
+        name: payload.name || 'Supervisor',
+      };
       return true;
     } catch {
       throw new UnauthorizedException('Invalid or expired supervisor token');

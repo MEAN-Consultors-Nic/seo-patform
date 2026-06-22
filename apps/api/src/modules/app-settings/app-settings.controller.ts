@@ -1,11 +1,34 @@
-import { Body, Controller, Delete, Get, Post, Put } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Put,
+} from '@nestjs/common';
+import { IsBoolean, IsOptional, IsString } from 'class-validator';
 import { ReportSectionConfig } from '@seo/shared';
 import { AppSettingsService } from './app-settings.service';
+import { SupervisorService } from '../supervisor/supervisor.service';
 import { Roles } from '../auth/roles.guard';
+
+class CreateSupervisorDto {
+  @IsString() name!: string;
+}
+
+class UpdateSupervisorDto {
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsBoolean() active?: boolean;
+}
 
 @Controller('app-settings')
 export class AppSettingsController {
-  constructor(private readonly svc: AppSettingsService) {}
+  constructor(
+    private readonly svc: AppSettingsService,
+    private readonly supervisorSvc: SupervisorService,
+  ) {}
 
   @Get('report-layout')
   getReportLayout() {
@@ -17,29 +40,39 @@ export class AppSettingsController {
     return this.svc.setReportLayout(body?.layout ?? []);
   }
 
-  // --- Supervisor portal management (root + manager only) -----------------
+  // --- Supervisor management (root + manager only) -----------------------
 
-  @Get('supervisor')
+  @Get('supervisors')
   @Roles('root', 'seo-manager')
-  getSupervisorState() {
-    return this.svc.getSupervisorState();
+  listSupervisors() {
+    return this.supervisorSvc.listSupervisors();
   }
 
-  @Post('supervisor/regenerate-pin')
+  /** Creates a new supervisor and returns the plaintext PIN ONCE. */
+  @Post('supervisors')
   @Roles('root', 'seo-manager')
-  regenerateSupervisorPin() {
-    return this.svc.regenerateSupervisorPin();
+  createSupervisor(@Body() dto: CreateSupervisorDto) {
+    return this.supervisorSvc.createSupervisor(dto.name);
   }
 
-  @Get('supervisor/reveal-pin')
+  @Post('supervisors/:id/regenerate-pin')
   @Roles('root', 'seo-manager')
-  revealSupervisorPin() {
-    return this.svc.revealSupervisorPin();
+  regenerateSupervisorPin(@Param('id') id: string) {
+    return this.supervisorSvc.regenerateSupervisorPin(id);
   }
 
-  @Delete('supervisor')
+  @Patch('supervisors/:id')
   @Roles('root', 'seo-manager')
-  disableSupervisor() {
-    return this.svc.clearSupervisorPin().then(() => ({ disabled: true }));
+  updateSupervisor(
+    @Param('id') id: string,
+    @Body() dto: UpdateSupervisorDto,
+  ) {
+    return this.supervisorSvc.updateSupervisor(id, dto);
+  }
+
+  @Delete('supervisors/:id')
+  @Roles('root', 'seo-manager')
+  deleteSupervisor(@Param('id') id: string) {
+    return this.supervisorSvc.deleteSupervisor(id);
   }
 }
