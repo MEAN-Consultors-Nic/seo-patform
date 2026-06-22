@@ -205,6 +205,7 @@ export class TasksService {
       title: string;
       description?: string;
       category?: string;
+      priority?: string;
       completedAt?: Date;
       attachments?: Array<{ url: string; resourceType?: string }>;
     },
@@ -225,6 +226,7 @@ export class TasksService {
         title: task.title,
         description: task.description,
         category: task.category,
+        priority: task.priority,
         completedAt: when,
         imageAttachments,
       });

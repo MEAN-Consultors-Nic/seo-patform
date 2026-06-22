@@ -164,6 +164,7 @@ export class GoogleDocsService {
       title: string;
       description?: string;
       category?: string;
+      priority?: string;
       completedAt?: Date;
       imageAttachments?: string[];
     },
@@ -193,12 +194,32 @@ export class GoogleDocsService {
         };
       };
 
-      // Build the visible header line.
+      // Build the metadata line + heading + description text. The
+      // metadata line carries the completion date (the previously
+      // requested field), category, and priority in small grey italic
+      // letters; the title gets its own HEADING_3 line below for
+      // visual emphasis. A separator dash row sits on top of each
+      // entry so multiple completions on the same day don't visually
+      // bleed into each other.
       const dateStr = (task.completedAt ?? new Date()).toLocaleDateString(
         'en-US',
-        { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' },
+        {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          timeZone: 'UTC',
+        },
       );
-      const heading = `${dateStr} · ${task.category?.toUpperCase() ?? 'TASK'} — ${task.title}`;
+      const metaParts = [
+        `Completed ${dateStr}`,
+        task.category ? task.category.toUpperCase() : '',
+        task.priority ? `${task.priority.toUpperCase()} PRIORITY` : '',
+      ].filter(Boolean);
+      const metaLine = metaParts.join('  ·  ');
+      const separator =
+        '────────────────────────────────────────────────────────';
+      const title = task.title;
       const description = this.stripHtml(task.description || '').trim();
 
       // We need to know the current end-of-body index for the tab so
@@ -218,13 +239,27 @@ export class GoogleDocsService {
       // implicit trailing newline at the very end of the body.
       let cursor = (lastBlock?.endIndex ?? 1) - 1;
 
-      // Compose the body text first (heading + description + spacer).
+      // Compose body text in one insertText so we know exact ranges
+      // for the subsequent style updates. Layout:
+      //   \n  (leading separator line)
+      //   ─── separator ─── \n
+      //   metadata line \n
+      //   title \n
+      //   description \n  (optional)
+      //   \n  (trailing blank line before images)
+      const sepStart = cursor + 1; // skip the leading \n
+      const sepEnd = sepStart + separator.length;
+      const metaStart = sepEnd + 1; // +1 for the \n after separator
+      const metaEnd = metaStart + metaLine.length;
+      const titleStart = metaEnd + 1;
+      const titleEnd = titleStart + title.length;
+      const descStart = titleEnd + 1;
+      const descEnd = descStart + description.length;
+
       const bodyText =
-        `\n${heading}\n` +
+        `\n${separator}\n${metaLine}\n${title}\n` +
         (description ? `${description}\n` : '') +
         '\n';
-      const headingStart = cursor + 1; // skip the leading \n we just added
-      const headingEnd = headingStart + heading.length;
 
       const requests: unknown[] = [
         {
@@ -233,43 +268,107 @@ export class GoogleDocsService {
             text: bodyText,
           },
         },
+        // Separator line: small + grey, so the divider reads as
+        // background structure rather than competing for attention.
+        {
+          updateTextStyle: {
+            range: { startIndex: sepStart, endIndex: sepEnd, tabId },
+            textStyle: {
+              fontSize: { magnitude: 8, unit: 'PT' },
+              foregroundColor: {
+                color: { rgbColor: { red: 0.75, green: 0.75, blue: 0.75 } },
+              },
+            },
+            fields: 'fontSize,foregroundColor',
+          },
+        },
+        // Metadata line: small uppercase grey italic so the date /
+        // category / priority block reads as muted metadata under
+        // the bigger task title below.
+        {
+          updateTextStyle: {
+            range: { startIndex: metaStart, endIndex: metaEnd, tabId },
+            textStyle: {
+              fontSize: { magnitude: 9, unit: 'PT' },
+              italic: true,
+              foregroundColor: {
+                color: {
+                  rgbColor: { red: 0.42, green: 0.45, blue: 0.5 },
+                },
+              },
+            },
+            fields: 'fontSize,italic,foregroundColor',
+          },
+        },
+        // Title: HEADING_3 to surface in the doc outline and Tab
+        // navigation list.
         {
           updateParagraphStyle: {
-            range: {
-              startIndex: headingStart,
-              endIndex: headingEnd,
-              tabId,
-            },
+            range: { startIndex: titleStart, endIndex: titleEnd, tabId },
             paragraphStyle: { namedStyleType: 'HEADING_3' },
             fields: 'namedStyleType',
           },
         },
       ];
+      // Description gets a normal-text reset so the HEADING_3 from
+      // the title doesn't bleed onto the next paragraph when the
+      // implicit newline gets styled by Docs' continuation rules.
+      if (description) {
+        requests.push({
+          updateParagraphStyle: {
+            range: { startIndex: descStart, endIndex: descEnd, tabId },
+            paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+            fields: 'namedStyleType',
+          },
+        });
+      }
       cursor += bodyText.length;
 
-      // Inline images — each pushed as its own insertInlineImage at
-      // the current cursor + a newline separator.
-      for (const url of task.imageAttachments ?? []) {
-        if (!url || !this.isLikelyImage(url)) continue;
+      // Inline images. Each is sized 480×320pt (a touch wider than the
+      // previous 360×240 to better fit landscape screenshots in a doc
+      // page), and gets a text-style hyperlink applied to its single-
+      // character range so clicking the image in the doc opens the
+      // original on Cloudinary. A blank paragraph between images keeps
+      // them visually separated when more than one is attached.
+      const images = (task.imageAttachments ?? []).filter(
+        (u) => !!u && this.isLikelyImage(u),
+      );
+      images.forEach((url, idx) => {
+        const imageIndex = cursor;
         requests.push({
           insertInlineImage: {
             location: { index: cursor, tabId },
             uri: url,
             objectSize: {
-              width: { magnitude: 360, unit: 'PT' },
-              height: { magnitude: 240, unit: 'PT' },
+              width: { magnitude: 480, unit: 'PT' },
+              height: { magnitude: 320, unit: 'PT' },
             },
           },
         });
-        cursor += 1; // image consumes 1 index slot
+        cursor += 1;
+        // Clickable image — apply link text-style on the image range.
+        requests.push({
+          updateTextStyle: {
+            range: {
+              startIndex: imageIndex,
+              endIndex: imageIndex + 1,
+              tabId,
+            },
+            textStyle: { link: { url } },
+            fields: 'link',
+          },
+        });
+        // Blank line between images (newline + extra paragraph break
+        // for the spacer when there's another image after this one).
+        const sep = idx < images.length - 1 ? '\n\n' : '\n';
         requests.push({
           insertText: {
             location: { index: cursor, tabId },
-            text: '\n',
+            text: sep,
           },
         });
-        cursor += 1;
-      }
+        cursor += sep.length;
+      });
 
       await docsAny.documents.batchUpdate({
         documentId,
