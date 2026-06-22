@@ -276,19 +276,22 @@ export class GoogleDocsService {
       }
       cursor += intro.length;
 
-      // Inline images, capped at TWO and rendered side-by-side on a
-      // single line. Each image is 230×155pt — roughly 3:2 landscape
-      // and narrow enough that two + a 1pt gap (an inserted space
-      // character) fit inside the default 468pt content width of a
-      // LETTER page. That keeps the whole entry (title, description,
-      // both images, footer) on one page so the description doesn't
-      // get visually divorced from its evidence by a page break.
+      // Inline images, capped at TWO. Sized small enough that two
+      // images + a single space separator fit comfortably on one
+      // line inside the 468pt default content width of a LETTER
+      // page. At 210×140pt each, a row of two consumes about
+      // 425pt — plenty of breathing room, so Docs won't push the
+      // second image to a new line.
       //
-      // Each image gets a text-style link applied to its single-char
-      // range so clicking it in the doc opens the original on
-      // Cloudinary. No URL-extension pre-filter here — Cloudinary
-      // URLs sometimes come back without an extension, and the
-      // calling side already filtered by resourceType.
+      // 230pt worked at the math level but Docs added enough
+      // intrinsic image-margin that the combined width tipped over
+      // 468pt and the second image wrapped to a new line. Dropping
+      // to 210pt buys back the margin budget while keeping the
+      // images legible.
+      //
+      // Each image gets a text-style link applied to its single-
+      // char range so clicking it in the doc opens the original on
+      // Cloudinary.
       const images = (task.imageAttachments ?? [])
         .filter((u): u is string => !!u)
         .slice(0, 2);
@@ -299,8 +302,8 @@ export class GoogleDocsService {
             location: { index: cursor, tabId },
             uri: url,
             objectSize: {
-              width: { magnitude: 230, unit: 'PT' },
-              height: { magnitude: 155, unit: 'PT' },
+              width: { magnitude: 210, unit: 'PT' },
+              height: { magnitude: 140, unit: 'PT' },
             },
           },
         });
@@ -316,18 +319,15 @@ export class GoogleDocsService {
             fields: 'link',
           },
         });
-        // Two spaces between the first and second image keep them
-        // visually separated without forcing a line break. The
-        // newline goes after BOTH images so they land on the same
-        // text run / line.
+        // Single space between the two images. Two spaces with the
+        // previous 230pt sizing tipped the line width over the
+        // content width and forced a wrap; one space at 210pt
+        // leaves enough room that the line stays intact.
         if (idx === 0 && images.length > 1) {
           requests.push({
-            insertText: {
-              location: { index: cursor, tabId },
-              text: '  ',
-            },
+            insertText: { location: { index: cursor, tabId }, text: ' ' },
           });
-          cursor += 2;
+          cursor += 1;
         }
       });
       if (images.length > 0) {
