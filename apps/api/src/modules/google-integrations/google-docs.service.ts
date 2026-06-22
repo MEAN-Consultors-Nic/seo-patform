@@ -3,20 +3,19 @@ import { google } from 'googleapis';
 import { GoogleOAuthService } from './google-oauth.service';
 
 /**
- * Mirrors task completions and cycle starts into a client's Google Doc.
+ * Mirrors task completions into a client's Google Doc.
  *
- * The doc is organized as one tab per calendar MONTH (e.g. "March 2026")
- * — tabs are a 2024 Docs feature exposed via documents.batchUpdate's
- * createDocumentTab request. We never create a tab per cycle because
- * the user runs two bi-weekly cycles in the same month and wants them
- * to share a single tab.
- *
- * Both the public methods are idempotent:
- *   - getOrCreateMonthlyTab returns the existing tabId if a tab with
- *     that month label already exists.
- *   - appendTaskToTab is best-effort and logged on failure so the
- *     calling task / cycle flow is never blocked by a doc problem
- *     (missing scope, doc moved, user lost edit access, etc.).
+ * The doc is organized as one tab per calendar MONTH (e.g. "March 2026").
+ * Google Docs API exposes tab CONTENT for reads + writes (via tabId on
+ * each request) but does NOT support creating tabs programmatically —
+ * verified empirically with a 'createDocumentTab Unknown name' error,
+ * and confirmed in the Docs API v1 reference where the Request union
+ * has no tab-creation variant. So the integration assumes the user
+ * pre-creates a tab for each new month they want sync'd to (the
+ * existing template doc already has this convention). When a task
+ * completes for a month whose tab doesn't exist yet, we surface a
+ * clear "create the 'June 2026' tab and retry" message instead of
+ * silently failing.
  */
 @Injectable()
 export class GoogleDocsService {
@@ -39,25 +38,24 @@ export class GoogleDocsService {
   }
 
   /**
-   * Returns the tabId for the monthly tab matching `date`. Lists the
-   * doc's existing tabs first; only creates a new one if there isn't
-   * a match. Throws on failure so callers can surface a meaningful
-   * message — previously this swallowed errors and returned null,
-   * which made misconfigured OAuth / permissions silently fail.
+   * Returns the tabId for the existing monthly tab matching `date`.
+   * Throws a clear message if the tab doesn't exist — Docs API
+   * doesn't support creating tabs, so the user has to add the month's
+   * tab to the doc manually before the next sync.
    */
-  async getOrCreateMonthlyTab(
+  async findMonthlyTab(
     userId: string,
     documentId: string,
     date: Date,
-  ): Promise<string | null> {
+  ): Promise<string> {
     const label = GoogleDocsService.monthLabel(date);
+    let docsAny;
     try {
       const auth = await this.oauth.getAuthorizedClient(userId);
       const docs = google.docs({ version: 'v1', auth });
-      // tabs / createDocumentTab were added to the Docs API in 2024 and
-      // aren't typed in googleapis@173 yet — cast through unknown so the
-      // call compiles. Runtime supports it.
-      const docsAny = docs as unknown as {
+      // tabs are exposed via documents.get(includeTabsContent: true) but
+      // not yet typed in googleapis@173 — cast through unknown.
+      docsAny = docs as unknown as {
         documents: {
           get: (params: {
             documentId: string;
@@ -69,49 +67,35 @@ export class GoogleDocsService {
                 documentTab?: {
                   body?: { content?: Array<{ endIndex?: number }> };
                 };
+                childTabs?: Array<{
+                  tabProperties?: { tabId?: string; title?: string };
+                }>;
               }>;
             };
           }>;
           batchUpdate: (params: {
             documentId: string;
             requestBody: { requests: unknown[] };
-          }) => Promise<{
-            data: {
-              replies?: Array<{
-                createDocumentTab?: {
-                  documentTab?: { tabProperties?: { tabId?: string } };
-                };
-              }>;
-            };
-          }>;
+          }) => Promise<unknown>;
         };
       };
+    } catch (err) {
+      const upstream = (err as Error).message || 'unknown error';
+      throw new Error(
+        `Google OAuth not available: ${upstream}. Disconnect Google in Settings → Integrations and reconnect — the new "documents" scope needs to be granted.`,
+      );
+    }
+
+    let tabs: Array<{
+      tabProperties?: { tabId?: string; title?: string };
+      childTabs?: Array<{ tabProperties?: { tabId?: string; title?: string } }>;
+    }>;
+    try {
       const doc = await docsAny.documents.get({
         documentId,
         includeTabsContent: false,
       });
-      const existing = (doc.data.tabs ?? []).find(
-        (t) => t.tabProperties?.title === label,
-      );
-      if (existing?.tabProperties?.tabId) {
-        return existing.tabProperties.tabId;
-      }
-      // Create a fresh tab. Without a parent, it lands at the end of
-      // the doc's tab list which is the natural place for "newest".
-      const createRes = await docsAny.documents.batchUpdate({
-        documentId,
-        requestBody: {
-          requests: [
-            {
-              createDocumentTab: {
-                tabProperties: { title: label },
-              },
-            },
-          ],
-        },
-      });
-      const reply = createRes.data.replies?.[0]?.createDocumentTab;
-      return reply?.documentTab?.tabProperties?.tabId ?? null;
+      tabs = doc.data.tabs ?? [];
     } catch (err) {
       const e = err as {
         code?: number;
@@ -121,17 +105,43 @@ export class GoogleDocsService {
       const upstream =
         e.response?.data?.error?.message || e.message || 'unknown error';
       this.logger.warn(
-        `getOrCreateMonthlyTab failed for doc=${documentId} label=${label}: ${upstream}`,
+        `documents.get failed for doc=${documentId}: ${upstream}`,
       );
-      // Bubble up so the task-update flow can pass a useful message
-      // back to the UI. The taskService wraps this in its own
-      // try/catch and never actually breaks the task itself.
       throw new Error(
         e.code === 403 || /permission|scope|insufficient/i.test(upstream)
-          ? `Google rejected the doc write: ${upstream}. Disconnect Google in Settings → Integrations and reconnect — the new "documents" scope needs to be granted, and the connected Google account needs Editor access to this doc.`
+          ? `Google rejected the doc read: ${upstream}. The connected Google account needs Editor access to this doc, and you may need to disconnect + reconnect Google so the "documents" scope is granted.`
           : `Google Docs error: ${upstream}`,
       );
     }
+
+    // Tabs can be nested (a tab with child tabs) — flatten so we find
+    // the right one whether the user organized by month at the root or
+    // grouped them under a parent like "2026".
+    const flat: Array<{ tabId?: string; title?: string }> = [];
+    const walk = (
+      t: { tabProperties?: { tabId?: string; title?: string }; childTabs?: unknown[] },
+    ) => {
+      if (t.tabProperties) flat.push(t.tabProperties);
+      for (const c of (t.childTabs ?? []) as Array<{
+        tabProperties?: { tabId?: string; title?: string };
+        childTabs?: unknown[];
+      }>) {
+        walk(c);
+      }
+    };
+    for (const t of tabs) walk(t);
+
+    const match = flat.find((p) => p.title === label);
+    if (match?.tabId) return match.tabId;
+
+    const have = flat
+      .map((p) => p.title)
+      .filter((s): s is string => !!s)
+      .slice(0, 5)
+      .join(', ');
+    throw new Error(
+      `The doc has no tab named "${label}". Google Docs API does not support creating tabs — add a tab called "${label}" to the doc manually and re-trigger the sync. (Existing tabs: ${have || 'none'})`,
+    );
   }
 
   /**

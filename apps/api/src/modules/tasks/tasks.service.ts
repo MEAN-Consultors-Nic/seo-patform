@@ -216,18 +216,7 @@ export class TasksService {
         .googleDocId;
       if (!docId) return { ok: true };
       const when = task.completedAt ?? new Date();
-      const tabId = await this.docs.getOrCreateMonthlyTab(
-        userId,
-        docId,
-        when,
-      );
-      if (!tabId) {
-        return {
-          ok: false,
-          message:
-            'Google returned no tab id when we asked to create one. The doc may be in a Drive folder the connected account cannot edit.',
-        };
-      }
+      const tabId = await this.docs.findMonthlyTab(userId, docId, when);
       const imageAttachments = (task.attachments ?? [])
         .filter((a) => a.resourceType !== 'raw')
         .map((a) => a.url)
