@@ -41,8 +41,9 @@ export class GoogleDocsService {
   /**
    * Returns the tabId for the monthly tab matching `date`. Lists the
    * doc's existing tabs first; only creates a new one if there isn't
-   * a match. Returns null if the call fails — callers should treat
-   * null as "best-effort failed, log and move on" rather than fatal.
+   * a match. Throws on failure so callers can surface a meaningful
+   * message — previously this swallowed errors and returned null,
+   * which made misconfigured OAuth / permissions silently fail.
    */
   async getOrCreateMonthlyTab(
     userId: string,
@@ -112,10 +113,24 @@ export class GoogleDocsService {
       const reply = createRes.data.replies?.[0]?.createDocumentTab;
       return reply?.documentTab?.tabProperties?.tabId ?? null;
     } catch (err) {
+      const e = err as {
+        code?: number;
+        message?: string;
+        response?: { data?: { error?: { message?: string } } };
+      };
+      const upstream =
+        e.response?.data?.error?.message || e.message || 'unknown error';
       this.logger.warn(
-        `getOrCreateMonthlyTab failed for doc=${documentId} label=${label}: ${(err as Error).message}`,
+        `getOrCreateMonthlyTab failed for doc=${documentId} label=${label}: ${upstream}`,
       );
-      return null;
+      // Bubble up so the task-update flow can pass a useful message
+      // back to the UI. The taskService wraps this in its own
+      // try/catch and never actually breaks the task itself.
+      throw new Error(
+        e.code === 403 || /permission|scope|insufficient/i.test(upstream)
+          ? `Google rejected the doc write: ${upstream}. Disconnect Google in Settings → Integrations and reconnect — the new "documents" scope needs to be granted, and the connected Google account needs Editor access to this doc.`
+          : `Google Docs error: ${upstream}`,
+      );
     }
   }
 
@@ -246,9 +261,17 @@ export class GoogleDocsService {
         requestBody: { requests },
       });
     } catch (err) {
+      const e = err as {
+        code?: number;
+        message?: string;
+        response?: { data?: { error?: { message?: string } } };
+      };
+      const upstream =
+        e.response?.data?.error?.message || e.message || 'unknown error';
       this.logger.warn(
-        `appendTaskToTab failed for doc=${documentId} tab=${tabId}: ${(err as Error).message}`,
+        `appendTaskToTab failed for doc=${documentId} tab=${tabId}: ${upstream}`,
       );
+      throw new Error(`Google Docs append failed: ${upstream}`);
     }
   }
 

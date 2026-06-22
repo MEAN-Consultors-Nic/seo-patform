@@ -136,6 +136,12 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
         </div>
       }
 
+      @if (docSyncToast(); as msg) {
+        <div class="card border-l-4 border-positive-500 bg-positive-100/40 text-sm py-2 px-3">
+          📝 {{ msg }}
+        </div>
+      }
+
       <!-- Stats -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         @for (stat of statCards(); track stat.key) {
@@ -665,6 +671,8 @@ export class ClientTasksTab implements OnChanges {
   detailTask = signal<Task | null>(null);
   commentDraft = '';
   postingComment = signal(false);
+  /** Brief success toast text shown after a task is synced to Google Doc. */
+  docSyncToast = signal<string | null>(null);
   editForm: {
     title: string;
     description?: string;
@@ -946,7 +954,25 @@ export class ClientTasksTab implements OnChanges {
       }
     }
     this.tasksSvc.update(t._id, { status }).subscribe({
-      next: () => this.loadTasks(),
+      next: (res) => {
+        this.loadTasks();
+        // The backend tacks a _docSync field onto the response when
+        // the status transition triggered a Google Doc sync. Surface
+        // it so the user can see whether the doc actually got
+        // updated — silent failures defeat the purpose of the
+        // integration.
+        const sync = (res as unknown as { _docSync?: { ok: boolean; message?: string } })._docSync;
+        if (sync && !sync.ok) {
+          alert(`Doc sync failed: ${sync.message ?? 'Unknown error'}`);
+        } else if (sync?.ok && sync.message) {
+          // Successful syncs only show a brief notice when there was
+          // something to do — skipping clients without a doc linked.
+          if (sync.message.includes('synced')) {
+            this.docSyncToast.set(sync.message);
+            setTimeout(() => this.docSyncToast.set(null), 4000);
+          }
+        }
+      },
       error: (err) => {
         const msg = err?.error?.message;
         alert(Array.isArray(msg) ? msg.join(', ') : msg || 'Could not update status.');

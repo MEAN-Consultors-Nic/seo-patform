@@ -172,22 +172,31 @@ export class TasksService {
       .exec();
     if (!updated) throw new NotFoundException(`Task ${id} not found`);
 
-    // Fire-and-forget mirror into the client's Google Doc when the
-    // status just transitioned to 'completed'. Wrapped in its own
-    // promise + try/catch so a docs failure never breaks the task
-    // update itself.
+    // Mirror into the client's Google Doc when status just flipped
+    // to 'completed'. The await is intentional — we want any failure
+    // to make it back to the client as part of the response so the
+    // UI can show a toast. Failure here NEVER throws — the task
+    // update has already persisted at this point and the doc step
+    // is informational.
+    let docSync: { ok: boolean; message?: string } | undefined;
     if (dto.status === 'completed' && user?.userId) {
-      void this.mirrorCompletionToGoogleDoc(updated, user.userId);
+      docSync = await this.mirrorCompletionToGoogleDoc(updated, user.userId);
     }
 
-    return updated;
+    return docSync
+      ? ({ ...updated, _docSync: docSync } as typeof updated & {
+          _docSync: typeof docSync;
+        })
+      : updated;
   }
 
   /**
    * Looks up the client's linked googleDocId, resolves (or creates)
    * the monthly tab matching the task's completedAt date, and appends
-   * a heading + description + image-attachment block. Best-effort —
-   * any failure is logged via GoogleDocsService and swallowed here.
+   * a heading + description + image-attachment block. Returns a
+   * status so the caller can surface success / failure to the UI.
+   * Skipped (returns ok=true, no message) when the client isn't
+   * linked to a doc.
    */
   private async mirrorCompletionToGoogleDoc(
     task: {
@@ -200,19 +209,25 @@ export class TasksService {
       attachments?: Array<{ url: string; resourceType?: string }>;
     },
     userId: string,
-  ): Promise<void> {
+  ): Promise<{ ok: boolean; message?: string }> {
     try {
       const client = await this.clients.findOne(String(task.clientId));
       const docId = (client as unknown as { googleDocId?: string })
         .googleDocId;
-      if (!docId) return;
+      if (!docId) return { ok: true };
       const when = task.completedAt ?? new Date();
       const tabId = await this.docs.getOrCreateMonthlyTab(
         userId,
         docId,
         when,
       );
-      if (!tabId) return;
+      if (!tabId) {
+        return {
+          ok: false,
+          message:
+            'Google returned no tab id when we asked to create one. The doc may be in a Drive folder the connected account cannot edit.',
+        };
+      }
       const imageAttachments = (task.attachments ?? [])
         .filter((a) => a.resourceType !== 'raw')
         .map((a) => a.url)
@@ -224,9 +239,14 @@ export class TasksService {
         completedAt: when,
         imageAttachments,
       });
-    } catch {
-      // GoogleDocsService logs its own warnings; this catch covers
-      // unexpected paths like a missing client lookup. Never block.
+      return { ok: true, message: 'Task synced to Google Doc.' };
+    } catch (err) {
+      return {
+        ok: false,
+        message:
+          (err as Error).message ||
+          'Unknown error while syncing to Google Doc.',
+      };
     }
   }
 
