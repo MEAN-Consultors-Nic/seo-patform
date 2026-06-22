@@ -194,13 +194,18 @@ export class GoogleDocsService {
         };
       };
 
-      // Build the metadata line + heading + description text. The
-      // metadata line carries the completion date (the previously
-      // requested field), category, and priority in small grey italic
-      // letters; the title gets its own HEADING_3 line below for
-      // visual emphasis. A separator dash row sits on top of each
-      // entry so multiple completions on the same day don't visually
-      // bleed into each other.
+      // Layout (top → bottom):
+      //   title          ← HEADING_3
+      //   description    ← NORMAL_TEXT
+      //   images         ← inline, each clickable to original
+      //   separator      ← thin grey rule
+      //   metadata       ← small grey italic: completion date /
+      //                    category / priority
+      //
+      // Metadata sits at the BOTTOM of each entry like a signature
+      // line, so the reader sees what was done first and how it was
+      // tagged second. Images go between description and metadata
+      // because they're evidence of the work, not provenance.
       const dateStr = (task.completedAt ?? new Date()).toLocaleDateString(
         'en-US',
         {
@@ -222,10 +227,10 @@ export class GoogleDocsService {
       const title = task.title;
       const description = this.stripHtml(task.description || '').trim();
 
-      // We need to know the current end-of-body index for the tab so
-      // every insertion lands at the tail. documents.get with
-      // includeTabsContent gives us each tab's body.content array;
-      // the last element's endIndex is the tab's end-of-body cursor.
+      // Find the current end-of-body so every insert lands at the
+      // tail. includeTabsContent MUST be true for the response to
+      // include the tabs[] array — false returns the legacy
+      // single-body shape.
       const doc = await docsAny.documents.get({
         documentId,
         includeTabsContent: true,
@@ -239,80 +244,27 @@ export class GoogleDocsService {
       // implicit trailing newline at the very end of the body.
       let cursor = (lastBlock?.endIndex ?? 1) - 1;
 
-      // Compose body text in one insertText so we know exact ranges
-      // for the subsequent style updates. Layout:
-      //   \n  (leading separator line)
-      //   ─── separator ─── \n
-      //   metadata line \n
-      //   title \n
-      //   description \n  (optional)
-      //   \n  (trailing blank line before images)
-      const sepStart = cursor + 1; // skip the leading \n
-      const sepEnd = sepStart + separator.length;
-      const metaStart = sepEnd + 1; // +1 for the \n after separator
-      const metaEnd = metaStart + metaLine.length;
-      const titleStart = metaEnd + 1;
+      const requests: unknown[] = [];
+
+      // 1) Title + description block. Leading \n separates this
+      //    entry from whatever the previous one left behind.
+      const intro =
+        `\n${title}\n` + (description ? `${description}\n` : '\n');
+      const titleStart = cursor + 1; // skip the leading \n
       const titleEnd = titleStart + title.length;
       const descStart = titleEnd + 1;
       const descEnd = descStart + description.length;
 
-      const bodyText =
-        `\n${separator}\n${metaLine}\n${title}\n` +
-        (description ? `${description}\n` : '') +
-        '\n';
-
-      const requests: unknown[] = [
-        {
-          insertText: {
-            location: { index: cursor, tabId },
-            text: bodyText,
-          },
+      requests.push({
+        insertText: { location: { index: cursor, tabId }, text: intro },
+      });
+      requests.push({
+        updateParagraphStyle: {
+          range: { startIndex: titleStart, endIndex: titleEnd, tabId },
+          paragraphStyle: { namedStyleType: 'HEADING_3' },
+          fields: 'namedStyleType',
         },
-        // Separator line: small + grey, so the divider reads as
-        // background structure rather than competing for attention.
-        {
-          updateTextStyle: {
-            range: { startIndex: sepStart, endIndex: sepEnd, tabId },
-            textStyle: {
-              fontSize: { magnitude: 8, unit: 'PT' },
-              foregroundColor: {
-                color: { rgbColor: { red: 0.75, green: 0.75, blue: 0.75 } },
-              },
-            },
-            fields: 'fontSize,foregroundColor',
-          },
-        },
-        // Metadata line: small uppercase grey italic so the date /
-        // category / priority block reads as muted metadata under
-        // the bigger task title below.
-        {
-          updateTextStyle: {
-            range: { startIndex: metaStart, endIndex: metaEnd, tabId },
-            textStyle: {
-              fontSize: { magnitude: 9, unit: 'PT' },
-              italic: true,
-              foregroundColor: {
-                color: {
-                  rgbColor: { red: 0.42, green: 0.45, blue: 0.5 },
-                },
-              },
-            },
-            fields: 'fontSize,italic,foregroundColor',
-          },
-        },
-        // Title: HEADING_3 to surface in the doc outline and Tab
-        // navigation list.
-        {
-          updateParagraphStyle: {
-            range: { startIndex: titleStart, endIndex: titleEnd, tabId },
-            paragraphStyle: { namedStyleType: 'HEADING_3' },
-            fields: 'namedStyleType',
-          },
-        },
-      ];
-      // Description gets a normal-text reset so the HEADING_3 from
-      // the title doesn't bleed onto the next paragraph when the
-      // implicit newline gets styled by Docs' continuation rules.
+      });
       if (description) {
         requests.push({
           updateParagraphStyle: {
@@ -322,7 +274,7 @@ export class GoogleDocsService {
           },
         });
       }
-      cursor += bodyText.length;
+      cursor += intro.length;
 
       // Inline images. Each is sized 480×320pt (a touch wider than the
       // previous 360×240 to better fit landscape screenshots in a doc
@@ -330,9 +282,15 @@ export class GoogleDocsService {
       // character range so clicking the image in the doc opens the
       // original on Cloudinary. A blank paragraph between images keeps
       // them visually separated when more than one is attached.
-      const images = (task.imageAttachments ?? []).filter(
-        (u) => !!u && this.isLikelyImage(u),
-      );
+      //
+      // No URL-extension pre-filter here: Cloudinary URLs sometimes
+      // come back without an extension (`/upload/v123/abc` instead of
+      // `…/abc.png`). The calling side already filtered by Cloudinary
+      // resourceType so anything reaching us is image-typed. If Docs
+      // can't render a specific URL the entire batch fails and we
+      // surface that error verbatim — much better than silently
+      // skipping every image as the old extension check did.
+      const images = (task.imageAttachments ?? []).filter((u): u is string => !!u);
       images.forEach((url, idx) => {
         const imageIndex = cursor;
         requests.push({
@@ -369,6 +327,47 @@ export class GoogleDocsService {
         });
         cursor += sep.length;
       });
+
+      // 3) Footer: separator rule + metadata signature line, then a
+      //    blank line so the next entry has air around it.
+      const footer = `${separator}\n${metaLine}\n\n`;
+      const footerSepStart = cursor;
+      const footerSepEnd = footerSepStart + separator.length;
+      const footerMetaStart = footerSepEnd + 1;
+      const footerMetaEnd = footerMetaStart + metaLine.length;
+
+      requests.push({
+        insertText: { location: { index: cursor, tabId }, text: footer },
+      });
+      // Separator: thin light grey rule.
+      requests.push({
+        updateTextStyle: {
+          range: { startIndex: footerSepStart, endIndex: footerSepEnd, tabId },
+          textStyle: {
+            fontSize: { magnitude: 8, unit: 'PT' },
+            foregroundColor: {
+              color: { rgbColor: { red: 0.75, green: 0.75, blue: 0.75 } },
+            },
+          },
+          fields: 'fontSize,foregroundColor',
+        },
+      });
+      // Metadata: small grey italic so completion date / category /
+      // priority sits as a muted signature beneath the entry.
+      requests.push({
+        updateTextStyle: {
+          range: { startIndex: footerMetaStart, endIndex: footerMetaEnd, tabId },
+          textStyle: {
+            fontSize: { magnitude: 9, unit: 'PT' },
+            italic: true,
+            foregroundColor: {
+              color: { rgbColor: { red: 0.42, green: 0.45, blue: 0.5 } },
+            },
+          },
+          fields: 'fontSize,italic,foregroundColor',
+        },
+      });
+      cursor += footer.length;
 
       await docsAny.documents.batchUpdate({
         documentId,
