@@ -574,6 +574,42 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                   (changed)="onAttachmentsChangedFromDetail(d, $event)" />
               </div>
             }
+
+            <!-- Comments thread (shared with supervisor portal) -->
+            <div class="mt-5">
+              <div class="text-[10px] uppercase tracking-wider font-bold text-ink-400 mb-2">
+                Comments ({{ (d.comments || []).length }})
+              </div>
+              @if ((d.comments || []).length) {
+                <div class="space-y-2 mb-3">
+                  @for (c of d.comments; track c.createdAt) {
+                    <div [class]="'rounded-md px-3 py-2 text-xs ' +
+                          (c.authorRole === 'supervisor'
+                            ? 'bg-brand-50 border border-brand-500/20'
+                            : 'bg-ink-50 border border-ink-200')">
+                      <div class="flex items-center justify-between text-[10px] text-ink-500 mb-1">
+                        <span class="font-semibold">
+                          {{ c.authorName || (c.authorRole === 'supervisor' ? 'Supervisor' : 'Team') }}
+                        </span>
+                        <span>{{ c.createdAt | date: 'short' }}</span>
+                      </div>
+                      <div class="text-ink-800 whitespace-pre-wrap">{{ c.content }}</div>
+                    </div>
+                  }
+                </div>
+              }
+              <div class="flex gap-2">
+                <textarea class="input text-xs flex-1"
+                          rows="2"
+                          [(ngModel)]="commentDraft"
+                          placeholder="Write a comment…"></textarea>
+                <button class="btn-primary text-xs whitespace-nowrap"
+                        [disabled]="!commentDraft.trim() || postingComment()"
+                        (click)="postComment(d)">
+                  {{ postingComment() ? '…' : 'Post' }}
+                </button>
+              </div>
+            </div>
           </div>
 
           <!-- Footer -->
@@ -627,6 +663,8 @@ export class ClientTasksTab implements OnChanges {
   editingTask = signal<Task | null>(null);
   creatingTask = signal(false);
   detailTask = signal<Task | null>(null);
+  commentDraft = '';
+  postingComment = signal(false);
   editForm: {
     title: string;
     description?: string;
@@ -1067,6 +1105,31 @@ export class ClientTasksTab implements OnChanges {
     this.onAttachmentsChanged(t, attachments);
     const fresh = this.tasks().find((x) => x._id === t._id);
     if (fresh) this.detailTask.set(fresh);
+  }
+
+  /**
+   * Posts a team-side comment to the task open in the detail modal,
+   * then patches both the in-memory tasks list and the detailTask
+   * signal so the new entry appears immediately without a refetch.
+   */
+  postComment(t: Task) {
+    const content = this.commentDraft.trim();
+    if (!content || !t._id) return;
+    this.postingComment.set(true);
+    this.tasksSvc.addComment(t._id, content).subscribe({
+      next: (comments) => {
+        const updated = { ...t, comments } as Task;
+        this.tasks.update((arr) =>
+          arr.map((x) => (x._id === t._id ? updated : x)),
+        );
+        this.detailTask.set(updated);
+        this.commentDraft = '';
+        this.postingComment.set(false);
+      },
+      error: () => {
+        this.postingComment.set(false);
+      },
+    });
   }
 
   isDescriptionLong(html: string | undefined | null): boolean {

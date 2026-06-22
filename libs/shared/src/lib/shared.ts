@@ -403,6 +403,12 @@ export interface Task {
   notes?: string;
   attachments?: TaskAttachment[];
   subtasks?: Subtask[];
+  comments?: Array<{
+    content: string;
+    authorRole: 'supervisor' | 'team';
+    authorName?: string;
+    createdAt: Date | string;
+  }>;
   createdAt?: Date;
   updatedAt?: Date;
 }

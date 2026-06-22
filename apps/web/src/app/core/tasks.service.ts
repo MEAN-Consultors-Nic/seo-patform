@@ -53,4 +53,15 @@ export class TasksService {
       done,
     });
   }
+
+  addComment(taskId: string, content: string) {
+    return this.http.post<
+      Array<{
+        content: string;
+        authorRole: 'supervisor' | 'team';
+        authorName?: string;
+        createdAt: string;
+      }>
+    >(`${this.base}/tasks/${taskId}/comments`, { content });
+  }
 }

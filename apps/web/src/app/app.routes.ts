@@ -13,6 +13,13 @@ export const appRoutes: Route[] = [
       import('./features/public/public-report.component').then((m) => m.PublicReportComponent),
   },
   {
+    path: 'supervisor',
+    loadChildren: () =>
+      import('./features/supervisor/supervisor.routes').then(
+        (m) => m.supervisorRoutes,
+      ),
+  },
+  {
     path: '',
     canActivate: [authGuard],
     loadComponent: () =>
@@ -68,6 +75,14 @@ export const appRoutes: Route[] = [
         loadComponent: () =>
           import('./features/settings/report-layout-settings.component').then(
             (m) => m.ReportLayoutSettingsComponent,
+          ),
+      },
+      {
+        path: 'settings/supervisor',
+        canActivate: [roleGuard('root', 'seo-manager')],
+        loadComponent: () =>
+          import('./features/settings/supervisor-settings.component').then(
+            (m) => m.SupervisorSettingsComponent,
           ),
       },
       {
