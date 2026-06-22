@@ -91,9 +91,14 @@ export class GoogleDocsService {
       childTabs?: Array<{ tabProperties?: { tabId?: string; title?: string } }>;
     }>;
     try {
+      // includeTabsContent MUST be true for the response to include
+      // the `tabs` array. With false the API returns the legacy
+      // single-body shape and tabs is undefined — that produced the
+      // 'Existing tabs: none' message even when the doc clearly had
+      // tabs in the sidebar.
       const doc = await docsAny.documents.get({
         documentId,
-        includeTabsContent: false,
+        includeTabsContent: true,
       });
       tabs = doc.data.tabs ?? [];
     } catch (err) {
