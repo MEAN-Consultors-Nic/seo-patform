@@ -117,4 +117,16 @@ export class TasksController {
       user,
     );
   }
+
+  @Post(':id/comments')
+  addComment(
+    @Param('id') id: string,
+    @Body() body: { content?: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    if (!body?.content || !body.content.trim()) {
+      throw new BadRequestException('Comment is empty');
+    }
+    return this.tasks.addTeamComment(id, body.content.trim(), user);
+  }
 }

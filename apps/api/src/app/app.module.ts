@@ -27,6 +27,7 @@ import { SchemaToolsModule } from '../modules/schema-tools/schema-tools.module';
 import { ShopifyModule } from '../modules/shopify/shopify.module';
 import { WordpressModule } from '../modules/wordpress/wordpress.module';
 import { AppSettingsModule } from '../modules/app-settings/app-settings.module';
+import { SupervisorModule } from '../modules/supervisor/supervisor.module';
 import { SeedModule } from '../seed/seed.module';
 
 @Module({
@@ -56,6 +57,7 @@ import { SeedModule } from '../seed/seed.module';
     ShopifyModule,
     WordpressModule,
     AppSettingsModule,
+    SupervisorModule,
     SeedModule,
   ],
   controllers: [AppController],

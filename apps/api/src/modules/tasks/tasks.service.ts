@@ -179,6 +179,38 @@ export class TasksService {
     return { deleted: true };
   }
 
+  /**
+   * Appends a team-authored comment to a task. The supervisor uses a
+   * parallel SupervisorService.addSupervisorComment writing to the
+   * same embedded `comments` array so both sides see the full thread.
+   */
+  async addTeamComment(
+    taskId: string,
+    content: string,
+    user: AuthenticatedUser,
+  ) {
+    await this.ensureAccessToTask(taskId, user);
+    const updated = await this.model
+      .findByIdAndUpdate(
+        taskId,
+        {
+          $push: {
+            comments: {
+              content,
+              authorRole: 'team',
+              authorName: user.email,
+              createdAt: new Date(),
+            },
+          },
+        },
+        { new: true },
+      )
+      .lean()
+      .exec();
+    if (!updated) throw new NotFoundException(`Task ${taskId} not found`);
+    return updated.comments ?? [];
+  }
+
   async addSubtask(
     id: string,
     subtask: { title: string; done?: boolean },

@@ -36,6 +36,22 @@ class SubtaskSubSchema implements Subtask {
 
 const SubtaskSchemaDef = SchemaFactory.createForClass(SubtaskSubSchema);
 
+/**
+ * Single entry in a task's discussion thread. Authored by either the
+ * SEO team or the supervisor (PIN-issued JWT) — authorRole disambiguates
+ * so each UI can color/label entries appropriately.
+ */
+@Schema({ _id: false })
+class TaskCommentSubSchema {
+  @Prop({ required: true }) content!: string;
+  @Prop({ required: true, type: String, enum: ['supervisor', 'team'] })
+  authorRole!: 'supervisor' | 'team';
+  @Prop() authorName?: string;
+  @Prop({ default: () => new Date() }) createdAt!: Date;
+}
+
+const TaskCommentSchemaDef = SchemaFactory.createForClass(TaskCommentSubSchema);
+
 @Schema({ timestamps: true, collection: 'tasks' })
 export class Task {
   @Prop({ type: Types.ObjectId, ref: 'Client', required: true, index: true })
@@ -98,6 +114,14 @@ export class Task {
 
   @Prop({ type: [SubtaskSchemaDef], default: [] })
   subtasks?: Subtask[];
+
+  @Prop({ type: [TaskCommentSchemaDef], default: [] })
+  comments?: Array<{
+    content: string;
+    authorRole: 'supervisor' | 'team';
+    authorName?: string;
+    createdAt: Date;
+  }>;
 }
 
 export const TaskSchema = SchemaFactory.createForClass(Task);

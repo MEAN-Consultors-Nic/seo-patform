@@ -23,6 +23,24 @@ const ReportSectionConfigSchemaDef = SchemaFactory.createForClass(
 export class AppSettings {
   @Prop({ type: [ReportSectionConfigSchemaDef], default: undefined })
   reportLayout?: ReportSectionConfig[];
+
+  /**
+   * Plain-text PIN used by the supervisor portal at /supervisor.
+   * Stored plain so the admin Settings page can display it once after
+   * generation — there's only ever one PIN active at a time and it
+   * never gets shown to the supervisor (they enter it on the auth
+   * page). The hashed copy below is what's actually checked against
+   * incoming auth attempts.
+   */
+  @Prop()
+  supervisorPin?: string;
+
+  @Prop()
+  supervisorPinHash?: string;
+
+  /** Flag that gates the entire /supervisor portal. False / missing = disabled. */
+  @Prop({ default: false })
+  supervisorEnabled?: boolean;
 }
 
 export const AppSettingsSchema = SchemaFactory.createForClass(AppSettings);
