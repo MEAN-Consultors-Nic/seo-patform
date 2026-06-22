@@ -248,6 +248,9 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed';
 export class ClientIndexingTab implements OnChanges {
   private svc = inject(IndexingService);
   @Input({ required: true }) clientId!: string;
+  /** GSC property url (e.g. https://mbglogistics.com/ or sc-domain:...).
+   *  Used to deep-link into GSC URL Inspection for the right property. */
+  @Input() gscSiteUrl?: string;
 
   rows = signal<PageIndexStatus[]>([]);
   summary = signal<IndexingSummary | null>(null);
@@ -360,15 +363,26 @@ export class ClientIndexingTab implements OnChanges {
   // --- Context menu (open external Google tools for one URL) -------------
 
   openGscInspection(url: string) {
-    // GSC's URL Inspection tool deep-link — opens the inspection panel
-    // pre-filled with the URL, which is where "Request indexing" lives.
-    // The resource_id picks the right property automatically when the
-    // user is logged in.
-    window.open(
-      `https://search.google.com/search-console/inspect?resource_id=&id=${encodeURIComponent(url)}`,
-      '_blank',
-      'noopener,noreferrer',
-    );
+    // GSC URL Inspection deep-link. resource_id MUST be set to the
+    // exact property identifier (the same value the client has stored
+    // as gscSiteUrl) — without it, Google bounces to a "select a
+    // property" screen instead of opening the inspection. Falls back
+    // to the inspection root if we don't have the property handy.
+    const id = encodeURIComponent(url);
+    if (this.gscSiteUrl) {
+      const resource = encodeURIComponent(this.gscSiteUrl);
+      window.open(
+        `https://search.google.com/search-console/inspect?resource_id=${resource}&id=${id}`,
+        '_blank',
+        'noopener,noreferrer',
+      );
+    } else {
+      window.open(
+        `https://search.google.com/search-console/inspect?id=${id}`,
+        '_blank',
+        'noopener,noreferrer',
+      );
+    }
   }
 
   openPageSpeed(url: string) {

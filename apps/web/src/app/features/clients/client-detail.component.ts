@@ -192,7 +192,7 @@ interface TabDef {
             <app-client-gsc-insights-tab [clientId]="c._id!" />
           }
           @case ('indexing') {
-            <app-client-indexing-tab [clientId]="c._id!" />
+            <app-client-indexing-tab [clientId]="c._id!" [gscSiteUrl]="c.gscSiteUrl" />
           }
           @case ('service-areas') {
             <app-client-service-areas-tab [client]="c" />
