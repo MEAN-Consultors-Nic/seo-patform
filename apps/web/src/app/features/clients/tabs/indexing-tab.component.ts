@@ -15,7 +15,7 @@ import {
   PullResult,
 } from '../../../core/indexing.service';
 
-type StatusFilter = 'all' | 'indexed' | 'not_indexed' | 'unknown';
+type StatusFilter = 'all' | 'indexed' | 'not_indexed';
 
 @Component({
   selector: 'app-client-indexing-tab',
@@ -82,7 +82,7 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed' | 'unknown';
 
       <!-- Summary tiles -->
       @if (summary(); as s) {
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
           <button type="button" (click)="filter.set('all')"
                   [class]="'text-left rounded-lg border bg-white px-3 py-3 shadow-card hover:shadow-elevated transition ' +
                     (filter() === 'all' ? 'border-brand-500 ring-2 ring-brand-500/20' : 'border-ink-200')">
@@ -100,12 +100,7 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed' | 'unknown';
                     (filter() === 'not_indexed' ? 'border-danger-500 ring-2 ring-danger-500/20' : 'border-ink-200')">
             <div class="text-[10px] uppercase tracking-wider font-semibold text-danger-500">Not indexed</div>
             <div class="text-xl font-bold text-ink-900 mt-0.5">{{ s.notIndexed }}</div>
-          </button>
-          <button type="button" (click)="filter.set('unknown')"
-                  [class]="'text-left rounded-lg border bg-white px-3 py-3 shadow-card hover:shadow-elevated transition ' +
-                    (filter() === 'unknown' ? 'border-ink-500 ring-2 ring-ink-500/20' : 'border-ink-200')">
-            <div class="text-[10px] uppercase tracking-wider font-semibold text-ink-500">Neutral / unknown</div>
-            <div class="text-xl font-bold text-ink-900 mt-0.5">{{ s.neutral + s.unknown }}</div>
+            <div class="text-[10px] text-ink-500 mt-0.5">includes "discovered" + "crawled"</div>
           </button>
           <div class="rounded-lg border border-brand-500/40 bg-brand-50 px-3 py-3">
             <div class="text-[10px] uppercase tracking-wider font-semibold text-brand-600">🆕 Newly indexed</div>
@@ -161,9 +156,10 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed' | 'unknown';
                 <th class="text-left px-3 py-2 whitespace-nowrap">Last crawl</th>
                 <th class="text-left px-3 py-2 whitespace-nowrap">Canonical</th>
                 <th class="text-left px-3 py-2 whitespace-nowrap">First indexed</th>
+                <th class="text-right px-3 py-2 w-10"></th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-ink-100">
+            <tbody class="divide-y divide-ink-100" (click)="closeMenu()">
               @for (r of filteredRows(); track r.url) {
                 <tr class="hover:bg-ink-50/50">
                   <td class="px-3 py-2 max-w-xs">
@@ -204,6 +200,42 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed' | 'unknown';
                       —
                     }
                   </td>
+                  <td class="px-3 py-2 text-right relative">
+                    <button type="button"
+                            (click)="toggleMenu(r.url, $event)"
+                            [class.bg-ink-100]="menuOpenUrl() === r.url"
+                            class="w-7 h-7 rounded-md inline-flex items-center justify-center text-ink-500 hover:bg-ink-100 hover:text-ink-900 transition"
+                            aria-label="URL actions">
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <circle cx="3" cy="8" r="1.5" />
+                        <circle cx="8" cy="8" r="1.5" />
+                        <circle cx="13" cy="8" r="1.5" />
+                      </svg>
+                    </button>
+                    @if (menuOpenUrl() === r.url) {
+                      <div (click)="$event.stopPropagation()"
+                           class="absolute right-2 top-9 z-20 w-56 bg-white border border-ink-200 rounded-md shadow-elevated py-1 text-left">
+                        <button type="button"
+                                (click)="openGscInspection(r.url); closeMenu()"
+                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-sm text-ink-700 flex items-center gap-2">
+                          <span class="text-positive-500">↻</span>
+                          Request indexing (GSC)
+                        </button>
+                        <button type="button"
+                                (click)="openPageSpeed(r.url); closeMenu()"
+                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-sm text-ink-700 flex items-center gap-2">
+                          <span class="text-sky-500">⚡</span>
+                          PageSpeed Insights
+                        </button>
+                        <button type="button"
+                                (click)="openRichResults(r.url); closeMenu()"
+                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-sm text-ink-700 flex items-center gap-2">
+                          <span class="text-brand-500">★</span>
+                          Rich Results Test
+                        </button>
+                      </div>
+                    }
+                  </td>
                 </tr>
               }
             </tbody>
@@ -231,8 +263,14 @@ export class ClientIndexingTab implements OnChanges {
     const f = this.filter();
     return this.rows().filter((r) => {
       if (f === 'indexed' && r.verdict !== 'PASS') return false;
-      if (f === 'not_indexed' && r.verdict !== 'FAIL') return false;
-      if (f === 'unknown' && r.verdict !== 'NEUTRAL' && r.verdict !== 'VERDICT_UNSPECIFIED')
+      // 'Not indexed' bucket bundles FAIL (blocked / noindex / redirect)
+      // with NEUTRAL (discovered-not-indexed, crawled-not-indexed) the
+      // same way GSC does in its 'Why pages aren't indexed' report.
+      if (
+        f === 'not_indexed' &&
+        r.verdict !== 'FAIL' &&
+        r.verdict !== 'NEUTRAL'
+      )
         return false;
       if (q && !r.url.toLowerCase().includes(q)) return false;
       return true;
@@ -299,22 +337,62 @@ export class ClientIndexingTab implements OnChanges {
 
   statusLabel(v: string): string {
     if (v === 'PASS') return 'Indexed';
-    if (v === 'FAIL') return 'Not indexed';
-    if (v === 'NEUTRAL') return 'Neutral';
+    // Both FAIL and NEUTRAL render as 'Not indexed' to match how the
+    // user thinks about it. The exact reason (Excluded by noindex,
+    // Discovered - currently not indexed, etc.) sits in the next
+    // column so the distinction isn't lost.
+    if (v === 'FAIL' || v === 'NEUTRAL') return 'Not indexed';
     return 'Unknown';
   }
 
   statusPill(v: string): string {
     if (v === 'PASS') return 'bg-positive-100 text-positive-500';
-    if (v === 'FAIL') return 'bg-danger-100 text-danger-500';
-    if (v === 'NEUTRAL') return 'bg-warning-100 text-warning-500';
+    if (v === 'FAIL' || v === 'NEUTRAL') return 'bg-danger-100 text-danger-500';
     return 'bg-ink-100 text-ink-500';
   }
 
   statusDot(v: string): string {
     if (v === 'PASS') return 'bg-positive-500';
-    if (v === 'FAIL') return 'bg-danger-500';
-    if (v === 'NEUTRAL') return 'bg-warning-500';
+    if (v === 'FAIL' || v === 'NEUTRAL') return 'bg-danger-500';
     return 'bg-ink-400';
   }
+
+  // --- Context menu (open external Google tools for one URL) -------------
+
+  openGscInspection(url: string) {
+    // GSC's URL Inspection tool deep-link — opens the inspection panel
+    // pre-filled with the URL, which is where "Request indexing" lives.
+    // The resource_id picks the right property automatically when the
+    // user is logged in.
+    window.open(
+      `https://search.google.com/search-console/inspect?resource_id=&id=${encodeURIComponent(url)}`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+  }
+
+  openPageSpeed(url: string) {
+    window.open(
+      `https://pagespeed.web.dev/analysis?url=${encodeURIComponent(url)}`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+  }
+
+  openRichResults(url: string) {
+    window.open(
+      `https://search.google.com/test/rich-results?url=${encodeURIComponent(url)}`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+  }
+
+  toggleMenu(url: string, ev: Event) {
+    ev.stopPropagation();
+    this.menuOpenUrl.set(this.menuOpenUrl() === url ? null : url);
+  }
+
+  closeMenu = () => this.menuOpenUrl.set(null);
+
+  menuOpenUrl = signal<string | null>(null);
 }

@@ -25,7 +25,6 @@ export interface IndexingSummary {
   total: number;
   indexed: number;
   notIndexed: number;
-  neutral: number;
   unknown: number;
   newlyIndexedSinceLastPull: number;
   lastPulledAt?: string;

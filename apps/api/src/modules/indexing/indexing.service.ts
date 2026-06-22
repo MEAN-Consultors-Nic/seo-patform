@@ -16,12 +16,20 @@ import {
   PageIndexStatusDocument,
 } from './page-index-status.schema';
 
-/** Pulled out so the controller can show counts without re-querying twice. */
+/**
+ * Pulled out so the controller can show counts without re-querying twice.
+ *
+ * Important: Google buckets verdicts as PASS / FAIL / NEUTRAL /
+ * VERDICT_UNSPECIFIED. The "Why pages aren't indexed" report in GSC
+ * lumps both FAIL and NEUTRAL together — anything that isn't indexed
+ * today, regardless of whether it's intentional (noindex, robots.txt
+ * blocked) or circumstantial (discovered-but-not-yet-indexed). We
+ * match that mental model: notIndexed = FAIL + NEUTRAL.
+ */
 export interface IndexingSummary {
   total: number;
   indexed: number;
   notIndexed: number;
-  neutral: number;
   unknown: number;
   newlyIndexedSinceLastPull: number;
   lastPulledAt?: Date;
@@ -63,7 +71,6 @@ export class IndexingService {
       total: rows.length,
       indexed: 0,
       notIndexed: 0,
-      neutral: 0,
       unknown: 0,
       newlyIndexedSinceLastPull: 0,
       byReason: [],
@@ -72,8 +79,8 @@ export class IndexingService {
     let lastPulled: Date | undefined;
     for (const r of rows) {
       if (r.verdict === 'PASS') summary.indexed++;
-      else if (r.verdict === 'FAIL') summary.notIndexed++;
-      else if (r.verdict === 'NEUTRAL') summary.neutral++;
+      else if (r.verdict === 'FAIL' || r.verdict === 'NEUTRAL')
+        summary.notIndexed++;
       else summary.unknown++;
       if (r.previousVerdict && r.previousVerdict !== 'PASS' && r.verdict === 'PASS') {
         summary.newlyIndexedSinceLastPull++;
