@@ -276,21 +276,22 @@ export class GoogleDocsService {
       }
       cursor += intro.length;
 
-      // Inline images. Each is sized 480×320pt (a touch wider than the
-      // previous 360×240 to better fit landscape screenshots in a doc
-      // page), and gets a text-style hyperlink applied to its single-
-      // character range so clicking the image in the doc opens the
-      // original on Cloudinary. A blank paragraph between images keeps
-      // them visually separated when more than one is attached.
+      // Inline images, capped at TWO and rendered side-by-side on a
+      // single line. Each image is 230×155pt — roughly 3:2 landscape
+      // and narrow enough that two + a 1pt gap (an inserted space
+      // character) fit inside the default 468pt content width of a
+      // LETTER page. That keeps the whole entry (title, description,
+      // both images, footer) on one page so the description doesn't
+      // get visually divorced from its evidence by a page break.
       //
-      // No URL-extension pre-filter here: Cloudinary URLs sometimes
-      // come back without an extension (`/upload/v123/abc` instead of
-      // `…/abc.png`). The calling side already filtered by Cloudinary
-      // resourceType so anything reaching us is image-typed. If Docs
-      // can't render a specific URL the entire batch fails and we
-      // surface that error verbatim — much better than silently
-      // skipping every image as the old extension check did.
-      const images = (task.imageAttachments ?? []).filter((u): u is string => !!u);
+      // Each image gets a text-style link applied to its single-char
+      // range so clicking it in the doc opens the original on
+      // Cloudinary. No URL-extension pre-filter here — Cloudinary
+      // URLs sometimes come back without an extension, and the
+      // calling side already filtered by resourceType.
+      const images = (task.imageAttachments ?? [])
+        .filter((u): u is string => !!u)
+        .slice(0, 2);
       images.forEach((url, idx) => {
         const imageIndex = cursor;
         requests.push({
@@ -298,13 +299,12 @@ export class GoogleDocsService {
             location: { index: cursor, tabId },
             uri: url,
             objectSize: {
-              width: { magnitude: 480, unit: 'PT' },
-              height: { magnitude: 320, unit: 'PT' },
+              width: { magnitude: 230, unit: 'PT' },
+              height: { magnitude: 155, unit: 'PT' },
             },
           },
         });
         cursor += 1;
-        // Clickable image — apply link text-style on the image range.
         requests.push({
           updateTextStyle: {
             range: {
@@ -316,17 +316,26 @@ export class GoogleDocsService {
             fields: 'link',
           },
         });
-        // Blank line between images (newline + extra paragraph break
-        // for the spacer when there's another image after this one).
-        const sep = idx < images.length - 1 ? '\n\n' : '\n';
-        requests.push({
-          insertText: {
-            location: { index: cursor, tabId },
-            text: sep,
-          },
-        });
-        cursor += sep.length;
+        // Two spaces between the first and second image keep them
+        // visually separated without forcing a line break. The
+        // newline goes after BOTH images so they land on the same
+        // text run / line.
+        if (idx === 0 && images.length > 1) {
+          requests.push({
+            insertText: {
+              location: { index: cursor, tabId },
+              text: '  ',
+            },
+          });
+          cursor += 2;
+        }
       });
+      if (images.length > 0) {
+        requests.push({
+          insertText: { location: { index: cursor, tabId }, text: '\n' },
+        });
+        cursor += 1;
+      }
 
       // 3) Footer: separator rule + metadata signature line, then a
       //    blank line so the next entry has air around it.
