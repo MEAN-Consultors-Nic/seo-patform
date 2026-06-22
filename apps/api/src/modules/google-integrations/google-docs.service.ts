@@ -246,23 +246,64 @@ export class GoogleDocsService {
 
       const requests: unknown[] = [];
 
-      // 1) Title + description block. Leading \n separates this
-      //    entry from whatever the previous one left behind.
+      // 1) Title + HR + description block. Title is HEADING_2 with
+      //    the brand coral color so each entry leads with a strong
+      //    visual hook. A separator row sits between title and
+      //    description as a hard-rule horizontal divider.
       const intro =
-        `\n${title}\n` + (description ? `${description}\n` : '\n');
-      const titleStart = cursor + 1; // skip the leading \n
+        `\n${title}\n${separator}\n` +
+        (description ? `${description}\n` : '\n');
+      const titleStart = cursor + 1; // skip leading \n
       const titleEnd = titleStart + title.length;
-      const descStart = titleEnd + 1;
+      const introSepStart = titleEnd + 1;
+      const introSepEnd = introSepStart + separator.length;
+      const descStart = introSepEnd + 1;
       const descEnd = descStart + description.length;
 
       requests.push({
         insertText: { location: { index: cursor, tabId }, text: intro },
       });
+      // Title paragraph: HEADING_2 surfaces it in the Docs outline
+      // and bumps the font ~6pt over HEADING_3.
       requests.push({
         updateParagraphStyle: {
           range: { startIndex: titleStart, endIndex: titleEnd, tabId },
-          paragraphStyle: { namedStyleType: 'HEADING_3' },
+          paragraphStyle: { namedStyleType: 'HEADING_2' },
           fields: 'namedStyleType',
+        },
+      });
+      // Title text: brand coral + bold. HEADING_2 already implies a
+      // weight bump but explicit bold guarantees it across themes
+      // the user may apply to the doc later.
+      requests.push({
+        updateTextStyle: {
+          range: { startIndex: titleStart, endIndex: titleEnd, tabId },
+          textStyle: {
+            bold: true,
+            foregroundColor: {
+              color: {
+                // #E5613D — brand-600, darker than the bright coral
+                // for better contrast on a white doc background.
+                rgbColor: { red: 0.898, green: 0.380, blue: 0.239 },
+              },
+            },
+          },
+          fields: 'bold,foregroundColor',
+        },
+      });
+      // HR under the title: same em-dash row as the footer, also
+      // small + light grey so it reads as a divider rather than
+      // competing with the title above.
+      requests.push({
+        updateTextStyle: {
+          range: { startIndex: introSepStart, endIndex: introSepEnd, tabId },
+          textStyle: {
+            fontSize: { magnitude: 8, unit: 'PT' },
+            foregroundColor: {
+              color: { rgbColor: { red: 0.75, green: 0.75, blue: 0.75 } },
+            },
+          },
+          fields: 'fontSize,foregroundColor',
         },
       });
       if (description) {
