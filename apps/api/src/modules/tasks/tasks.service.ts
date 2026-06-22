@@ -12,6 +12,7 @@ import { Task, TaskDocument } from './task.schema';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { ClientsService } from '../clients/clients.service';
+import { GoogleDocsService } from '../google-integrations/google-docs.service';
 import { AuthenticatedUser } from '../auth/roles.guard';
 
 @Injectable()
@@ -20,6 +21,7 @@ export class TasksService {
     @InjectModel(Task.name) private readonly model: Model<TaskDocument>,
     @Inject(forwardRef(() => ClientsService))
     private readonly clients: ClientsService,
+    private readonly docs: GoogleDocsService,
   ) {}
 
   /**
@@ -169,7 +171,63 @@ export class TasksService {
       .lean()
       .exec();
     if (!updated) throw new NotFoundException(`Task ${id} not found`);
+
+    // Fire-and-forget mirror into the client's Google Doc when the
+    // status just transitioned to 'completed'. Wrapped in its own
+    // promise + try/catch so a docs failure never breaks the task
+    // update itself.
+    if (dto.status === 'completed' && user?.userId) {
+      void this.mirrorCompletionToGoogleDoc(updated, user.userId);
+    }
+
     return updated;
+  }
+
+  /**
+   * Looks up the client's linked googleDocId, resolves (or creates)
+   * the monthly tab matching the task's completedAt date, and appends
+   * a heading + description + image-attachment block. Best-effort —
+   * any failure is logged via GoogleDocsService and swallowed here.
+   */
+  private async mirrorCompletionToGoogleDoc(
+    task: {
+      _id?: unknown;
+      clientId?: unknown;
+      title: string;
+      description?: string;
+      category?: string;
+      completedAt?: Date;
+      attachments?: Array<{ url: string; resourceType?: string }>;
+    },
+    userId: string,
+  ): Promise<void> {
+    try {
+      const client = await this.clients.findOne(String(task.clientId));
+      const docId = (client as unknown as { googleDocId?: string })
+        .googleDocId;
+      if (!docId) return;
+      const when = task.completedAt ?? new Date();
+      const tabId = await this.docs.getOrCreateMonthlyTab(
+        userId,
+        docId,
+        when,
+      );
+      if (!tabId) return;
+      const imageAttachments = (task.attachments ?? [])
+        .filter((a) => a.resourceType !== 'raw')
+        .map((a) => a.url)
+        .filter((u): u is string => !!u);
+      await this.docs.appendTaskToTab(userId, docId, tabId, {
+        title: task.title,
+        description: task.description,
+        category: task.category,
+        completedAt: when,
+        imageAttachments,
+      });
+    } catch {
+      // GoogleDocsService logs its own warnings; this catch covers
+      // unexpected paths like a missing client lookup. Never block.
+    }
   }
 
   async remove(id: string, user?: AuthenticatedUser) {

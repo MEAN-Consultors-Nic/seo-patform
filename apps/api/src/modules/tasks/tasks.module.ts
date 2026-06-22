@@ -4,11 +4,13 @@ import { Task, TaskSchema } from './task.schema';
 import { TasksService } from './tasks.service';
 import { TasksController } from './tasks.controller';
 import { ClientsModule } from '../clients/clients.module';
+import { GoogleIntegrationsModule } from '../google-integrations/google-integrations.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Task.name, schema: TaskSchema }]),
     forwardRef(() => ClientsModule),
+    GoogleIntegrationsModule,
   ],
   controllers: [TasksController],
   providers: [TasksService],

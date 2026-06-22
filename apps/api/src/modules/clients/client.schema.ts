@@ -168,6 +168,24 @@ export class Client {
   endingDate?: Date;
 
   /**
+   * Google Doc id (the bit after /document/d/ in the URL) used to
+   * mirror task completions and cycle starts into the client's
+   * working doc. Empty when not linked. The connected Google account
+   * must have edit access to the doc — we never elevate permissions
+   * server-side.
+   */
+  @Prop()
+  googleDocId?: string;
+
+  /**
+   * Google Sheets id for a future read integration. Reserved now so
+   * the OAuth scope grant and edit-form input land together with the
+   * docs work and the user doesn't have to reconnect twice.
+   */
+  @Prop()
+  googleSheetId?: string;
+
+  /**
    * Alternative spellings of the client's name that should still match
    * during Google Calendar pulls. Useful when calendar events use a
    * shorthand or different formatting from the canonical client name

@@ -170,6 +170,10 @@ export interface Client {
   endingDate?: Date | string;
   /** Alt names that should also match this client during Calendar pulls. */
   calendarAliases?: string[];
+  /** Google Docs id linked for task / cycle injection (the part after /document/d/). */
+  googleDocId?: string;
+  /** Google Sheets id reserved for a future read integration. */
+  googleSheetId?: string;
   ga4PropertyId?: string;
   gscSiteUrl?: string;
   isEcommerce?: boolean;

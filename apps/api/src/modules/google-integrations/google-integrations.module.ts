@@ -12,6 +12,7 @@ import { Ga4Service } from './ga4.service';
 import { MerchantCenterService } from './merchant-center.service';
 import { GbpService } from './gbp.service';
 import { CalendarService } from './calendar.service';
+import { GoogleDocsService } from './google-docs.service';
 import { GoogleIntegrationsService } from './google-integrations.service';
 import { GoogleIntegrationsController } from './google-integrations.controller';
 import { ClientsModule } from '../clients/clients.module';
@@ -38,6 +39,7 @@ import { ClientsModule } from '../clients/clients.module';
     MerchantCenterService,
     GbpService,
     CalendarService,
+    GoogleDocsService,
     GoogleIntegrationsService,
   ],
   exports: [
@@ -48,6 +50,7 @@ import { ClientsModule } from '../clients/clients.module';
     MerchantCenterService,
     GbpService,
     CalendarService,
+    GoogleDocsService,
   ],
 })
 export class GoogleIntegrationsModule {}

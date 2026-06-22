@@ -13,9 +13,12 @@ import { Type } from 'class-transformer';
 import { ClientTier } from '@seo/shared';
 
 class ContactDto {
+  @IsOptional() @IsString() _id?: string;
   @IsString() name!: string;
   @IsEmail() email!: string;
   @IsOptional() @IsString() role?: string;
+  @IsOptional() createdAt?: Date | string;
+  @IsOptional() updatedAt?: Date | string;
 }
 
 class AccessDto {
@@ -37,6 +40,13 @@ class CredentialDto {
   @IsOptional() @IsString() username?: string;
   @IsOptional() @IsString() password?: string;
   @IsOptional() @IsString() notes?: string;
+  // Mongoose adds these to existing credential subdocs when the
+  // frontend echoes them back on save. They're informational and we
+  // don't trust the client values anyway, but the validator with
+  // whitelist:true rejects unknown keys outright. Accept them as
+  // optional so the round-trip works.
+  @IsOptional() createdAt?: Date | string;
+  @IsOptional() updatedAt?: Date | string;
 }
 
 class KnowledgeDto {
@@ -116,6 +126,8 @@ export class CreateClientDto {
   @IsOptional() @IsBoolean() active?: boolean;
   @IsOptional() endingDate?: Date;
   @IsOptional() @IsArray() @IsString({ each: true }) calendarAliases?: string[];
+  @IsOptional() @IsString() googleDocId?: string;
+  @IsOptional() @IsString() googleSheetId?: string;
   @IsOptional() @IsString() ga4PropertyId?: string;
   @IsOptional() @IsString() gscSiteUrl?: string;
   @IsOptional() @IsBoolean() isEcommerce?: boolean;

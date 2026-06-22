@@ -45,6 +45,37 @@ import {
         </p>
       </div>
 
+      <div>
+        <label class="label">Google Doc (working notes)</label>
+        <input class="input"
+               [ngModel]="docUrlInput()"
+               (ngModelChange)="onDocUrlChange($event)"
+               placeholder="https://docs.google.com/document/d/.../edit" />
+        <p class="text-[11px] text-ink-400 mt-1">
+          Paste the full URL of the working doc for this client. Completed
+          tasks get appended to the doc's monthly tab automatically. The
+          connected Google account must have edit access.
+          @if (form.googleDocId) {
+            <span class="text-positive-500 ml-1">✓ Linked (id {{ form.googleDocId.slice(0, 8) }}…)</span>
+          }
+        </p>
+      </div>
+
+      <div>
+        <label class="label">Google Sheet (read-only, optional)</label>
+        <input class="input"
+               [ngModel]="sheetUrlInput()"
+               (ngModelChange)="onSheetUrlChange($event)"
+               placeholder="https://docs.google.com/spreadsheets/d/.../edit" />
+        <p class="text-[11px] text-ink-400 mt-1">
+          Reserved for an upcoming read integration. Pasting now grants the
+          OAuth scope so the future feature works without a reconnect.
+          @if (form.googleSheetId) {
+            <span class="text-positive-500 ml-1">✓ Saved (id {{ form.googleSheetId.slice(0, 8) }}…)</span>
+          }
+        </p>
+      </div>
+
       @if (client.isEcommerce) {
         <div>
           <label class="label">Google Merchant Center ID</label>
@@ -199,7 +230,13 @@ export class ClientIntegrationsTab implements OnInit {
     merchantCenterId: '',
     gbpAccountName: '',
     gbpLocationName: '',
+    googleDocId: '',
+    googleSheetId: '',
   };
+  // Local state for the URL-shaped inputs so the user can paste / edit
+  // the full URL while the backend stores only the id.
+  docUrlInput = signal('');
+  sheetUrlInput = signal('');
   saving = signal(false);
   saved = signal(false);
   error = signal<string | null>(null);
@@ -219,6 +256,18 @@ export class ClientIntegrationsTab implements OnInit {
     this.form.merchantCenterId = this.client.merchantCenterId || '';
     this.form.gbpAccountName = this.client.gbpAccountName || '';
     this.form.gbpLocationName = this.client.gbpLocationName || '';
+    this.form.googleDocId = this.client.googleDocId || '';
+    this.form.googleSheetId = this.client.googleSheetId || '';
+    this.docUrlInput.set(
+      this.form.googleDocId
+        ? `https://docs.google.com/document/d/${this.form.googleDocId}/edit`
+        : '',
+    );
+    this.sheetUrlInput.set(
+      this.form.googleSheetId
+        ? `https://docs.google.com/spreadsheets/d/${this.form.googleSheetId}/edit`
+        : '',
+    );
     // If the client already has an account configured, preload its locations
     // so the existing selection renders properly.
     if (this.form.gbpAccountName) {
@@ -287,7 +336,36 @@ export class ClientIntegrationsTab implements OnInit {
       merchantCenterId: this.form.merchantCenterId?.trim() || undefined,
       gbpAccountName: this.form.gbpAccountName?.trim() || undefined,
       gbpLocationName: this.form.gbpLocationName?.trim() || undefined,
+      googleDocId: this.form.googleDocId?.trim() || undefined,
+      googleSheetId: this.form.googleSheetId?.trim() || undefined,
     };
+  }
+
+  /**
+   * Accepts either a raw id (already stripped) or a full Google Docs
+   * URL and extracts the id portion. Handles both
+   * /document/d/<ID>/edit and /document/d/<ID>?... patterns. Stores the
+   * raw URL in docUrlInput so the user keeps seeing what they pasted.
+   */
+  onDocUrlChange(value: string) {
+    this.docUrlInput.set(value);
+    this.form.googleDocId = this.extractDocsId(value, '/document/d/');
+  }
+
+  onSheetUrlChange(value: string) {
+    this.sheetUrlInput.set(value);
+    this.form.googleSheetId = this.extractDocsId(value, '/spreadsheets/d/');
+  }
+
+  private extractDocsId(value: string, pathFragment: string): string {
+    const v = (value || '').trim();
+    if (!v) return '';
+    const m = v.match(new RegExp(`${pathFragment}([a-zA-Z0-9_-]+)`));
+    if (m) return m[1];
+    // If the user pasted just an id, accept it verbatim provided it
+    // looks plausibly like one.
+    if (/^[a-zA-Z0-9_-]{20,}$/.test(v)) return v;
+    return '';
   }
 
   save() {
