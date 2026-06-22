@@ -251,15 +251,18 @@ export class GoogleDocsService {
       //    visual hook. A separator row sits between title and
       //    description as a hard-rule horizontal divider.
       //
-      // No leading \n on the intro. The previous entry's footer
-      // already ended with `\n\n` (a blank-line gap between
-      // entries), and HEADING_2 contributes its own SPACE_ABOVE
-      // (~18pt by default) on top of that — so a third \n in front
-      // of the title produced an extra empty paragraph and made the
-      // gap between entries visibly oversized.
+      // No leading \n on the intro. HEADING_2 contributes its own
+      // SPACE_ABOVE (~18pt by default) which provides breathing
+      // room between consecutive entries without needing an extra
+      // empty paragraph.
+      //
+      // When the description is empty we skip the description line
+      // entirely instead of inserting a placeholder '\n' — the
+      // latter created a visible empty paragraph between the HR
+      // and the images / footer.
       const intro =
         `${title}\n${separator}\n` +
-        (description ? `${description}\n` : '\n');
+        (description ? `${description}\n` : '');
       const titleStart = cursor;
       const titleEnd = titleStart + title.length;
       const introSepStart = titleEnd + 1;
@@ -385,9 +388,13 @@ export class GoogleDocsService {
         cursor += 1;
       }
 
-      // 3) Footer: separator rule + metadata signature line, then a
-      //    blank line so the next entry has air around it.
-      const footer = `${separator}\n${metaLine}\n\n`;
+      // 3) Footer: separator rule + metadata signature line. Single
+      //    trailing newline (NOT \n\n) so no empty paragraph lingers
+      //    after each entry — Google was rendering that empty
+      //    paragraph as visible whitespace between the metadata and
+      //    the next title. HEADING_2's SPACE_ABOVE on the next title
+      //    already provides ~18pt of breathing room.
+      const footer = `${separator}\n${metaLine}\n`;
       const footerSepStart = cursor;
       const footerSepEnd = footerSepStart + separator.length;
       const footerMetaStart = footerSepEnd + 1;
