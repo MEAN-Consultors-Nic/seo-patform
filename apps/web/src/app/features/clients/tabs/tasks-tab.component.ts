@@ -176,9 +176,9 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
           — or switch to a different cycle using the selector above.
         </div>
       } @else {
-        <div class="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 pb-2">
           @for (col of kanbanColumns; track col.status) {
-            <div class="flex-shrink-0 w-[320px] lg:w-[360px] rounded-lg bg-ink-50/60 border border-ink-100 p-2 flex flex-col"
+            <div class="rounded-lg bg-ink-50/60 border border-ink-100 p-2 flex flex-col min-w-0"
                  [style.max-height.vh]="80">
               <div class="flex items-center justify-between px-2 py-2 mb-2">
                 <div class="inline-flex items-center gap-2">
