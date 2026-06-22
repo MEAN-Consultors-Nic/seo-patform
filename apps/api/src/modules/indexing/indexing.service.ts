@@ -119,20 +119,48 @@ export class IndexingService {
         'Client has no gscSiteUrl configured. Set it from Edit client → Integrations.',
       );
     }
+    if (!user?.userId) {
+      throw new BadRequestException(
+        'No authenticated user — cannot resolve Google OAuth credentials.',
+      );
+    }
 
-    const auth = await this.oauth.getAuthorizedClient(
-      (client as unknown as { ownerId?: { _id: string } }).ownerId?._id ||
-        (user?.userId as string),
-    );
-    const sc = google.searchconsole({ version: 'v1', auth });
+    // Use the calling user's Google OAuth tokens. They authenticated to
+    // hit this endpoint, and the existing GSC integration test on the
+    // client confirms their credentials work against this site URL.
+    let sc;
+    try {
+      const auth = await this.oauth.getAuthorizedClient(user.userId);
+      sc = google.searchconsole({ version: 'v1', auth });
+    } catch (err) {
+      throw new BadRequestException(
+        `Google OAuth not available for your account: ${(err as Error).message}. Reconnect Google in Settings → Integrations.`,
+      );
+    }
 
     // 1. List sitemaps for the property, then merge all URLs from all of them.
     const warnings: string[] = [];
-    const sitemapsRes = await sc.sitemaps.list({ siteUrl: client.gscSiteUrl });
-    const sitemaps = sitemapsRes.data.sitemap || [];
+    let sitemaps: Array<{ path?: string | null }>;
+    try {
+      const sitemapsRes = await sc.sitemaps.list({
+        siteUrl: client.gscSiteUrl,
+      });
+      sitemaps = sitemapsRes.data.sitemap || [];
+    } catch (err) {
+      const e = err as {
+        code?: number;
+        message?: string;
+        response?: { data?: { error?: { message?: string } } };
+      };
+      const upstream =
+        e.response?.data?.error?.message || e.message || 'unknown error';
+      throw new BadRequestException(
+        `Search Console rejected the sitemaps.list call for "${client.gscSiteUrl}": ${upstream}. Check that the site URL exactly matches what's registered in GSC (URL-prefix properties need the trailing slash; domain properties look like "sc-domain:example.com").`,
+      );
+    }
     if (!sitemaps.length) {
       warnings.push(
-        'No sitemaps registered in Search Console for this property. Submit a sitemap first.',
+        `No sitemaps registered in Search Console for "${client.gscSiteUrl}". Submit a sitemap to GSC first, then re-run this pull.`,
       );
     }
     const urlToSitemaps = new Map<string, Set<string>>();
@@ -147,25 +175,42 @@ export class IndexingService {
     }
     const allUrls = Array.from(urlToSitemaps.keys());
 
-    // 2. Inspect every URL. We do this serially to stay well clear of the
-    //    2000-requests/day quota on the URL Inspection API. A faster
-    //    parallel pass with a quota-aware concurrency would be a follow
-    //    up if pulls become slow.
+    // 2. Inspect URLs in parallel with a small concurrency budget. Two
+    //    constraints push us to a relatively small number:
+    //      - Heroku's H12 30-second request timeout. A serial loop on
+    //        anything past ~20 URLs would have already H12'd.
+    //      - The 2000-requests/day URL Inspection quota — we want to
+    //        respect it, so a burst of 50 concurrent is overkill.
+    //    Parallel 5 with a hard 100-URL cap per pull keeps wall-clock
+    //    time well under 30s on average sites and never blows through
+    //    more than 5% of the daily quota per pull.
+    const MAX_PER_PULL = 100;
+    const CONCURRENCY = 5;
+    const urlsToProcess = allUrls.slice(0, MAX_PER_PULL);
+    if (allUrls.length > MAX_PER_PULL) {
+      warnings.push(
+        `Sitemap has ${allUrls.length} URLs — inspecting the first ${MAX_PER_PULL} this pull. Run the pull again to continue with the rest.`,
+      );
+    }
+
     let upserted = 0;
     let failed = 0;
-    for (const url of allUrls) {
+    let quotaHit = false;
+
+    const inspectOne = async (url: string) => {
+      if (quotaHit) return;
       try {
         const existing = await this.model
           .findOne({ clientId: new Types.ObjectId(clientId), url })
           .lean()
           .exec();
-        const inspectionRes = await sc.urlInspection.index.inspect({
+        const inspectionRes = await sc!.urlInspection.index.inspect({
           requestBody: { inspectionUrl: url, siteUrl: client.gscSiteUrl },
         });
         const r = inspectionRes.data.inspectionResult?.indexStatusResult;
         if (!r) {
           failed++;
-          continue;
+          return;
         }
         const newVerdict =
           (r.verdict as
@@ -178,7 +223,7 @@ export class IndexingService {
           : undefined;
         const transitionToIndexed =
           newVerdict === 'PASS' &&
-          (!existing?.firstIndexedAt) &&
+          !existing?.firstIndexedAt &&
           (!existing?.previousVerdict || existing.previousVerdict !== 'PASS');
         await this.model
           .updateOne(
@@ -216,16 +261,26 @@ export class IndexingService {
         const msg = (err as Error).message || 'inspection failed';
         this.logger.warn(`URL inspection failed for ${url}: ${msg}`);
         failed++;
-        // 429 means we've hit the daily quota — bail rather than burn
-        // through the remaining URLs and confuse the user with partial
-        // data.
         if (msg.includes('429') || msg.toLowerCase().includes('quota')) {
-          warnings.push(
-            `Stopped early after hitting the daily URL Inspection quota at URL ${upserted + failed}/${allUrls.length}. Try again tomorrow.`,
-          );
-          break;
+          quotaHit = true;
         }
       }
+    };
+
+    // Worker pool: each worker pulls the next URL off a shared cursor.
+    let cursor = 0;
+    const workers = Array.from({ length: CONCURRENCY }, async () => {
+      while (cursor < urlsToProcess.length && !quotaHit) {
+        const i = cursor++;
+        await inspectOne(urlsToProcess[i]);
+      }
+    });
+    await Promise.all(workers);
+
+    if (quotaHit) {
+      warnings.push(
+        `Stopped early after hitting the daily URL Inspection quota (${upserted} stored, ${failed} failed). Try again tomorrow.`,
+      );
     }
 
     return {

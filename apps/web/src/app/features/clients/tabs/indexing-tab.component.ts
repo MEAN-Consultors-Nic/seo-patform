@@ -271,10 +271,28 @@ export class ClientIndexingTab implements OnChanges {
       },
       error: (err) => {
         this.pulling.set(false);
-        this.error.set(
+        // Surface the upstream message verbatim — the backend now
+        // returns specific text for the common failure modes (missing
+        // gscSiteUrl, Google rejecting the site URL, OAuth expired,
+        // quota hit). 'Failed to fetch' means the request itself
+        // didn't reach the server, usually a timeout or a network
+        // error; suggest the most likely cause.
+        const raw =
           err?.error?.message ||
-            'Could not pull indexing data. Check Google connection and that the client has gscSiteUrl configured.',
-        );
+          err?.message ||
+          err?.statusText ||
+          '';
+        if (
+          raw === 'Failed to fetch' ||
+          raw.includes('NetworkError') ||
+          err?.status === 0
+        ) {
+          this.error.set(
+            'Request timed out before the server could respond. The pull probably ran longer than Heroku allows; the inspection may still be running server-side. Refresh in a minute to see partial results.',
+          );
+        } else {
+          this.error.set(raw || `Pull failed (HTTP ${err?.status || '?'})`);
+        }
       },
     });
   }
