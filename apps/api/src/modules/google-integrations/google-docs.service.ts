@@ -250,10 +250,17 @@ export class GoogleDocsService {
       //    the brand coral color so each entry leads with a strong
       //    visual hook. A separator row sits between title and
       //    description as a hard-rule horizontal divider.
+      //
+      // No leading \n on the intro. The previous entry's footer
+      // already ended with `\n\n` (a blank-line gap between
+      // entries), and HEADING_2 contributes its own SPACE_ABOVE
+      // (~18pt by default) on top of that — so a third \n in front
+      // of the title produced an extra empty paragraph and made the
+      // gap between entries visibly oversized.
       const intro =
-        `\n${title}\n${separator}\n` +
+        `${title}\n${separator}\n` +
         (description ? `${description}\n` : '\n');
-      const titleStart = cursor + 1; // skip leading \n
+      const titleStart = cursor;
       const titleEnd = titleStart + title.length;
       const introSepStart = titleEnd + 1;
       const introSepEnd = introSepStart + separator.length;
