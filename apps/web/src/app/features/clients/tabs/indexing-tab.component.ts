@@ -49,6 +49,12 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed';
         </button>
       </div>
 
+      @if (clipboardHint(); as msg) {
+        <div class="card border-l-4 border-sky-500 bg-sky-100/40 text-sm py-2 px-3">
+          📋 {{ msg }}
+        </div>
+      }
+
       <!-- Pull result banner -->
       @if (pullResult(); as r) {
         <div class="card border-l-4 border-positive-500 bg-positive-100/30 text-sm">
@@ -217,9 +223,15 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed';
                            class="absolute right-2 top-9 z-20 w-56 bg-white border border-ink-200 rounded-md shadow-elevated py-1 text-left">
                         <button type="button"
                                 (click)="openGscInspection(r.url); closeMenu()"
-                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-sm text-ink-700 flex items-center gap-2">
-                          <span class="text-positive-500">↻</span>
-                          Request indexing (GSC)
+                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-sm text-ink-700 flex items-start gap-2"
+                                title="Opens GSC for this property and copies the URL so you can paste it into the inspection bar.">
+                          <span class="text-positive-500 mt-0.5">↻</span>
+                          <span>
+                            Request indexing (GSC)
+                            <div class="text-[10px] text-ink-500 leading-tight">
+                              opens GSC + copies URL
+                            </div>
+                          </span>
                         </button>
                         <button type="button"
                                 (click)="openPageSpeed(r.url); closeMenu()"
@@ -362,26 +374,39 @@ export class ClientIndexingTab implements OnChanges {
 
   // --- Context menu (open external Google tools for one URL) -------------
 
+  /**
+   * Google removed (or never supported) a public deep-link straight
+   * into URL Inspection with a specific URL pre-loaded — every
+   * combination of `/search-console/inspect?resource_id=&id=` 404s
+   * or bounces to a property-picker. The most reliable approach is:
+   *  1) open the property's GSC home with resource_id set, so the
+   *     right property is already selected
+   *  2) put the page URL on the user's clipboard so they paste it
+   *     into the inspection search bar with one keystroke
+   * Both happen in the same click; the toast tells the user what to
+   * do once GSC opens.
+   */
   openGscInspection(url: string) {
-    // GSC URL Inspection deep-link. resource_id MUST be set to the
-    // exact property identifier (the same value the client has stored
-    // as gscSiteUrl) — without it, Google bounces to a "select a
-    // property" screen instead of opening the inspection. Falls back
-    // to the inspection root if we don't have the property handy.
-    const id = encodeURIComponent(url);
     if (this.gscSiteUrl) {
       const resource = encodeURIComponent(this.gscSiteUrl);
       window.open(
-        `https://search.google.com/search-console/inspect?resource_id=${resource}&id=${id}`,
+        `https://search.google.com/search-console?resource_id=${resource}`,
         '_blank',
         'noopener,noreferrer',
       );
     } else {
       window.open(
-        `https://search.google.com/search-console/inspect?id=${id}`,
+        'https://search.google.com/search-console',
         '_blank',
         'noopener,noreferrer',
       );
+    }
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(url);
+      this.clipboardHint.set(
+        'URL copied — paste it into the inspection bar at the top of GSC.',
+      );
+      setTimeout(() => this.clipboardHint.set(null), 6000);
     }
   }
 
@@ -409,4 +434,7 @@ export class ClientIndexingTab implements OnChanges {
   closeMenu = () => this.menuOpenUrl.set(null);
 
   menuOpenUrl = signal<string | null>(null);
+  /** Short message shown after the GSC inspection action so the user
+   *  knows the URL was copied to their clipboard. */
+  clipboardHint = signal<string | null>(null);
 }
