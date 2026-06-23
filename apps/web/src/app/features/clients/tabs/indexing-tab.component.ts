@@ -15,7 +15,7 @@ import {
   PullResult,
 } from '../../../core/indexing.service';
 
-type StatusFilter = 'all' | 'indexed' | 'not_indexed';
+type StatusFilter = 'all' | 'indexed' | 'not_indexed' | 'orphan';
 
 @Component({
   selector: 'app-client-indexing-tab',
@@ -88,7 +88,7 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed';
 
       <!-- Summary tiles -->
       @if (summary(); as s) {
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
           <button type="button" (click)="filter.set('all')"
                   [class]="'text-left rounded-lg border bg-white px-3 py-3 shadow-card hover:shadow-elevated transition ' +
                     (filter() === 'all' ? 'border-brand-500 ring-2 ring-brand-500/20' : 'border-ink-200')">
@@ -107,6 +107,13 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed';
             <div class="text-[10px] uppercase tracking-wider font-semibold text-danger-500">Not indexed</div>
             <div class="text-xl font-bold text-ink-900 mt-0.5">{{ s.notIndexed }}</div>
             <div class="text-[10px] text-ink-500 mt-0.5">includes "discovered" + "crawled"</div>
+          </button>
+          <button type="button" (click)="filter.set('orphan')"
+                  [class]="'text-left rounded-lg border bg-white px-3 py-3 shadow-card hover:shadow-elevated transition ' +
+                    (filter() === 'orphan' ? 'border-warning-500 ring-2 ring-warning-500/20' : 'border-ink-200')">
+            <div class="text-[10px] uppercase tracking-wider font-semibold text-warning-500">🔗 Orphan</div>
+            <div class="text-xl font-bold text-ink-900 mt-0.5">{{ s.orphan }}</div>
+            <div class="text-[10px] text-ink-500 mt-0.5">0 referring URLs (no internal links)</div>
           </button>
           <div class="rounded-lg border border-brand-500/40 bg-brand-50 px-3 py-3">
             <div class="text-[10px] uppercase tracking-wider font-semibold text-brand-600">🆕 Newly indexed</div>
@@ -169,9 +176,17 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed';
               @for (r of filteredRows(); track r.url) {
                 <tr class="hover:bg-ink-50/50">
                   <td class="px-3 py-2 max-w-xs">
-                    <a [href]="r.url" target="_blank" rel="noopener"
-                       class="text-sky-600 hover:underline truncate block"
-                       [title]="r.url">{{ r.url }}</a>
+                    <div class="flex items-center gap-1.5 min-w-0">
+                      <a [href]="r.url" target="_blank" rel="noopener"
+                         class="text-sky-600 hover:underline truncate block min-w-0 flex-1"
+                         [title]="r.url">{{ r.url }}</a>
+                      @if (r.isOrphan) {
+                        <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-warning-100 text-warning-500 text-[10px] font-semibold flex-shrink-0"
+                              title="No internal links found pointing to this page (orphan candidate). GSC's URL Inspection returned zero referring URLs.">
+                          🔗 Orphan
+                        </span>
+                      }
+                    </div>
                   </td>
                   <td class="px-3 py-2">
                     <span [class]="'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ' + statusPill(r.verdict)">
@@ -305,6 +320,10 @@ export class ClientIndexingTab implements OnChanges {
         r.verdict !== 'NEUTRAL'
       )
         return false;
+      // 'Orphan' bucket: URLs Google reports as having zero referring
+      // URLs (no internal links pointing at them). Strong signal that
+      // the page needs link-equity from elsewhere on the site.
+      if (f === 'orphan' && !r.isOrphan) return false;
       if (q && !r.url.toLowerCase().includes(q)) return false;
       return true;
     });

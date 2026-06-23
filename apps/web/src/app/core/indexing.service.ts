@@ -16,6 +16,8 @@ export interface PageIndexStatus {
   userCanonical?: string;
   canonicalMismatch?: boolean;
   sitemaps?: string[];
+  referringUrls?: string[];
+  isOrphan?: boolean;
   previousVerdict?: string;
   firstIndexedAt?: string;
   lastCheckedAt: string;
@@ -26,6 +28,7 @@ export interface IndexingSummary {
   indexed: number;
   notIndexed: number;
   unknown: number;
+  orphan: number;
   newlyIndexedSinceLastPull: number;
   lastPulledAt?: string;
   byReason: Array<{ coverageState: string; count: number }>;

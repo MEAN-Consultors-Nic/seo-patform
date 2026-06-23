@@ -31,6 +31,8 @@ export interface IndexingSummary {
   indexed: number;
   notIndexed: number;
   unknown: number;
+  /** URLs with zero referring URLs reported by GSC — likely orphan pages. */
+  orphan: number;
   newlyIndexedSinceLastPull: number;
   lastPulledAt?: Date;
   byReason: Array<{ coverageState: string; count: number }>;
@@ -72,6 +74,7 @@ export class IndexingService {
       indexed: 0,
       notIndexed: 0,
       unknown: 0,
+      orphan: 0,
       newlyIndexedSinceLastPull: 0,
       byReason: [],
     };
@@ -82,6 +85,7 @@ export class IndexingService {
       else if (r.verdict === 'FAIL' || r.verdict === 'NEUTRAL')
         summary.notIndexed++;
       else summary.unknown++;
+      if (r.isOrphan) summary.orphan++;
       if (r.previousVerdict && r.previousVerdict !== 'PASS' && r.verdict === 'PASS') {
         summary.newlyIndexedSinceLastPull++;
       }
@@ -272,6 +276,7 @@ export class IndexingService {
                   r.googleCanonical !== r.userCanonical,
                 sitemaps: Array.from(urlToSitemaps.get(url) || []),
                 referringUrls: r.referringUrls || [],
+                isOrphan: !(r.referringUrls && r.referringUrls.length > 0),
                 previousVerdict: existing?.verdict,
                 lastCheckedAt: new Date(),
                 ...(transitionToIndexed
@@ -421,6 +426,8 @@ export class IndexingService {
               !!r.googleCanonical &&
               !!r.userCanonical &&
               r.googleCanonical !== r.userCanonical,
+            referringUrls: r.referringUrls || [],
+            isOrphan: !(r.referringUrls && r.referringUrls.length > 0),
             previousVerdict: existing?.verdict,
             lastCheckedAt: new Date(),
             ...(transitionToIndexed ? { firstIndexedAt: new Date() } : {}),
@@ -539,6 +546,8 @@ export class IndexingService {
                     !!r.googleCanonical &&
                     !!r.userCanonical &&
                     r.googleCanonical !== r.userCanonical,
+                  referringUrls: r.referringUrls || [],
+                  isOrphan: !(r.referringUrls && r.referringUrls.length > 0),
                   previousVerdict: existing?.verdict,
                   lastCheckedAt: new Date(),
                   ...(transitionToIndexed

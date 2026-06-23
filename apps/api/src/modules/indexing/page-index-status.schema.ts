@@ -72,6 +72,17 @@ export class PageIndexStatus {
   @Prop({ type: [String], default: [] })
   referringUrls?: string[];
 
+  /**
+   * True when Google reported zero referring URLs for this page —
+   * a strong signal the page is orphaned (in the sitemap but with
+   * no internal links pointing at it). The URL Inspection API only
+   * returns up to 5 referrers, so a positive value of "0 referrers"
+   * is reliable but high referrer counts get capped at 5; we can't
+   * tell whether the true count is 5 or 500.
+   */
+  @Prop({ default: false })
+  isOrphan?: boolean;
+
   /** Verdict observed on the previous pull. Used to detect newly-indexed URLs. */
   @Prop()
   previousVerdict?: string;
