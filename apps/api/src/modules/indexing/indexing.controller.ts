@@ -47,4 +47,14 @@ export class IndexingController {
     if (!body?.url) throw new BadRequestException('url is required');
     return this.svc.requestIndexing(clientId, body.url, user);
   }
+
+  @Post('recheck')
+  recheck(
+    @Param('clientId') clientId: string,
+    @Body() body: { url?: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    if (!body?.url) throw new BadRequestException('url is required');
+    return this.svc.recheckUrl(clientId, body.url, user);
+  }
 }

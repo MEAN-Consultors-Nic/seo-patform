@@ -222,6 +222,21 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed';
                       <div (click)="$event.stopPropagation()"
                            class="absolute right-2 top-9 z-20 w-56 bg-white border border-ink-200 rounded-md shadow-elevated py-1 text-left">
                         <button type="button"
+                                (click)="recheckUrl(r.url); closeMenu()"
+                                [disabled]="rechckingUrl() === r.url"
+                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-sm text-ink-700 flex items-start gap-2 disabled:opacity-50"
+                                title="Re-inspects this URL via Google's URL Inspection API and updates the row in place — useful when GSC and the platform disagree on the current status.">
+                          <span class="text-sky-500 mt-0.5">
+                            {{ rechckingUrl() === r.url ? '…' : '⟳' }}
+                          </span>
+                          <span>
+                            Recheck status
+                            <div class="text-[10px] text-ink-500 leading-tight">
+                              refreshes this row from GSC
+                            </div>
+                          </span>
+                        </button>
+                        <button type="button"
                                 (click)="requestIndexing(r.url); closeMenu()"
                                 [disabled]="requestingUrl() === r.url"
                                 class="w-full text-left px-3 py-2 hover:bg-ink-50 text-sm text-ink-700 flex items-start gap-2 disabled:opacity-50"
@@ -414,6 +429,42 @@ export class ClientIndexingTab implements OnChanges {
     });
   }
 
+  /**
+   * Re-inspects ONE URL without touching the Indexing API. For when
+   * the row's status looks stale (most often: GSC now says indexed
+   * but the platform still shows discovered-not-indexed from the
+   * last bulk pull). Updates the row in place and shows a brief
+   * toast with the new verdict.
+   */
+  recheckUrl(url: string) {
+    if (!this.clientId) return;
+    this.rechckingUrl.set(url);
+    this.clipboardHint.set(null);
+    this.error.set(null);
+    this.svc.recheckUrl(this.clientId, url).subscribe({
+      next: (res) => {
+        this.rechckingUrl.set(null);
+        if (res.row) {
+          this.rows.update((current) =>
+            current.map((r) => (r.url === url ? res.row! : r)),
+          );
+          this.clipboardHint.set(
+            `✓ Rechecked ${url}. Current verdict: ${this.statusLabel(res.row.verdict)}.`,
+          );
+          setTimeout(() => this.clipboardHint.set(null), 6000);
+          // Re-pull the summary so the tile counts reflect the change.
+          this.svc.summary(this.clientId).subscribe((s) => this.summary.set(s));
+        }
+      },
+      error: (err) => {
+        this.rechckingUrl.set(null);
+        this.error.set(
+          err?.error?.message || 'Could not recheck this URL.',
+        );
+      },
+    });
+  }
+
   openPageSpeed(url: string) {
     window.open(
       `https://pagespeed.web.dev/analysis?url=${encodeURIComponent(url)}`,
@@ -442,4 +493,6 @@ export class ClientIndexingTab implements OnChanges {
   clipboardHint = signal<string | null>(null);
   /** URL currently being submitted to the Indexing API — used to show a spinner. */
   requestingUrl = signal<string | null>(null);
+  /** URL currently being re-inspected (Recheck status) — used to show a spinner. */
+  rechckingUrl = signal<string | null>(null);
 }

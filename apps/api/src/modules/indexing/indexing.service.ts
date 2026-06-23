@@ -312,6 +312,111 @@ export class IndexingService {
    * works in practice but Google may rate-limit or reject the request.
    * Daily quota is 200 requests per project by default.
    */
+  /**
+   * Re-inspects a single URL via the URL Inspection API without
+   * touching the Indexing API. Use when the user wants to confirm
+   * whether a page that was previously 'discovered - currently not
+   * indexed' has flipped to indexed in Google's view — Google often
+   * picks pages up minutes-to-hours after we first see them not
+   * indexed, but the platform's row only updates on a full pull.
+   *
+   * Reuses the same upsert path as the bulk pull so firstIndexedAt
+   * gets stamped when a row transitions to PASS for the first time.
+   */
+  async recheckUrl(
+    clientId: string,
+    url: string,
+    user: AuthenticatedUser,
+  ): Promise<{ row: PageIndexStatus | null }> {
+    await this.clients.assertAccess(clientId, user);
+    if (!url) throw new BadRequestException('URL is required');
+
+    const client = await this.clientModel.findById(clientId).lean().exec();
+    if (!client) throw new NotFoundException('Client not found');
+    if (!client.gscSiteUrl) {
+      throw new BadRequestException(
+        'Client has no gscSiteUrl configured. Set it in Edit client → Integrations.',
+      );
+    }
+
+    let inspectionRes;
+    try {
+      const auth = await this.oauth.getAuthorizedClient(user.userId);
+      const sc = google.searchconsole({ version: 'v1', auth });
+      inspectionRes = await sc.urlInspection.index.inspect({
+        requestBody: { inspectionUrl: url, siteUrl: client.gscSiteUrl },
+      });
+    } catch (err) {
+      const e = err as {
+        code?: number;
+        message?: string;
+        response?: { data?: { error?: { message?: string } } };
+      };
+      const upstream =
+        e.response?.data?.error?.message || e.message || 'unknown error';
+      throw new BadRequestException(
+        `URL Inspection rejected the recheck for ${url}: ${upstream}.`,
+      );
+    }
+
+    const r = inspectionRes.data.inspectionResult?.indexStatusResult;
+    if (!r) {
+      throw new BadRequestException(
+        'Google returned no inspection result for that URL.',
+      );
+    }
+
+    const newVerdict =
+      (r.verdict as
+        | 'PASS'
+        | 'NEUTRAL'
+        | 'FAIL'
+        | 'VERDICT_UNSPECIFIED') || 'VERDICT_UNSPECIFIED';
+    const lastCrawlTime = r.lastCrawlTime
+      ? new Date(r.lastCrawlTime)
+      : undefined;
+    const existing = await this.model
+      .findOne({ clientId: new Types.ObjectId(clientId), url })
+      .lean()
+      .exec();
+    const transitionToIndexed =
+      newVerdict === 'PASS' &&
+      !existing?.firstIndexedAt &&
+      (!existing?.previousVerdict || existing.previousVerdict !== 'PASS');
+    await this.model
+      .updateOne(
+        { clientId: new Types.ObjectId(clientId), url },
+        {
+          $set: {
+            clientId: new Types.ObjectId(clientId),
+            url,
+            verdict: newVerdict,
+            coverageState: r.coverageState || undefined,
+            robotsTxtState: r.robotsTxtState || undefined,
+            indexingState: r.indexingState || undefined,
+            pageFetchState: r.pageFetchState || undefined,
+            lastCrawlTime,
+            googleCanonical: r.googleCanonical || undefined,
+            userCanonical: r.userCanonical || undefined,
+            canonicalMismatch:
+              !!r.googleCanonical &&
+              !!r.userCanonical &&
+              r.googleCanonical !== r.userCanonical,
+            previousVerdict: existing?.verdict,
+            lastCheckedAt: new Date(),
+            ...(transitionToIndexed ? { firstIndexedAt: new Date() } : {}),
+          },
+        },
+        { upsert: true },
+      )
+      .exec();
+    const row = await this.model
+      .findOne({ clientId: new Types.ObjectId(clientId), url })
+      .lean()
+      .exec();
+    return { row: row as PageIndexStatus | null };
+  }
+
   async requestIndexing(
     clientId: string,
     url: string,

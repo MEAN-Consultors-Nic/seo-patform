@@ -84,4 +84,14 @@ export class IndexingService {
       { url },
     );
   }
+
+  recheckUrl(
+    clientId: string,
+    url: string,
+  ): Observable<{ row: PageIndexStatus | null }> {
+    return this.http.post<{ row: PageIndexStatus | null }>(
+      `${this.base}/clients/${clientId}/indexing/recheck`,
+      { url },
+    );
+  }
 }
