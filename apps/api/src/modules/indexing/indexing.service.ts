@@ -182,21 +182,40 @@ export class IndexingService {
     }
     const allUrls = Array.from(urlToSitemaps.keys());
 
-    // 2. Inspect URLs in parallel with a small concurrency budget. Two
-    //    constraints push us to a relatively small number:
-    //      - Heroku's H12 30-second request timeout. A serial loop on
-    //        anything past ~20 URLs would have already H12'd.
-    //      - The 2000-requests/day URL Inspection quota — we want to
-    //        respect it, so a burst of 50 concurrent is overkill.
-    //    Parallel 5 with a hard 100-URL cap per pull keeps wall-clock
-    //    time well under 30s on average sites and never blows through
-    //    more than 5% of the daily quota per pull.
-    const MAX_PER_PULL = 100;
-    const CONCURRENCY = 5;
+    // 2. Prioritize URLs not inspected yet (or inspected longest ago)
+    //    so each pull progresses through the sitemap instead of
+    //    re-doing the same N URLs every time. Mongo lookup is one
+    //    round-trip — cheap relative to the inspection costs.
+    const existingRows = await this.model
+      .find({
+        clientId: new Types.ObjectId(clientId),
+        url: { $in: allUrls },
+      })
+      .select('url lastCheckedAt')
+      .lean()
+      .exec();
+    const lastCheckedByUrl = new Map<string, Date | undefined>();
+    for (const r of existingRows) {
+      lastCheckedByUrl.set(r.url, r.lastCheckedAt);
+    }
+    allUrls.sort((a, b) => {
+      const ta = lastCheckedByUrl.get(a)?.getTime() ?? 0; // never-checked first
+      const tb = lastCheckedByUrl.get(b)?.getTime() ?? 0;
+      return ta - tb;
+    });
+
+    // 3. Inspect URLs in parallel with a small concurrency budget,
+    //    capped per pull so wall-clock stays under Heroku's H12 30s
+    //    timeout. 30 URLs × 6 concurrency = ~5 batches × ~3s/batch =
+    //    ~15s typical, comfortably under the timeout. Quota usage
+    //    per pull is 30/2000 = 1.5% of the daily URL Inspection
+    //    budget, so multiple pulls per day across clients are fine.
+    const MAX_PER_PULL = 30;
+    const CONCURRENCY = 6;
     const urlsToProcess = allUrls.slice(0, MAX_PER_PULL);
     if (allUrls.length > MAX_PER_PULL) {
       warnings.push(
-        `Sitemap has ${allUrls.length} URLs — inspecting the first ${MAX_PER_PULL} this pull. Run the pull again to continue with the rest.`,
+        `Sitemap has ${allUrls.length} URLs — inspecting ${MAX_PER_PULL} per pull (prioritizing URLs least recently checked). Run the pull again to continue.`,
       );
     }
 
