@@ -133,6 +133,30 @@ interface KpiField {
                   <span>{{ ei.label }}</span>
                 </div>
               }
+              @if (c.googleDocId || c.googleSheetId) {
+                <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                  @if (c.googleDocId) {
+                    <a [href]="'https://docs.google.com/document/d/' + c.googleDocId + '/edit'"
+                       target="_blank" rel="noopener"
+                       (click)="$event.stopPropagation()"
+                       class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-sky-100 text-sky-700 hover:bg-sky-200 text-[10px] font-semibold transition"
+                       title="Open the working Google Doc linked to this client">
+                      <span>📄</span>
+                      <span>Doc</span>
+                    </a>
+                  }
+                  @if (c.googleSheetId) {
+                    <a [href]="'https://docs.google.com/spreadsheets/d/' + c.googleSheetId + '/edit'"
+                       target="_blank" rel="noopener"
+                       (click)="$event.stopPropagation()"
+                       class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-positive-100 text-positive-500 hover:bg-positive-100/70 text-[10px] font-semibold transition"
+                       title="Open the Google Sheet linked to this client">
+                      <span>📊</span>
+                      <span>Sheet</span>
+                    </a>
+                  }
+                </div>
+              }
             </div>
 
             <!-- KPI grid -->
