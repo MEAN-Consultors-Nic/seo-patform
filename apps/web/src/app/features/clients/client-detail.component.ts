@@ -133,42 +133,70 @@ const GROUPS: GroupDef[] = [
           </div>
         </header>
 
-        <!-- Two-level navigation. Top row groups the 16+ tabs into 5
-             functional buckets; the second row reveals the tabs of the
-             active group. Clicking a group jumps to its first tab so a
-             single click always lands on content. -->
-        <nav class="mb-2">
-          <div class="tab-bar items-stretch gap-0 relative">
-            <div class="tab-bar-scroll flex-1 min-w-0">
+        <!-- Mobile-only trigger to open the section drawer. On md+ the
+             sidebar is always docked to the left of the content. -->
+        <button type="button"
+                class="md:hidden mb-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-ink-200 bg-white text-xs font-semibold text-ink-700 hover:bg-ink-50"
+                (click)="openSidebar()">
+          <span>☰</span>
+          <span>{{ activeTabLabel() }}</span>
+        </button>
+
+        <!-- Mobile drawer backdrop -->
+        @if (sidebarOpen()) {
+          <button type="button"
+                  class="md:hidden fixed inset-0 z-30 bg-ink-900/40"
+                  aria-label="Close sections"
+                  (click)="closeSidebar()"></button>
+        }
+
+        <div class="flex flex-col md:flex-row md:gap-6">
+          <aside
+            class="bg-white border border-ink-200 rounded-lg flex-shrink-0
+                   md:w-52 md:static md:translate-x-0
+                   fixed inset-y-0 left-0 w-64 z-40 transform transition-transform md:transition-none
+                   md:rounded-lg rounded-none md:border md:border-ink-200 border-r"
+            [class.translate-x-0]="sidebarOpen()"
+            [class.-translate-x-full]="!sidebarOpen()">
+            <div class="md:hidden flex items-center justify-between px-3 py-2.5 border-b border-ink-200">
+              <div class="text-xs font-bold text-ink-900">Sections</div>
+              <button type="button" (click)="closeSidebar()"
+                      class="text-ink-400 hover:text-ink-900 text-xl leading-none px-1"
+                      aria-label="Close">×</button>
+            </div>
+            <div class="py-2 overflow-y-auto md:max-h-none max-h-[calc(100vh-3rem)]">
               @for (g of visibleGroups(); track g.key) {
-                <button
-                  type="button"
-                  (click)="selectGroup(g.key)"
-                  [class]="'tab font-semibold ' + (activeGroup() === g.key ? 'tab-active' : '')">
-                  {{ g.label }}
-                </button>
+                <div class="mb-1">
+                  <button type="button"
+                          (click)="toggleGroupCollapsed(g.key)"
+                          class="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-500 hover:text-ink-900">
+                    <span>{{ g.label }}</span>
+                    <span class="text-[10px] leading-none transition-transform"
+                          [class.rotate-90]="!isGroupCollapsed(g.key)">›</span>
+                  </button>
+                  @if (!isGroupCollapsed(g.key)) {
+                    <ul class="space-y-0.5">
+                      @for (t of tabsForGroup(g.key); track t.key) {
+                        <li>
+                          <button type="button"
+                                  (click)="selectTab(t.key)"
+                                  [class]="'w-full text-left px-3 py-1.5 text-xs font-medium border-l-2 transition-colors ' +
+                                           (activeTab() === t.key
+                                             ? 'bg-brand-500/10 text-brand-700 border-l-brand-500'
+                                             : 'text-ink-700 border-l-transparent hover:bg-ink-50 hover:text-ink-900')">
+                            {{ t.label }}
+                          </button>
+                        </li>
+                      }
+                    </ul>
+                  }
+                </div>
               }
             </div>
-          </div>
-        </nav>
+          </aside>
 
-        <!-- Sub-nav for tabs inside the active group. Rendered as a
-             quieter, smaller strip so the eye prioritizes the top groups. -->
-        <div class="flex flex-wrap items-center gap-1 mb-6 pb-3 border-b border-ink-200">
-          @for (t of tabsInActiveGroup(); track t.key) {
-            <button
-              type="button"
-              (click)="activeTab.set(t.key)"
-              [class]="'px-3 py-1.5 rounded-md text-xs font-medium transition-colors ' +
-                       (activeTab() === t.key
-                         ? 'bg-brand-500/10 text-brand-600'
-                         : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900')">
-              {{ t.label }}
-            </button>
-          }
-        </div>
-
-        @switch (activeTab()) {
+          <main class="flex-1 min-w-0">
+            @switch (activeTab()) {
           @case ('access') {
             <app-client-access-tab [client]="c" (changed)="reload()" />
           }
@@ -224,6 +252,8 @@ const GROUPS: GroupDef[] = [
             <app-client-wordpress-tab [client]="c" />
           }
         }
+          </main>
+        </div>
       </div>
 
       <!-- Edit client modal -->
@@ -419,20 +449,78 @@ export class ClientDetailComponent implements OnInit {
     return active?.group ?? 'work';
   });
 
-  /** Tabs inside the currently active group — what the sub-nav renders. */
-  tabsInActiveGroup = computed<TabDef[]>(() => {
-    const g = this.activeGroup();
-    return this.allTabs().filter((t) => t.group === g);
+  /** Tabs belonging to a given group — used by the sidebar to render section items. */
+  tabsForGroup(key: TabGroupKey): TabDef[] {
+    return this.allTabs().filter((t) => t.group === key);
+  }
+
+  /** Label of the currently active tab — shown in the mobile drawer trigger. */
+  activeTabLabel = computed<string>(() => {
+    const active = this.allTabs().find((t) => t.key === this.activeTab());
+    return active?.label ?? 'Sections';
   });
 
   /**
-   * Clicking a top-level group jumps to its first tab. Lands on content
-   * immediately instead of leaving the sub-nav as a dead row.
+   * Mobile slide-in drawer state. On md+ the sidebar is always docked,
+   * so this signal is effectively desktop-irrelevant.
    */
-  selectGroup(key: TabGroupKey) {
-    if (this.activeGroup() === key) return;
-    const first = this.allTabs().find((t) => t.group === key);
-    if (first) this.activeTab.set(first.key);
+  sidebarOpen = signal(false);
+
+  openSidebar() {
+    this.sidebarOpen.set(true);
+  }
+
+  closeSidebar() {
+    this.sidebarOpen.set(false);
+  }
+
+  /**
+   * Which sidebar sections are collapsed. Persisted in localStorage so a
+   * user who hides 'Setup' doesn't have to re-collapse it every session.
+   * The active group is force-expanded regardless of saved state so the
+   * currently-selected tab is always visible without an extra click.
+   */
+  private collapsedGroups = signal<Set<TabGroupKey>>(this.readCollapsed());
+
+  isGroupCollapsed(key: TabGroupKey): boolean {
+    if (this.activeGroup() === key) return false;
+    return this.collapsedGroups().has(key);
+  }
+
+  toggleGroupCollapsed(key: TabGroupKey) {
+    const next = new Set(this.collapsedGroups());
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    this.collapsedGroups.set(next);
+    this.persistCollapsed(next);
+  }
+
+  private readCollapsed(): Set<TabGroupKey> {
+    try {
+      const raw = localStorage.getItem('client-detail-collapsed-groups');
+      if (!raw) return new Set();
+      const arr = JSON.parse(raw) as TabGroupKey[];
+      return new Set(arr);
+    } catch {
+      return new Set();
+    }
+  }
+
+  private persistCollapsed(next: Set<TabGroupKey>) {
+    try {
+      localStorage.setItem(
+        'client-detail-collapsed-groups',
+        JSON.stringify(Array.from(next)),
+      );
+    } catch {
+      // localStorage can throw in private browsing — non-fatal.
+    }
+  }
+
+  /** Selecting a tab closes the mobile drawer so the content is visible. */
+  selectTab(key: TabKey) {
+    this.activeTab.set(key);
+    this.sidebarOpen.set(false);
   }
 
   form: {
