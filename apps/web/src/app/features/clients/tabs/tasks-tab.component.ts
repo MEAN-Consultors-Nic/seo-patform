@@ -414,18 +414,6 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                 [styles]="{ minHeight: '160px' }"></app-rich-text-editor>
             </div>
 
-            <label class="flex items-start gap-2.5 p-2.5 rounded-md border border-ink-200 bg-ink-50/50 cursor-pointer hover:bg-ink-50 transition-colors">
-              <input type="checkbox"
-                     class="mt-0.5 rounded border-ink-300 text-brand-500 focus:ring-brand-500"
-                     [(ngModel)]="editForm.useSubTab" />
-              <span class="flex-1 min-w-0">
-                <span class="block text-xs font-semibold text-ink-900">Sub-tab in Google Doc</span>
-                <span class="block text-[11px] text-ink-500 leading-relaxed">
-                  When this task is completed, write the entry as a top-level outline section (page break + HEADING_1) inside the monthly tab, instead of the default inline block.
-                </span>
-              </span>
-            </label>
-
             <div>
               <div class="flex items-baseline justify-between mb-1.5">
                 <label class="label !mb-0">Subtasks</label>
@@ -690,7 +678,6 @@ export class ClientTasksTab implements OnChanges {
     priority: 'high' | 'medium' | 'low';
     estimatedHours: number;
     notes?: string;
-    useSubTab: boolean;
     subtasks: Subtask[];
   } = {
     title: '',
@@ -699,7 +686,6 @@ export class ClientTasksTab implements OnChanges {
     priority: 'medium',
     estimatedHours: 0,
     notes: '',
-    useSubTab: false,
     subtasks: [],
   };
   savingEdit = signal(false);
@@ -877,7 +863,6 @@ export class ClientTasksTab implements OnChanges {
       priority: 'medium',
       estimatedHours: 1,
       notes: '',
-      useSubTab: false,
       subtasks: [],
     };
     this.editError.set(null);
@@ -955,7 +940,6 @@ export class ClientTasksTab implements OnChanges {
       priority: this.editForm.priority,
       estimatedHours: Number(this.editForm.estimatedHours) || 0,
       notes,
-      useSubTab: this.editForm.useSubTab,
       subtasks: this.cleanSubtasks(),
       status: 'pending',
       clientId: this.clientId,
@@ -1051,7 +1035,6 @@ export class ClientTasksTab implements OnChanges {
       priority: t.priority,
       estimatedHours: t.estimatedHours || 0,
       notes: t.notes || '',
-      useSubTab: !!t.useSubTab,
       subtasks: (t.subtasks || []).map((s) => ({ ...s })),
     };
     this.editError.set(null);
@@ -1096,7 +1079,6 @@ export class ClientTasksTab implements OnChanges {
       priority: this.editForm.priority,
       estimatedHours: Number(this.editForm.estimatedHours) || 0,
       notes,
-      useSubTab: this.editForm.useSubTab,
       subtasks: this.cleanSubtasks(),
     };
     this.tasksSvc.update(t._id, patch).subscribe({

@@ -167,15 +167,6 @@ export class GoogleDocsService {
       priority?: string;
       completedAt?: Date;
       imageAttachments?: string[];
-      /**
-       * When true, write the entry as a "sub-tab" within the parent
-       * monthly tab: page break before + HEADING_1 (vs the default
-       * inline HEADING_2). The Docs API doesn't support creating real
-       * sub-tabs, so a HEADING_1 + page break is the closest visual
-       * equivalent — it surfaces as a top-level outline entry that
-       * the user can jump to from the Docs sidebar.
-       */
-      useSubTab?: boolean;
     },
   ): Promise<void> {
     try {
@@ -255,24 +246,10 @@ export class GoogleDocsService {
 
       const requests: unknown[] = [];
 
-      // When useSubTab is true we insert a page break BEFORE the title.
-      // The break is a 1-char element so it pushes the cursor by one;
-      // we account for it before computing range indices. The page
-      // break itself is what makes the entry feel like a separate
-      // "sub-tab" — combined with HEADING_1 below it shows up as a
-      // top-level outline entry that visually leads its own page.
-      if (task.useSubTab) {
-        requests.push({
-          insertPageBreak: { location: { index: cursor, tabId } },
-        });
-        cursor += 1;
-      }
-
-      // 1) Title + HR + description block. Title is HEADING_2 by
-      //    default (HEADING_1 when useSubTab) with the brand coral
-      //    color so each entry leads with a strong visual hook. A
-      //    separator row sits between title and description as a
-      //    hard-rule horizontal divider.
+      // 1) Title + HR + description block. Title is HEADING_2 with
+      //    the brand coral color so each entry leads with a strong
+      //    visual hook. A separator row sits between title and
+      //    description as a hard-rule horizontal divider.
       //
       // No leading \n on the intro. HEADING_2 contributes its own
       // SPACE_ABOVE (~18pt by default) which provides breathing
@@ -296,14 +273,12 @@ export class GoogleDocsService {
       requests.push({
         insertText: { location: { index: cursor, tabId }, text: intro },
       });
-      // Title paragraph: HEADING_1 for sub-tab entries (top of the
-      // outline), HEADING_2 for the default inline layout.
+      // Title paragraph: HEADING_2 surfaces it in the Docs outline
+      // and bumps the font ~6pt over HEADING_3.
       requests.push({
         updateParagraphStyle: {
           range: { startIndex: titleStart, endIndex: titleEnd, tabId },
-          paragraphStyle: {
-            namedStyleType: task.useSubTab ? 'HEADING_1' : 'HEADING_2',
-          },
+          paragraphStyle: { namedStyleType: 'HEADING_2' },
           fields: 'namedStyleType',
         },
       });

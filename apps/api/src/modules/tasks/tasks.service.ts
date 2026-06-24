@@ -208,7 +208,6 @@ export class TasksService {
       priority?: string;
       completedAt?: Date;
       attachments?: Array<{ url: string; resourceType?: string }>;
-      useSubTab?: boolean;
     },
     userId: string,
   ): Promise<{ ok: boolean; message?: string }> {
@@ -230,7 +229,6 @@ export class TasksService {
         priority: task.priority,
         completedAt: when,
         imageAttachments,
-        useSubTab: !!task.useSubTab,
       });
       return { ok: true, message: 'Task synced to Google Doc.' };
     } catch (err) {
