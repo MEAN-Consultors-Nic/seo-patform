@@ -44,7 +44,11 @@ interface NavItem {
            space. Logo + primary nav on the left, quick actions + user
            identity on the right. -->
       <header class="bg-white border-b border-ink-200 shadow-sm z-30">
-        <div class="flex items-center justify-between gap-3 px-3 sm:px-5 h-14">
+        <!-- Inner container mirrors .page-container's max-w-7xl + horizontal
+             padding so the header chrome lines up with the page content
+             underneath. The header BACKGROUND remains full-width so the
+             bar still spans the viewport visually. -->
+        <div class="max-w-7xl mx-auto flex items-center justify-between gap-3 px-4 sm:px-6 lg:px-8 h-14">
           <!-- Brand + primary nav -->
           <div class="flex items-center gap-6 min-w-0">
             <a routerLink="/dashboard" class="flex items-center gap-2.5 flex-shrink-0">
@@ -127,39 +131,41 @@ interface NavItem {
              vertically so everything's reachable in one place. -->
         @if (mobileMenuOpen()) {
           <div class="md:hidden border-t border-ink-200 bg-white">
-            <nav class="px-3 py-2 space-y-0.5">
-              @for (item of visibleNavItems(); track item.route) {
-                <a [routerLink]="item.route"
-                   routerLinkActive="!text-brand-700 !bg-brand-500/10"
-                   [routerLinkActiveOptions]="{ exact: item.exact || false }"
-                   class="block px-3 py-2 rounded-md text-sm font-medium text-ink-700 hover:bg-ink-100 hover:text-ink-900">
-                  {{ item.label }}
-                </a>
-              }
-            </nav>
-            <div class="border-t border-ink-200 px-3 py-2 flex flex-wrap gap-2">
-              <app-domain-info-button
-                label="Domain info"
-                buttonClass="h-8 text-xs font-semibold px-3 rounded-md border border-ink-200 text-ink-700 hover:border-ink-300 hover:bg-ink-50 inline-flex items-center gap-1.5 transition" />
-              <app-schema-modeler-button
-                label="Schema Modeler"
-                buttonClass="h-8 text-xs font-semibold px-3 rounded-md border border-ink-200 text-ink-700 hover:border-ink-300 hover:bg-ink-50 inline-flex items-center gap-1.5 transition" />
-            </div>
-            <div class="border-t border-ink-200 px-3 py-2 flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <div class="w-8 h-8 rounded-full bg-ink-200 flex items-center justify-center text-xs font-bold text-ink-700">
-                  {{ initials() }}
-                </div>
-                <div class="leading-tight">
-                  <div class="text-xs font-semibold text-ink-900">{{ auth.user()?.name || 'User' }}</div>
-                  <div class="text-[10px] text-ink-500">{{ roleLabel() }}</div>
-                </div>
+            <div class="max-w-7xl mx-auto">
+              <nav class="px-4 sm:px-6 py-2 space-y-0.5">
+                @for (item of visibleNavItems(); track item.route) {
+                  <a [routerLink]="item.route"
+                     routerLinkActive="!text-brand-700 !bg-brand-500/10"
+                     [routerLinkActiveOptions]="{ exact: item.exact || false }"
+                     class="block px-3 py-2 rounded-md text-sm font-medium text-ink-700 hover:bg-ink-100 hover:text-ink-900">
+                    {{ item.label }}
+                  </a>
+                }
+              </nav>
+              <div class="border-t border-ink-200 px-4 sm:px-6 py-2 flex flex-wrap gap-2">
+                <app-domain-info-button
+                  label="Domain info"
+                  buttonClass="h-8 text-xs font-semibold px-3 rounded-md border border-ink-200 text-ink-700 hover:border-ink-300 hover:bg-ink-50 inline-flex items-center gap-1.5 transition" />
+                <app-schema-modeler-button
+                  label="Schema Modeler"
+                  buttonClass="h-8 text-xs font-semibold px-3 rounded-md border border-ink-200 text-ink-700 hover:border-ink-300 hover:bg-ink-50 inline-flex items-center gap-1.5 transition" />
               </div>
-              <button (click)="auth.logout()"
-                      class="text-ink-500 hover:text-danger-500 text-sm inline-flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-ink-50">
-                <span>⏻</span>
-                <span class="text-xs font-semibold">Sign out</span>
-              </button>
+              <div class="border-t border-ink-200 px-4 sm:px-6 py-2 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-full bg-ink-200 flex items-center justify-center text-xs font-bold text-ink-700">
+                    {{ initials() }}
+                  </div>
+                  <div class="leading-tight">
+                    <div class="text-xs font-semibold text-ink-900">{{ auth.user()?.name || 'User' }}</div>
+                    <div class="text-[10px] text-ink-500">{{ roleLabel() }}</div>
+                  </div>
+                </div>
+                <button (click)="auth.logout()"
+                        class="text-ink-500 hover:text-danger-500 text-sm inline-flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-ink-50">
+                  <span>⏻</span>
+                  <span class="text-xs font-semibold">Sign out</span>
+                </button>
+              </div>
             </div>
           </div>
         }
