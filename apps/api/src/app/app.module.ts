@@ -29,6 +29,7 @@ import { WordpressModule } from '../modules/wordpress/wordpress.module';
 import { AppSettingsModule } from '../modules/app-settings/app-settings.module';
 import { SupervisorModule } from '../modules/supervisor/supervisor.module';
 import { IndexingModule } from '../modules/indexing/indexing.module';
+import { CannibalizationModule } from '../modules/cannibalization/cannibalization.module';
 import { SeedModule } from '../seed/seed.module';
 
 @Module({
@@ -60,6 +61,7 @@ import { SeedModule } from '../seed/seed.module';
     AppSettingsModule,
     SupervisorModule,
     IndexingModule,
+    CannibalizationModule,
     SeedModule,
   ],
   controllers: [AppController],

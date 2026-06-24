@@ -17,6 +17,7 @@ import { ClientIntegrationsTab } from './tabs/integrations-tab.component';
 import { ClientGscInsightsTab } from './tabs/gsc-insights-tab.component';
 import { ClientServiceAreasTab } from './tabs/service-areas-tab.component';
 import { ClientIndexingTab } from './tabs/indexing-tab.component';
+import { ClientCannibalizationTab } from './tabs/cannibalization-tab.component';
 import { ClientAccessTab } from './tabs/access-tab.component';
 import { ClientEcommerceTab } from './tabs/ecommerce-tab.component';
 import { ClientShopifyTab } from './tabs/shopify-tab.component';
@@ -38,6 +39,7 @@ type TabKey =
   | 'integrations'
   | 'gsc-insights'
   | 'indexing'
+  | 'cannibalization'
   | 'service-areas'
   | 'ecommerce'
   | 'shopify'
@@ -67,6 +69,7 @@ interface TabDef {
     ClientIntegrationsTab,
     ClientGscInsightsTab,
     ClientIndexingTab,
+    ClientCannibalizationTab,
     ClientServiceAreasTab,
     ClientAccessTab,
     ClientEcommerceTab,
@@ -193,6 +196,9 @@ interface TabDef {
           }
           @case ('indexing') {
             <app-client-indexing-tab [clientId]="c._id!" [gscSiteUrl]="c.gscSiteUrl" />
+          }
+          @case ('cannibalization') {
+            <app-client-cannibalization-tab [clientId]="c._id!" [gscSiteUrl]="c.gscSiteUrl" />
           }
           @case ('service-areas') {
             <app-client-service-areas-tab [client]="c" />
@@ -353,6 +359,7 @@ export class ClientDetailComponent implements OnInit {
       { key: 'kpis', label: 'KPI History' },
       { key: 'gsc-insights', label: 'GSC Insights' },
       { key: 'indexing', label: 'Indexing' },
+      { key: 'cannibalization', label: 'Cannibalization' },
     ];
     const c = this.client();
     if (c?.isEcommerce) {
