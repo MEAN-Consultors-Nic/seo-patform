@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Client } from '@seo/shared';
@@ -45,10 +45,26 @@ type TabKey =
   | 'shopify'
   | 'wordpress';
 
+type TabGroupKey = 'work' | 'performance' | 'health' | 'platform' | 'setup';
+
 interface TabDef {
   key: TabKey;
   label: string;
+  group: TabGroupKey;
 }
+
+interface GroupDef {
+  key: TabGroupKey;
+  label: string;
+}
+
+const GROUPS: GroupDef[] = [
+  { key: 'work', label: 'Work' },
+  { key: 'performance', label: 'Performance' },
+  { key: 'health', label: 'SEO Health' },
+  { key: 'platform', label: 'Platform' },
+  { key: 'setup', label: 'Setup' },
+];
 
 @Component({
   selector: 'app-client-detail',
@@ -117,45 +133,40 @@ interface TabDef {
           </div>
         </header>
 
-        <nav class="tab-bar mb-6 items-stretch gap-0 relative">
-          <!-- Scrollable tab list — wide tab strips scroll horizontally on
-               mobile. The More dropdown lives OUTSIDE this scroll context
-               so it isn't clipped by overflow:auto. -->
-          <div class="tab-bar-scroll flex-1 min-w-0">
-            @for (t of primaryTabs(); track t.key) {
-              <button
-                (click)="activeTab.set(t.key)"
-                [class]="'tab ' + (activeTab() === t.key ? 'tab-active' : '')">
-                {{ t.label }}
-              </button>
-            }
-          </div>
-          @if (overflowTabs.length) {
-            <div class="relative flex-shrink-0">
-              <button
-                type="button"
-                (click)="toggleMore($event)"
-                [class]="'tab inline-flex items-center gap-1 ' + (activeIsInOverflow() ? 'tab-active' : '')">
-                {{ moreLabel() }}
-                <span class="text-[10px] leading-none">▾</span>
-              </button>
-              @if (moreOpen()) {
-                <div
-                  class="absolute right-0 top-full mt-1 bg-white border border-ink-200 rounded-lg shadow-lg py-1 min-w-[180px] z-30"
-                  (click)="$event.stopPropagation()">
-                  @for (t of overflowTabs; track t.key) {
-                    <button
-                      type="button"
-                      (click)="selectOverflow(t.key)"
-                      [class]="'w-full text-left px-3 py-1.5 text-sm hover:bg-ink-50 ' + (activeTab() === t.key ? 'text-coral-600 font-semibold' : 'text-ink-700')">
-                      {{ t.label }}
-                    </button>
-                  }
-                </div>
+        <!-- Two-level navigation. Top row groups the 16+ tabs into 5
+             functional buckets; the second row reveals the tabs of the
+             active group. Clicking a group jumps to its first tab so a
+             single click always lands on content. -->
+        <nav class="mb-2">
+          <div class="tab-bar items-stretch gap-0 relative">
+            <div class="tab-bar-scroll flex-1 min-w-0">
+              @for (g of visibleGroups(); track g.key) {
+                <button
+                  type="button"
+                  (click)="selectGroup(g.key)"
+                  [class]="'tab font-semibold ' + (activeGroup() === g.key ? 'tab-active' : '')">
+                  {{ g.label }}
+                </button>
               }
             </div>
-          }
+          </div>
         </nav>
+
+        <!-- Sub-nav for tabs inside the active group. Rendered as a
+             quieter, smaller strip so the eye prioritizes the top groups. -->
+        <div class="flex flex-wrap items-center gap-1 mb-6 pb-3 border-b border-ink-200">
+          @for (t of tabsInActiveGroup(); track t.key) {
+            <button
+              type="button"
+              (click)="activeTab.set(t.key)"
+              [class]="'px-3 py-1.5 rounded-md text-xs font-medium transition-colors ' +
+                       (activeTab() === t.key
+                         ? 'bg-brand-500/10 text-brand-600'
+                         : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900')">
+              {{ t.label }}
+            </button>
+          }
+        </div>
 
         @switch (activeTab()) {
           @case ('access') {
@@ -348,69 +359,80 @@ export class ClientDetailComponent implements OnInit {
   activeTab = signal<TabKey>('tasks');
   logoPreviewOk = signal<boolean | null>(null);
 
-  primaryTabs = computed<TabDef[]>(() => {
-    const base: TabDef[] = [
-      { key: 'tasks', label: 'Tasks' },
-      { key: 'content', label: 'Content' },
-      { key: 'keywords', label: 'Keywords' },
-      { key: 'positions', label: 'Position Tracker' },
-      { key: 'competitors', label: 'Competitors' },
-      { key: 'backlinks', label: 'Backlinks' },
-      { key: 'kpis', label: 'KPI History' },
-      { key: 'gsc-insights', label: 'GSC Insights' },
-      { key: 'indexing', label: 'Indexing' },
-      { key: 'cannibalization', label: 'Cannibalization' },
+  /**
+   * Full tab catalog with each entry annotated by its functional group.
+   * Conditional tabs (ecommerce/shopify/wordpress) only appear when the
+   * client metadata enables them, so empty groups stay empty.
+   */
+  allTabs = computed<TabDef[]>(() => {
+    const tabs: TabDef[] = [
+      { key: 'tasks', label: 'Tasks', group: 'work' },
+      { key: 'content', label: 'Content', group: 'work' },
+
+      { key: 'keywords', label: 'Keywords', group: 'performance' },
+      { key: 'positions', label: 'Position Tracker', group: 'performance' },
+      { key: 'competitors', label: 'Competitors', group: 'performance' },
+      { key: 'backlinks', label: 'Backlinks', group: 'performance' },
+      { key: 'kpis', label: 'KPI History', group: 'performance' },
+
+      { key: 'gsc-insights', label: 'GSC Insights', group: 'health' },
+      { key: 'indexing', label: 'Indexing', group: 'health' },
+      { key: 'cannibalization', label: 'Cannibalization', group: 'health' },
+
+      { key: 'service-areas', label: 'Service Areas', group: 'setup' },
+      { key: 'knowledge', label: 'Knowledge', group: 'setup' },
+      { key: 'contacts', label: 'Contacts', group: 'setup' },
+      { key: 'access', label: 'Credentials', group: 'setup' },
+      { key: 'integrations', label: 'Integrations', group: 'setup' },
     ];
     const c = this.client();
     if (c?.isEcommerce) {
-      base.push({ key: 'ecommerce', label: '🛒 Ecommerce' });
+      tabs.push({ key: 'ecommerce', label: '🛒 Ecommerce', group: 'platform' });
     }
-    // Platform-specific tab appears based on the websitePlatform field. We
-    // also fall back to the legacy `isEcommerce` flag so existing ecommerce
-    // clients still see the Shopify tab without needing to set the platform.
+    // Platform-specific tab follows the websitePlatform field. We also fall
+    // back to the legacy `isEcommerce` flag so existing ecommerce clients
+    // still see the Shopify tab without needing to set the platform.
     if (
       c?.websitePlatform === 'shopify' ||
       (!c?.websitePlatform && c?.isEcommerce)
     ) {
-      base.push({ key: 'shopify', label: '🛍️ Shopify' });
+      tabs.push({ key: 'shopify', label: '🛍️ Shopify', group: 'platform' });
     } else if (c?.websitePlatform === 'wordpress') {
-      base.push({ key: 'wordpress', label: '📝 WordPress' });
+      tabs.push({
+        key: 'wordpress',
+        label: '📝 WordPress',
+        group: 'platform',
+      });
     }
-    return base;
+    return tabs;
   });
 
-  overflowTabs: TabDef[] = [
-    { key: 'service-areas', label: 'Service Areas' },
-    { key: 'knowledge', label: 'Knowledge' },
-    { key: 'contacts', label: 'Contacts' },
-    { key: 'access', label: 'Credentials' },
-    { key: 'integrations', label: 'Integrations' },
-  ];
+  /** Only groups that have at least one visible tab end up in the top nav. */
+  visibleGroups = computed<GroupDef[]>(() => {
+    const tabs = this.allTabs();
+    return GROUPS.filter((g) => tabs.some((t) => t.group === g.key));
+  });
 
-  moreOpen = signal(false);
+  /** Group key that contains the currently active tab. */
+  activeGroup = computed<TabGroupKey>(() => {
+    const active = this.allTabs().find((t) => t.key === this.activeTab());
+    return active?.group ?? 'work';
+  });
 
-  activeIsInOverflow(): boolean {
-    return this.overflowTabs.some((t) => t.key === this.activeTab());
-  }
+  /** Tabs inside the currently active group — what the sub-nav renders. */
+  tabsInActiveGroup = computed<TabDef[]>(() => {
+    const g = this.activeGroup();
+    return this.allTabs().filter((t) => t.group === g);
+  });
 
-  moreLabel(): string {
-    const active = this.overflowTabs.find((t) => t.key === this.activeTab());
-    return active ? active.label : 'More';
-  }
-
-  toggleMore(ev: MouseEvent) {
-    ev.stopPropagation();
-    this.moreOpen.update((v) => !v);
-  }
-
-  selectOverflow(key: TabKey) {
-    this.activeTab.set(key);
-    this.moreOpen.set(false);
-  }
-
-  @HostListener('document:click')
-  onDocClick() {
-    if (this.moreOpen()) this.moreOpen.set(false);
+  /**
+   * Clicking a top-level group jumps to its first tab. Lands on content
+   * immediately instead of leaving the sub-nav as a dead row.
+   */
+  selectGroup(key: TabGroupKey) {
+    if (this.activeGroup() === key) return;
+    const first = this.allTabs().find((t) => t.group === key);
+    if (first) this.activeTab.set(first.key);
   }
 
   form: {
