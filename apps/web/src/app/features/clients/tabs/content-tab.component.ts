@@ -1,8 +1,16 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnChanges, computed, inject, signal } from '@angular/core';
+import { Component, HostListener, Input, OnChanges, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ContentPiece, ContentStatus, CONTENT_STATUSES } from '@seo/shared';
+import {
+  ContentPiece,
+  ContentStatus,
+  CONTENT_STATUSES,
+  Cycle,
+  Task,
+} from '@seo/shared';
 import { ContentService } from '../../../core/content.service';
+import { CyclesService } from '../../../core/cycles.service';
+import { TasksService } from '../../../core/tasks.service';
 
 @Component({
   selector: 'app-client-content-tab',
@@ -24,6 +32,15 @@ import { ContentService } from '../../../core/content.service';
         <button class="btn-primary mt-3" (click)="add()" [disabled]="!newPiece.title">Add to pipeline</button>
       </div>
 
+      @if (toast(); as t) {
+        <div [class]="'rounded-md px-3 py-2 text-xs font-medium ' +
+              (t.kind === 'error'
+                ? 'bg-danger-100 text-danger-700 border border-danger-500/30'
+                : 'bg-positive-100 text-positive-500 border border-positive-500/30')">
+          {{ t.message }}
+        </div>
+      }
+
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         @for (status of statuses; track status) {
           <div class="bg-white border border-ink-200 rounded-lg p-4 min-h-[260px]">
@@ -43,6 +60,13 @@ import { ContentService } from '../../../core/content.service';
                   <div class="font-medium text-ink-900 leading-tight text-xs">{{ p.title }}</div>
                   @if (p.targetKeyword) {
                     <div class="text-[10px] text-brand-600 mt-1 font-medium">🎯 {{ p.targetKeyword }}</div>
+                  }
+                  @if (p.briefUrl) {
+                    <a [href]="p.briefUrl" target="_blank" rel="noopener"
+                       class="block text-[10px] text-sky-600 hover:underline mt-1 font-medium truncate"
+                       [title]="p.briefUrl">
+                      📝 {{ p.briefUrl }}
+                    </a>
                   }
                   @if (p.publishedUrl) {
                     <a [href]="p.publishedUrl" target="_blank" rel="noopener"
@@ -68,6 +92,34 @@ import { ContentService } from '../../../core/content.service';
                     }
                     <button class="text-ink-400 hover:text-danger-500 text-sm leading-none px-1"
                             (click)="remove(p)" title="Remove piece">×</button>
+
+                    <!-- Contextual menu. The button toggles a small dropdown
+                         anchored to the piece card. Keep actions discoverable
+                         here as we add more over time. -->
+                    <div class="relative">
+                      <button class="text-ink-400 hover:text-ink-900 text-sm leading-none px-1"
+                              (click)="toggleMenu(p, $event)"
+                              [attr.aria-expanded]="menuOpenId() === p._id"
+                              title="More actions">⋮</button>
+                      @if (menuOpenId() === p._id) {
+                        <div class="absolute right-0 top-full mt-1 z-20 w-44 bg-white border border-ink-200 rounded-md shadow-lg py-1 text-xs"
+                             (click)="$event.stopPropagation()">
+                          @if (p.status === 'idea') {
+                            <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900"
+                                    [disabled]="creatingTaskFor() === p._id"
+                                    (click)="createTaskForPiece(p)">
+                              {{ creatingTaskFor() === p._id ? 'Creating…' : 'Create task' }}
+                            </button>
+                          }
+                          @if (p.status === 'draft') {
+                            <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900"
+                                    (click)="openDraftLinkModal(p)">
+                              {{ p.briefUrl ? 'Edit draft link' : 'Add draft link' }}
+                            </button>
+                          }
+                        </div>
+                      }
+                    </div>
                   </div>
                 </div>
               }
@@ -131,11 +183,64 @@ import { ContentService } from '../../../core/content.service';
         </div>
       </div>
     }
+
+    <!-- Draft link modal -->
+    @if (draftLinkPiece(); as p) {
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+           (click)="dismissDraftLinkModal()">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6"
+             (click)="$event.stopPropagation()">
+          <div class="flex items-start justify-between mb-3">
+            <div>
+              <h2 class="text-lg font-bold text-ink-900">Draft link</h2>
+              <p class="text-xs text-ink-500 mt-0.5">
+                Where the draft lives — Google Doc, Notion, etc.
+              </p>
+            </div>
+            <button type="button" (click)="dismissDraftLinkModal()"
+                    class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
+          </div>
+
+          <div class="bg-ink-50 border border-ink-200 rounded p-3 mb-4 text-xs">
+            <div class="text-ink-500 text-[10px] uppercase tracking-wider font-bold mb-1">Piece</div>
+            <div class="font-medium text-ink-900">{{ p.title }}</div>
+            @if (p.targetKeyword) {
+              <div class="text-brand-600 mt-0.5">🎯 {{ p.targetKeyword }}</div>
+            }
+          </div>
+
+          <div>
+            <label class="label">Draft URL</label>
+            <input class="input"
+                   [(ngModel)]="draftUrlInput"
+                   placeholder="https://docs.google.com/document/d/…"
+                   (keyup.enter)="saveDraftLink()"
+                   autofocus />
+          </div>
+
+          @if (draftLinkError()) {
+            <div class="text-xs text-danger-500 mt-2">{{ draftLinkError() }}</div>
+          }
+
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-ink-100">
+            <button class="btn-secondary" (click)="dismissDraftLinkModal()" [disabled]="draftLinkSaving()">
+              Cancel
+            </button>
+            <button class="btn-primary" (click)="saveDraftLink()"
+                    [disabled]="draftLinkSaving() || !draftUrlInput.trim()">
+              {{ draftLinkSaving() ? 'Saving…' : 'Save link' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class ClientContentTab implements OnChanges {
   @Input({ required: true }) clientId!: string;
   private svc = inject(ContentService);
+  private cyclesSvc = inject(CyclesService);
+  private tasksSvc = inject(TasksService);
 
   pieces = signal<ContentPiece[]>([]);
   statuses: ContentStatus[] = CONTENT_STATUSES;
@@ -148,6 +253,22 @@ export class ClientContentTab implements OnChanges {
   publishSaving = signal(false);
   publishError = signal<string | null>(null);
 
+  // Contextual menu + create-task state
+  menuOpenId = signal<string | null>(null);
+  creatingTaskFor = signal<string | null>(null);
+  currentCycle = signal<Cycle | null>(null);
+
+  // Draft link modal state
+  draftLinkPiece = signal<ContentPiece | null>(null);
+  draftUrlInput = '';
+  draftLinkSaving = signal(false);
+  draftLinkError = signal<string | null>(null);
+
+  // Inline toast for transient errors / success messages around the
+  // "Create task" + draft-link flows. The publish flow has its own
+  // modal-scoped error display so it doesn't need this.
+  toast = signal<{ kind: 'success' | 'error'; message: string } | null>(null);
+
   byStatus = computed(() => {
     const map: Record<string, ContentPiece[]> = {};
     for (const p of this.pieces()) {
@@ -158,6 +279,13 @@ export class ClientContentTab implements OnChanges {
 
   ngOnChanges() {
     this.load();
+    // Pre-fetch the active cycle so the menu's Create-task action knows
+    // where to anchor new tasks. If no cycle is active right now we just
+    // surface the error when the user actually clicks the action.
+    this.cyclesSvc.current().subscribe({
+      next: (c) => this.currentCycle.set(c),
+      error: () => this.currentCycle.set(null),
+    });
   }
 
   load() {
@@ -246,5 +374,128 @@ export class ClientContentTab implements OnChanges {
   remove(p: ContentPiece) {
     if (!p._id) return;
     this.svc.remove(p._id).subscribe(() => this.load());
+  }
+
+  // --- Contextual menu --------------------------------------------------
+
+  toggleMenu(p: ContentPiece, ev: MouseEvent) {
+    ev.stopPropagation();
+    this.menuOpenId.set(this.menuOpenId() === p._id ? null : (p._id ?? null));
+  }
+
+  /**
+   * Close any open menu when the user clicks outside the card. Doing it
+   * at the host level keeps the markup simple — no backdrop needed.
+   */
+  @HostListener('document:click')
+  closeMenuOnOutsideClick() {
+    if (this.menuOpenId()) this.menuOpenId.set(null);
+  }
+
+  /**
+   * Creates an in-progress content task in the active cycle and moves
+   * the piece into 'draft'. The two writes are sequential — task first,
+   * then status flip — so if the task POST fails we don't strand the
+   * piece in 'draft' without a backing task.
+   */
+  createTaskForPiece(p: ContentPiece) {
+    if (!p._id) return;
+    const cycle = this.currentCycle();
+    if (!cycle?._id) {
+      this.flashToast('error', 'No active cycle. Open Tasks to start one.');
+      this.menuOpenId.set(null);
+      return;
+    }
+    this.creatingTaskFor.set(p._id);
+    const taskPayload: Partial<Task> = {
+      clientId: this.clientId,
+      cycleId: cycle._id,
+      category: 'content',
+      title: `Draft content: ${p.title}`,
+      description: p.targetKeyword ? `Target keyword: ${p.targetKeyword}` : '',
+      status: 'in_progress',
+      priority: 'medium',
+      estimatedHours: 1,
+    };
+    this.tasksSvc.create(taskPayload).subscribe({
+      next: () => {
+        // Task created — now move the piece to 'draft'. We don't need
+        // the task back; the Tasks tab will pick it up on next load.
+        this.svc.update(p._id!, { status: 'draft' }).subscribe({
+          next: () => {
+            this.creatingTaskFor.set(null);
+            this.menuOpenId.set(null);
+            this.flashToast('success', `Task created. "${p.title}" moved to Draft.`);
+            this.load();
+          },
+          error: (err) => {
+            this.creatingTaskFor.set(null);
+            this.menuOpenId.set(null);
+            const m = err?.error?.message;
+            this.flashToast(
+              'error',
+              `Task created but moving to Draft failed: ${Array.isArray(m) ? m.join(', ') : m || 'unknown error'}`,
+            );
+            this.load();
+          },
+        });
+      },
+      error: (err) => {
+        this.creatingTaskFor.set(null);
+        this.menuOpenId.set(null);
+        const m = err?.error?.message;
+        this.flashToast(
+          'error',
+          `Could not create task: ${Array.isArray(m) ? m.join(', ') : m || 'unknown error'}`,
+        );
+      },
+    });
+  }
+
+  // --- Draft link modal -------------------------------------------------
+
+  openDraftLinkModal(p: ContentPiece) {
+    this.menuOpenId.set(null);
+    this.draftUrlInput = p.briefUrl ?? '';
+    this.draftLinkError.set(null);
+    this.draftLinkPiece.set(p);
+  }
+
+  dismissDraftLinkModal() {
+    if (this.draftLinkSaving()) return;
+    this.draftLinkPiece.set(null);
+    this.draftUrlInput = '';
+    this.draftLinkError.set(null);
+  }
+
+  saveDraftLink() {
+    const piece = this.draftLinkPiece();
+    if (!piece?._id) return;
+    const url = this.draftUrlInput.trim();
+    if (!url) return;
+    this.draftLinkSaving.set(true);
+    this.draftLinkError.set(null);
+    this.svc.update(piece._id, { briefUrl: url }).subscribe({
+      next: () => {
+        this.draftLinkSaving.set(false);
+        this.draftLinkPiece.set(null);
+        this.draftUrlInput = '';
+        this.load();
+      },
+      error: (err) => {
+        this.draftLinkSaving.set(false);
+        const m = err?.error?.message;
+        this.draftLinkError.set(
+          Array.isArray(m) ? m.join(', ') : m || 'Could not save',
+        );
+      },
+    });
+  }
+
+  // --- Toast helpers ----------------------------------------------------
+
+  private flashToast(kind: 'success' | 'error', message: string) {
+    this.toast.set({ kind, message });
+    setTimeout(() => this.toast.set(null), 4000);
   }
 }
