@@ -46,6 +46,8 @@ export class CreateTaskDto {
 
   @IsOptional() @IsString() notes?: string;
 
+  @IsOptional() @IsBoolean() useSubTab?: boolean;
+
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

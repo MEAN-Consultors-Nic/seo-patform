@@ -112,6 +112,16 @@ export class Task {
   @Prop({ type: [TaskAttachmentSubSchema], default: [] })
   attachments?: TaskAttachment[];
 
+  /**
+   * When true the doc-sync writes this task as a "sub-tab" entry inside
+   * the monthly tab: page-break + HEADING_1 instead of the inline
+   * HEADING_2 layout. The Docs API doesn't allow creating real sub-tabs
+   * (see google-docs.service.ts), so we mimic the feel with a top-level
+   * outline entry that the user can navigate to via the Docs sidebar.
+   */
+  @Prop({ default: false })
+  useSubTab?: boolean;
+
   @Prop({ type: [SubtaskSchemaDef], default: [] })
   subtasks?: Subtask[];
 

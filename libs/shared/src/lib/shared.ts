@@ -406,6 +406,12 @@ export interface Task {
   completedAt?: Date;
   notes?: string;
   attachments?: TaskAttachment[];
+  /**
+   * When true the doc-sync writes this task as a "sub-tab" entry inside
+   * its monthly Google Doc tab (page-break + HEADING_1 outline entry)
+   * instead of the default inline HEADING_2 layout.
+   */
+  useSubTab?: boolean;
   subtasks?: Subtask[];
   comments?: Array<{
     content: string;
