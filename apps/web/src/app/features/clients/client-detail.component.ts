@@ -164,18 +164,32 @@ const GROUPS: GroupDef[] = [
                       class="text-ink-400 hover:text-ink-900 text-xl leading-none px-1"
                       aria-label="Close">×</button>
             </div>
-            <div class="py-2 overflow-y-auto md:max-h-none max-h-[calc(100vh-3rem)]">
+            <div class="py-1 overflow-y-auto md:max-h-none max-h-[calc(100vh-3rem)]">
               @for (g of visibleGroups(); track g.key) {
                 <div class="mb-1">
+                  <!-- Section header. Loud enough that the eye reads
+                       "WORK / PERFORMANCE / SEO HEALTH / SETUP" as the
+                       primary skeleton of the sidebar, then drops into
+                       the sub-items underneath. Active group additionally
+                       gets a coral accent so the user knows where they
+                       are even when several sections are expanded. -->
                   <button type="button"
                           (click)="toggleGroupCollapsed(g.key)"
-                          class="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-500 hover:text-ink-900">
-                    <span>{{ g.label }}</span>
-                    <span class="text-[10px] leading-none transition-transform"
+                          [class]="'w-full flex items-center justify-between px-3 py-2 text-[11px] font-bold uppercase tracking-wider transition-colors border-b border-ink-100 ' +
+                                   (activeGroup() === g.key
+                                     ? 'text-brand-600 bg-brand-500/5'
+                                     : 'text-ink-900 hover:bg-ink-50')">
+                    <span class="inline-flex items-center gap-1.5">
+                      @if (activeGroup() === g.key) {
+                        <span class="w-1 h-1 rounded-full bg-brand-500"></span>
+                      }
+                      <span>{{ g.label }}</span>
+                    </span>
+                    <span class="text-[11px] leading-none transition-transform text-ink-400"
                           [class.rotate-90]="!isGroupCollapsed(g.key)">›</span>
                   </button>
                   @if (!isGroupCollapsed(g.key)) {
-                    <ul class="space-y-0.5">
+                    <ul class="space-y-0.5 py-1">
                       @for (t of tabsForGroup(g.key); track t.key) {
                         <li>
                           <button type="button"
