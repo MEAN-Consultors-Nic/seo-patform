@@ -284,23 +284,20 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                   {{ t.title }}
                 </h3>
 
-                <!-- Description -->
-                @if (t.description) {
-                  <div class="mt-2 text-sm text-ink-600 leading-relaxed">
-                    <div class="rich-content line-clamp-3"
-                         [innerHTML]="sanitize(t.description)"></div>
-                    @if (isDescriptionLong(t.description)) {
-                      <button type="button"
-                              (click)="openDetailModal(t)"
-                              class="mt-1 text-xs font-semibold text-brand-500 hover:text-brand-600 inline-flex items-center gap-1">
-                        View details
-                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5">
-                          <path d="M3 1h6v6M9 1L3.5 6.5" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                      </button>
-                    }
-                  </div>
-                }
+                <!-- Description is intentionally hidden on the kanban
+                     card to keep tiles compact. A 'View details' link is
+                     always rendered below so the full description (plus
+                     subtasks, comments, attachments) is one click away
+                     for any task — not gated on description length like
+                     it used to be. -->
+                <button type="button"
+                        (click)="openDetailModal(t)"
+                        class="mt-2 text-xs font-semibold text-brand-500 hover:text-brand-600 inline-flex items-center gap-1">
+                  View details
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M3 1h6v6M9 1L3.5 6.5" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </button>
 
                 @if (t.notes) {
                   <div class="mt-2 rounded-md bg-ink-50 border border-ink-100 px-3 py-2 text-xs text-ink-700">
