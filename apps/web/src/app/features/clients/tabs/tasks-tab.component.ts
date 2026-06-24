@@ -567,15 +567,17 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
               </div>
             }
 
-            @if ((d.attachments?.length || 0) > 0) {
-              <div class="mt-5">
-                <div class="text-[10px] uppercase tracking-wider font-bold text-ink-400 mb-2">Attachments</div>
-                <app-attachments-strip
-                  [taskId]="d._id!"
-                  [attachments]="d.attachments || []"
-                  (changed)="onAttachmentsChangedFromDetail(d, $event)" />
+            <div class="mt-5">
+              <div class="flex items-baseline justify-between mb-2">
+                <div class="text-[10px] uppercase tracking-wider font-bold text-ink-400">
+                  Attachments ({{ (d.attachments || []).length }})
+                </div>
               </div>
-            }
+              <app-attachments-strip
+                [taskId]="d._id!"
+                [attachments]="d.attachments || []"
+                (changed)="onAttachmentsChangedFromDetail(d, $event)" />
+            </div>
 
             <!-- Comments thread (shared with supervisor portal) -->
             <div class="mt-5">
