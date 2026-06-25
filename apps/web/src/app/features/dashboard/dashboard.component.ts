@@ -4,6 +4,11 @@ import { RouterLink } from '@angular/router';
 import { Cycle, Task, TimeBlock } from '@seo/shared';
 import { ClientsService, ClientWithStats } from '../../core/clients.service';
 import { CyclesService } from '../../core/cycles.service';
+import {
+  PriorityQueueItem,
+  PriorityQueueResponse,
+  PriorityQueueService,
+} from '../../core/priority-queue.service';
 import { TaskTemplatesService } from '../../core/task-templates.service';
 import { TasksService } from '../../core/tasks.service';
 import { TimeBlocksService } from '../../core/time-blocks.service';
@@ -56,6 +61,82 @@ interface CapacityAlert {
           <p class="page-subtitle">Overview of your SEO portfolio</p>
         </div>
       </header>
+
+      <!-- Today's priority queue. Computed daily score across cycle
+           urgency, GSC momentum (week-over-week) and pending high-priority
+           work. Aimed at the 10-15min daily triage of which clients
+           deserve attention first. -->
+      <section class="card mb-4">
+        <header class="flex items-center justify-between mb-3">
+          <div>
+            <h2 class="text-sm font-bold text-ink-900 flex items-center gap-2">
+              <span class="text-base">⚡</span>
+              <span>Today's priority queue</span>
+            </h2>
+            <p class="text-[11px] text-ink-500 mt-0.5">
+              Ranked by cycle urgency, week-over-week GSC drop and pending high-priority work.
+            </p>
+          </div>
+          @if (priorityQueue(); as q) {
+            @if (q.hasStaleMomentum) {
+              <span class="text-[10px] text-ink-400 italic"
+                    title="At least one client's GSC momentum was refreshed today; others are still stale.">
+                Momentum partially refreshed
+              </span>
+            }
+          }
+        </header>
+
+        @if (priorityLoading()) {
+          <div class="py-6 text-center text-xs text-ink-500">
+            Computing scores — first daily run pulls fresh GSC data, can take a few seconds.
+          </div>
+        } @else if (topPriorityItems().length === 0) {
+          <div class="py-6 text-center text-xs text-ink-500">
+            No clients need urgent attention right now. Nice. 🎉
+          </div>
+        } @else {
+          <ol class="space-y-2">
+            @for (it of topPriorityItems(); track it.clientId; let i = $index) {
+              <li>
+                <a [routerLink]="['/clients', it.clientId]"
+                   class="flex items-start gap-3 p-3 rounded-md border border-ink-200 bg-white hover:border-brand-500 hover:shadow-sm transition-all">
+                  <div class="text-lg font-bold text-ink-400 w-6 text-center flex-shrink-0">
+                    {{ i + 1 }}
+                  </div>
+                  @if (it.logoUrl) {
+                    <img [src]="it.logoUrl" [alt]="it.name"
+                         class="w-10 h-10 rounded-md object-contain bg-white border border-ink-200 flex-shrink-0" />
+                  } @else {
+                    <div class="w-10 h-10 rounded-md bg-ink-100 flex items-center justify-center text-sm font-bold text-ink-600 flex-shrink-0">
+                      {{ it.name.charAt(0) }}
+                    </div>
+                  }
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-baseline gap-2 flex-wrap">
+                      <span class="text-sm font-bold text-ink-900 truncate">{{ it.name }}</span>
+                      <span [class]="tierClass(it.tier)">{{ it.tier }}</span>
+                    </div>
+                    @if (it.reasons.length) {
+                      <ul class="mt-1 space-y-0.5">
+                        @for (r of it.reasons.slice(0, 2); track r.tag) {
+                          <li class="text-[11px] text-ink-600 leading-snug">
+                            <span class="font-semibold text-ink-700">{{ r.tag }}:</span>
+                            {{ r.detail }}
+                          </li>
+                        }
+                      </ul>
+                    }
+                  </div>
+                  <div [class]="'flex-shrink-0 px-2.5 py-1 rounded-md text-sm font-bold ' + scoreClass(it.score)">
+                    {{ it.score }}
+                  </div>
+                </a>
+              </li>
+            }
+          </ol>
+        }
+      </section>
 
       <!-- Cycle banner -->
       @if (cycle(); as c) {
@@ -386,6 +467,10 @@ export class DashboardComponent implements OnInit {
   private templates = inject(TaskTemplatesService);
   private tasksSvc = inject(TasksService);
   private blocksSvc = inject(TimeBlocksService);
+  private prioritySvc = inject(PriorityQueueService);
+
+  priorityQueue = signal<PriorityQueueResponse | null>(null);
+  priorityLoading = signal(true);
 
   cycle = signal<Cycle | null>(null);
   stats = signal<Array<{ _id: string; count: number; totalHours: number }>>([]);
@@ -576,6 +661,7 @@ export class DashboardComponent implements OnInit {
   // --- Lifecycle ------------------------------------------------------------
 
   ngOnInit() {
+    this.loadPriorityQueue();
     this.loadTodayBlocks();
     this.cyclesSvc.current().subscribe({
       next: (c) => {
@@ -650,6 +736,38 @@ export class DashboardComponent implements OnInit {
   }
 
   // --- Today widget --------------------------------------------------------
+
+  /**
+   * Pulls the ranked priority queue and renders it at the top of the
+   * dashboard. First call of the day can take a few seconds because
+   * GSC momentum hasn't been cached yet; subsequent loads are instant.
+   */
+  private loadPriorityQueue() {
+    this.priorityLoading.set(true);
+    this.prioritySvc.get().subscribe({
+      next: (q) => {
+        this.priorityQueue.set(q);
+        this.priorityLoading.set(false);
+      },
+      error: () => this.priorityLoading.set(false),
+    });
+  }
+
+  topPriorityItems(): PriorityQueueItem[] {
+    const q = this.priorityQueue();
+    if (!q) return [];
+    return q.items.filter((i) => i.score > 0).slice(0, 5);
+  }
+
+  tierClass(tier: string): string {
+    return 'tier-' + tier;
+  }
+
+  scoreClass(score: number): string {
+    if (score >= 60) return 'bg-danger-100 text-danger-700';
+    if (score >= 30) return 'bg-warning-100 text-warning-500';
+    return 'bg-positive-100 text-positive-500';
+  }
 
   private loadTodayBlocks() {
     const now = new Date();
