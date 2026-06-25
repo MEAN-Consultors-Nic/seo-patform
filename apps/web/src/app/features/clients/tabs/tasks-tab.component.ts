@@ -18,6 +18,7 @@ import {
   TaskCategory,
   TaskStatus,
 } from '@seo/shared';
+import { ClientsService } from '../../../core/clients.service';
 import { CyclesService } from '../../../core/cycles.service';
 import { TasksService } from '../../../core/tasks.service';
 import { SanitizerService } from '../../../core/sanitizer.service';
@@ -262,6 +263,14 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                             <path d="M5.5 5.5h7v7" stroke-linecap="round" />
                           </svg>
                           Duplicate task
+                        </button>
+                        <button type="button"
+                                (click)="openMoveTaskModal(t)"
+                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 inline-flex items-center gap-2">
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M2 8h10M9 5l3 3-3 3" stroke-linecap="round" stroke-linejoin="round" />
+                          </svg>
+                          Move to another client…
                         </button>
                         <div class="border-t border-ink-100 my-1"></div>
                         <button type="button"
@@ -526,6 +535,61 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
       </div>
     }
 
+    <!-- Move task to another client modal. Triggered from the kanban
+         card's contextual menu when work was logged against the wrong
+         client and needs to be re-homed. Cycle stays the same (cycles
+         are global temporal buckets), only clientId flips. -->
+    @if (movingTask(); as mv) {
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+           (click)="dismissMoveTaskModal()">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6"
+             (click)="$event.stopPropagation()">
+          <div class="flex items-start justify-between mb-3">
+            <div>
+              <h2 class="text-lg font-bold text-ink-900">Move task to another client</h2>
+              <p class="text-xs text-ink-500 mt-0.5">
+                Moves <strong class="text-ink-900">{{ mv.title }}</strong> out of this client's task list and into the destination. The cycle, time logged, attachments and comments all travel with the task.
+              </p>
+            </div>
+            <button type="button" (click)="dismissMoveTaskModal()"
+                    class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
+          </div>
+
+          <div>
+            <label class="label">Destination client</label>
+            <select class="input"
+                    [ngModel]="moveTargetClientId()"
+                    (ngModelChange)="moveTargetClientId.set($event)">
+              <option value="">— Pick a client —</option>
+              @for (c of candidateClients(); track c._id) {
+                <option [value]="c._id">{{ c.name }} (Tier {{ c.tier }})</option>
+              }
+            </select>
+            @if (candidateClients().length === 0) {
+              <p class="text-[11px] text-ink-500 mt-1.5">Loading clients…</p>
+            }
+          </div>
+
+          @if (moveError()) {
+            <div class="text-xs text-danger-500 mt-2">{{ moveError() }}</div>
+          }
+
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-ink-100">
+            <button class="btn-secondary text-xs sm:text-sm"
+                    (click)="dismissMoveTaskModal()"
+                    [disabled]="moveSaving()">
+              Cancel
+            </button>
+            <button class="btn-primary text-xs sm:text-sm"
+                    (click)="confirmMoveTask()"
+                    [disabled]="moveSaving() || !moveTargetClientId()">
+              {{ moveSaving() ? 'Moving…' : 'Move task' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
     <!-- Detail task modal -->
     @if (detailTask(); as d) {
       <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4"
@@ -723,6 +787,19 @@ export class ClientTasksTab implements OnChanges {
    * action, plus the explicit Cancel.
    */
   completionPrompt = signal<Task | null>(null);
+
+  /**
+   * The task being moved to a different client. When non-null the
+   * "Move to another client" modal is visible. We load the candidate
+   * client list lazily the first time the modal is opened so the tasks
+   * tab itself doesn't pay the cost on every render.
+   */
+  movingTask = signal<Task | null>(null);
+  candidateClients = signal<Array<{ _id: string; name: string; tier: string }>>([]);
+  moveTargetClientId = signal<string>('');
+  moveSaving = signal(false);
+  moveError = signal<string | null>(null);
+  private clientsSvc = inject(ClientsService);
   editForm: {
     title: string;
     description?: string;
@@ -1179,6 +1256,62 @@ export class ClientTasksTab implements OnChanges {
         const msg = err?.error?.message;
         this.editError.set(
           Array.isArray(msg) ? msg.join(', ') : msg || 'Could not save the task.',
+        );
+      },
+    });
+  }
+
+  /**
+   * Opens the "move task to another client" modal. Loads the candidate
+   * client list on first open and reuses it on subsequent opens within
+   * the same session — the list is small enough that we don't bother
+   * with a TTL.
+   */
+  openMoveTaskModal(t: Task) {
+    this.menuOpenId.set(null);
+    this.movingTask.set(t);
+    this.moveTargetClientId.set('');
+    this.moveError.set(null);
+    if (this.candidateClients().length === 0) {
+      this.clientsSvc.list({ active: true }).subscribe((cs) => {
+        this.candidateClients.set(
+          cs
+            .filter((c) => c._id && c._id !== this.clientId)
+            .map((c) => ({ _id: c._id!, name: c.name, tier: c.tier })),
+        );
+      });
+    }
+  }
+
+  dismissMoveTaskModal() {
+    if (this.moveSaving()) return;
+    this.movingTask.set(null);
+    this.moveTargetClientId.set('');
+    this.moveError.set(null);
+  }
+
+  confirmMoveTask() {
+    const t = this.movingTask();
+    const targetId = this.moveTargetClientId();
+    if (!t?._id || !targetId) return;
+    this.moveSaving.set(true);
+    this.moveError.set(null);
+    this.tasksSvc.update(t._id, { clientId: targetId }).subscribe({
+      next: () => {
+        this.moveSaving.set(false);
+        this.movingTask.set(null);
+        this.moveTargetClientId.set('');
+        // The moved task is no longer scoped to this client, so the
+        // local list won't contain it after a refresh. Filter it out
+        // immediately for snappy feedback instead of waiting on the
+        // round-trip.
+        this.tasks.update((list) => list.filter((x) => x._id !== t._id));
+      },
+      error: (err) => {
+        this.moveSaving.set(false);
+        const m = err?.error?.message;
+        this.moveError.set(
+          Array.isArray(m) ? m.join(', ') : m || 'Could not move the task.',
         );
       },
     });
