@@ -120,6 +120,24 @@ const GROUPS: GroupDef[] = [
                 <a [href]="c.url" target="_blank" class="text-xs text-sky-500 hover:underline truncate max-w-[200px] sm:max-w-none">{{ c.url }}</a>
                 <app-domain-info-button [url]="c.url" />
                 <app-schema-modeler-button [url]="c.url" />
+                @if (c.googleDocId) {
+                  <a [href]="'https://docs.google.com/document/d/' + c.googleDocId + '/edit'"
+                     target="_blank" rel="noopener"
+                     class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-100 text-sky-700 hover:bg-sky-200 text-[10px] font-semibold transition"
+                     title="Open the working Google Doc linked to this client">
+                    <span>📄</span>
+                    <span>Doc</span>
+                  </a>
+                }
+                @if (c.googleSheetId) {
+                  <a [href]="'https://docs.google.com/spreadsheets/d/' + c.googleSheetId + '/edit'"
+                     target="_blank" rel="noopener"
+                     class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-positive-100 text-positive-500 hover:bg-positive-100/70 text-[10px] font-semibold transition"
+                     title="Open the Google Sheet linked to this client">
+                    <span>📊</span>
+                    <span>Sheet</span>
+                  </a>
+                }
               </div>
             </div>
           </div>
