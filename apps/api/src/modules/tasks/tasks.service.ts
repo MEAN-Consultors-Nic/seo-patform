@@ -148,8 +148,14 @@ export class TasksService {
 
   async update(id: string, dto: UpdateTaskDto, user?: AuthenticatedUser) {
     await this.ensureAccessToTask(id, user);
+    // skipImages is a transient hint for the doc-sync side-effect — it
+    // travels with the completion request but must NOT be persisted on
+    // the task document. Pluck it out before building the Mongo patch.
+    const skipImages = !!(dto as UpdateTaskDto & { skipImages?: boolean })
+      .skipImages;
     const clean = this.sanitizeTaskFields(dto);
     const patch: Record<string, unknown> = { ...clean };
+    delete (patch as { skipImages?: unknown }).skipImages;
     if (dto.clientId) patch.clientId = new Types.ObjectId(dto.clientId);
     if (dto.cycleId) patch.cycleId = new Types.ObjectId(dto.cycleId);
     if (dto.status === 'completed') {
@@ -180,7 +186,11 @@ export class TasksService {
     // is informational.
     let docSync: { ok: boolean; message?: string } | undefined;
     if (dto.status === 'completed' && user?.userId) {
-      docSync = await this.mirrorCompletionToGoogleDoc(updated, user.userId);
+      docSync = await this.mirrorCompletionToGoogleDoc(
+        updated,
+        user.userId,
+        skipImages,
+      );
     }
 
     return docSync
@@ -210,6 +220,7 @@ export class TasksService {
       attachments?: Array<{ url: string; resourceType?: string }>;
     },
     userId: string,
+    skipImages = false,
   ): Promise<{ ok: boolean; message?: string }> {
     try {
       const client = await this.clients.findOne(String(task.clientId));
@@ -218,10 +229,12 @@ export class TasksService {
       if (!docId) return { ok: true };
       const when = task.completedAt ?? new Date();
       const tabId = await this.docs.findMonthlyTab(userId, docId, when);
-      const imageAttachments = (task.attachments ?? [])
-        .filter((a) => a.resourceType !== 'raw')
-        .map((a) => a.url)
-        .filter((u): u is string => !!u);
+      const imageAttachments = skipImages
+        ? []
+        : (task.attachments ?? [])
+            .filter((a) => a.resourceType !== 'raw')
+            .map((a) => a.url)
+            .filter((u): u is string => !!u);
       await this.docs.appendTaskToTab(userId, docId, tabId, {
         title: task.title,
         description: task.description,

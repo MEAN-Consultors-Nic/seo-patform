@@ -477,6 +477,55 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
       </div>
     }
 
+    <!-- Completion confirm modal — only opens when the task being
+         completed has image attachments and we need the user to decide
+         whether they go into the Google Doc. -->
+    @if (completionPrompt(); as p) {
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+           (click)="dismissCompletionPrompt()">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6"
+             (click)="$event.stopPropagation()">
+          <div class="flex items-start justify-between mb-3">
+            <div>
+              <h2 class="text-lg font-bold text-ink-900">Include images in the Google Doc?</h2>
+              <p class="text-xs text-ink-500 mt-0.5">
+                You're completing <strong class="text-ink-900">{{ p.title }}</strong>.
+                Pick whether the attached images get inserted under the task entry.
+              </p>
+            </div>
+            <button type="button" (click)="dismissCompletionPrompt()"
+                    class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
+          </div>
+
+          <div class="bg-ink-50 border border-ink-200 rounded-md p-3 mb-4">
+            <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-2">
+              Attached images ({{ imageAttachmentsOf(p).length }})
+            </div>
+            <div class="flex flex-wrap gap-2">
+              @for (a of imageAttachmentsOf(p); track a.publicId) {
+                <img [src]="a.thumbnailUrl || a.url" [alt]="a.originalFilename || ''"
+                     class="w-16 h-16 object-cover rounded-md border border-ink-200" />
+              }
+            </div>
+            <p class="text-[11px] text-ink-500 mt-2 leading-snug">
+              Only the first two images would be inserted; raw files (PDFs, etc.) are always skipped.
+            </p>
+          </div>
+
+          <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+            <button class="btn-secondary text-xs sm:text-sm"
+                    (click)="confirmComplete(true)">
+              Skip images
+            </button>
+            <button class="btn-primary text-xs sm:text-sm"
+                    (click)="confirmComplete(false)">
+              Include images
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
     <!-- Detail task modal -->
     @if (detailTask(); as d) {
       <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4"
@@ -668,6 +717,12 @@ export class ClientTasksTab implements OnChanges {
   postingComment = signal(false);
   /** Brief success toast text shown after a task is synced to Google Doc. */
   docSyncToast = signal<string | null>(null);
+  /**
+   * The task pending the 'include images in Google Doc?' confirmation.
+   * Non-null while the modal is open. Cleared by either Skip or Include
+   * action, plus the explicit Cancel.
+   */
+  completionPrompt = signal<Task | null>(null);
   editForm: {
     title: string;
     description?: string;
@@ -983,8 +1038,43 @@ export class ClientTasksTab implements OnChanges {
         );
         return;
       }
+      // If the task has image attachments, gate completion behind a
+      // confirm dialog where the user picks whether those images get
+      // mirrored into the Google Doc. Tasks with no images skip the
+      // dialog and complete immediately — no reason to interrupt.
+      if (this.imageAttachmentsOf(t).length > 0) {
+        this.completionPrompt.set(t);
+        return;
+      }
     }
-    this.tasksSvc.update(t._id, { status }).subscribe({
+    this.applyStatusChange(t, status, false);
+  }
+
+  /**
+   * Lists image attachments (Cloudinary uploads that aren't PDFs/raw
+   * files). Used both by the completion confirm dialog to show
+   * thumbnails and by the gating decision in setStatus().
+   */
+  imageAttachmentsOf(t: Task): TaskAttachment[] {
+    return (t.attachments || []).filter((a) => a.resourceType !== 'raw');
+  }
+
+  confirmComplete(skipImages: boolean) {
+    const t = this.completionPrompt();
+    if (!t || !t._id) return;
+    this.completionPrompt.set(null);
+    this.applyStatusChange(t, 'completed', skipImages);
+  }
+
+  dismissCompletionPrompt() {
+    this.completionPrompt.set(null);
+  }
+
+  private applyStatusChange(t: Task, status: TaskStatus, skipImages: boolean) {
+    if (!t._id) return;
+    const patch: Partial<Task> & { skipImages?: boolean } = { status };
+    if (status === 'completed') patch.skipImages = skipImages;
+    this.tasksSvc.update(t._id, patch).subscribe({
       next: (res) => {
         this.loadTasks();
         // The backend tacks a _docSync field onto the response when
