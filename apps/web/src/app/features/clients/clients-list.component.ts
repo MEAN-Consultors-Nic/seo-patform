@@ -36,9 +36,24 @@ interface KpiField {
       <header class="page-header">
         <div>
           <h1 class="page-title">Clients</h1>
-          <p class="page-subtitle">{{ clients().length }} active accounts</p>
+          <p class="page-subtitle">{{ clients().length }} {{ activeFilter() ? 'active' : 'inactive' }} accounts</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
+          <!-- Active / Inactive switch. Two segments so the user always
+               knows which list they're looking at, and 'Set Inactive'
+               from a card simply moves it across instead of deleting it. -->
+          <div class="flex bg-white border border-ink-200 rounded-md p-0.5">
+            <button (click)="setActiveFilter(true)"
+                    [class]="'px-2.5 sm:px-3 py-1 text-xs font-semibold rounded transition ' +
+                      (activeFilter() ? 'bg-ink-900 text-white' : 'text-ink-600 hover:text-ink-900')">
+              Active
+            </button>
+            <button (click)="setActiveFilter(false)"
+                    [class]="'px-2.5 sm:px-3 py-1 text-xs font-semibold rounded transition ' +
+                      (!activeFilter() ? 'bg-ink-900 text-white' : 'text-ink-600 hover:text-ink-900')">
+              Inactive
+            </button>
+          </div>
           <div class="flex bg-white border border-ink-200 rounded-md p-0.5">
             @for (t of tierOptions; track t.value) {
               <button
@@ -114,6 +129,16 @@ interface KpiField {
                           </svg>
                           Generate report
                         </a>
+                        <div class="my-1 border-t border-ink-100"></div>
+                        <button type="button"
+                                (click)="toggleActive(c)"
+                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 flex items-center gap-2">
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M3 8a5 5 0 1 0 10 0 5 5 0 0 0-10 0Z" />
+                            <path d="M8 5v3M8 11.01" stroke-linecap="round" />
+                          </svg>
+                          {{ c.active === false ? 'Set Active' : 'Set Inactive' }}
+                        </button>
                       </div>
                     }
                   </div>
@@ -345,6 +370,13 @@ export class ClientsListComponent implements OnInit {
 
   clients = signal<ClientWithStats[]>([]);
   tierFilter = signal<ClientTier | ''>('');
+  /**
+   * Active/Inactive switch. Default is Active because that's the
+   * everyday list; Inactive is a parking lot for paused engagements
+   * the user keeps around for history but doesn't want to scan past
+   * every time they open the page.
+   */
+  activeFilter = signal<boolean>(true);
   menuOpenId = signal<string | null>(null);
   kpisModalClient = signal<ClientWithStats | null>(null);
   kpisForm: Partial<Record<KpiFieldKey, number | null>> = {};
@@ -404,9 +436,30 @@ export class ClientsListComponent implements OnInit {
     this.load();
   }
 
+  setActiveFilter(active: boolean) {
+    if (this.activeFilter() === active) return;
+    this.activeFilter.set(active);
+    this.load();
+  }
+
   load() {
-    const filters = this.tierFilter() ? { tier: this.tierFilter() as ClientTier } : {};
+    const filters: { tier?: ClientTier; active?: boolean } = {
+      active: this.activeFilter(),
+    };
+    if (this.tierFilter()) filters.tier = this.tierFilter() as ClientTier;
     this.svc.listWithStats(filters).subscribe((cs) => this.clients.set(cs));
+  }
+
+  /**
+   * Flips the client's active flag. Closes the menu and reloads so
+   * the card disappears from the current tab (moving to the other
+   * one) — feedback that the action took effect.
+   */
+  toggleActive(c: ClientWithStats) {
+    if (!c._id) return;
+    const nextActive = c.active === false ? true : false;
+    this.menuOpenId.set(null);
+    this.svc.update(c._id, { active: nextActive }).subscribe(() => this.load());
   }
 
   open(id: string) {
