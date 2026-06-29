@@ -26,8 +26,13 @@ export class TasksController {
     @Query('cycleId') cycleId?: string,
     @Query('status') status?: string,
     @Query('category') category?: string,
+    @Query('completedFrom') completedFrom?: string,
+    @Query('completedTo') completedTo?: string,
   ) {
-    return this.tasks.findAll({ clientId, cycleId, status, category }, user);
+    return this.tasks.findAll(
+      { clientId, cycleId, status, category, completedFrom, completedTo },
+      user,
+    );
   }
 
   @Get('summary')

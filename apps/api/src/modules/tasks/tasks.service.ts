@@ -70,6 +70,10 @@ export class TasksService {
       cycleId?: string;
       status?: string;
       category?: string;
+      /** Inclusive lower bound on completedAt — used by custom-range reports. */
+      completedFrom?: string;
+      /** Inclusive upper bound on completedAt. */
+      completedTo?: string;
     },
     user?: AuthenticatedUser,
   ) {
@@ -84,6 +88,18 @@ export class TasksService {
     if (filters.cycleId) q.cycleId = new Types.ObjectId(filters.cycleId);
     if (filters.status) q.status = filters.status;
     if (filters.category) q.category = filters.category;
+    if (filters.completedFrom || filters.completedTo) {
+      const completedAt: Record<string, Date> = {};
+      if (filters.completedFrom) completedAt.$gte = new Date(filters.completedFrom);
+      if (filters.completedTo) {
+        const to = new Date(filters.completedTo);
+        // Promote to end-of-day so a date string like '2026-06-25' includes
+        // everything completed that day, not just midnight UTC.
+        to.setUTCHours(23, 59, 59, 999);
+        completedAt.$lte = to;
+      }
+      q.completedAt = completedAt;
+    }
     return this.model
       .find(q)
       .sort({ priority: 1, status: 1, createdAt: -1 })

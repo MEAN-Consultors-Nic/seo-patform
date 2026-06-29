@@ -106,15 +106,42 @@ interface KpiGroup {
           </div>
           <div>
             <label class="label">Cycle</label>
-            <select class="input" [ngModel]="cycleId()" (ngModelChange)="onCycleChange($event)"
+            <select class="input"
+                    [ngModel]="customMode() ? '__custom__' : cycleId()"
+                    (ngModelChange)="onCycleChange($event)"
                     [disabled]="loadingReport()">
               <option value="">Select cycle</option>
               @for (c of cycles(); track c._id) {
                 <option [value]="c._id">{{ c.label }} ({{ c.status }})</option>
               }
+              <option value="__custom__">Custom date range…</option>
             </select>
           </div>
         </div>
+
+        @if (customMode()) {
+          <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label class="label">From</label>
+              <input type="date" class="input"
+                     [ngModel]="customFrom()"
+                     (ngModelChange)="onCustomFromChange($event)" />
+            </div>
+            <div>
+              <label class="label">To</label>
+              <input type="date" class="input"
+                     [ngModel]="customTo()"
+                     (ngModelChange)="onCustomToChange($event)" />
+            </div>
+          </div>
+          <div class="mt-3 rounded-md border border-warning-500/30 bg-warning-100/40 px-3 py-2 text-[11px] text-warning-500 leading-snug">
+            <strong>Custom range — preview only.</strong>
+            Tasks completed in this window load below; pull fresh KPIs from
+            the 'Pull from Google' button inside the KPI section. Save,
+            Share, PDF and Word export are not available for custom ranges
+            yet — pick a cycle to enable them.
+          </div>
+        }
         @if (loadingReport()) {
           <div class="flex items-center gap-2 mt-3 text-xs text-ink-500">
             <span class="spinner"></span>
@@ -838,6 +865,16 @@ export class ReportEditorComponent implements OnInit {
   cycles = signal<Cycle[]>([]);
   clientId = signal<string>('');
   cycleId = signal<string>('');
+  /**
+   * Custom date-range mode. When true the cycle selector value is the
+   * sentinel '__custom__' and we route reads through customFrom/customTo
+   * instead of cycleId. Phase 1 is preview-only — Save/Share/Word/PDF
+   * remain disabled; the user can scan tasks for the range and pull
+   * fresh KPIs via the existing 'Pull from Google' controls.
+   */
+  customMode = signal(false);
+  customFrom = signal<string>('');
+  customTo = signal<string>('');
   report = signal<Report | null>(null);
   downloading = signal(false);
   downloadingWord = signal(false);
@@ -1081,7 +1118,50 @@ export class ReportEditorComponent implements OnInit {
   }
 
   onClientChange(v: string) { this.clientId.set(v); this.tryLoad(); }
-  onCycleChange(v: string) { this.cycleId.set(v); this.tryLoad(); }
+
+  /**
+   * Switching to '__custom__' enables custom-range mode and clears
+   * cycleId so downstream readiness checks branch through the custom
+   * path. Switching back to a real cycleId disables custom mode.
+   */
+  onCycleChange(v: string) {
+    if (v === '__custom__') {
+      this.customMode.set(true);
+      this.cycleId.set('');
+      this.tryLoadCustom();
+      return;
+    }
+    this.customMode.set(false);
+    this.cycleId.set(v);
+    this.tryLoad();
+  }
+
+  onCustomFromChange(v: string) {
+    this.customFrom.set(v);
+    this.tryLoadCustom();
+  }
+
+  onCustomToChange(v: string) {
+    this.customTo.set(v);
+    this.tryLoadCustom();
+  }
+
+  /**
+   * Loads the tasks completed within the custom window. KPIs are NOT
+   * loaded automatically — the user uses the existing 'Pull from
+   * Google' controls in the KPI section to fetch fresh metrics for
+   * the range. Save and export are disabled for Phase 1.
+   */
+  private tryLoadCustom() {
+    if (!this.clientId() || !this.customFrom() || !this.customTo()) return;
+    this.tasksSvc
+      .list({
+        clientId: this.clientId(),
+        completedFrom: this.customFrom(),
+        completedTo: this.customTo(),
+      })
+      .subscribe((tasks) => this.cycleTasks.set(tasks));
+  }
 
   tryLoad() {
     if (!this.ready()) return;

@@ -9,7 +9,16 @@ export class TasksService {
   private http = inject(HttpClient);
   private base = inject(API_BASE_URL);
 
-  list(filters: { clientId?: string; cycleId?: string; status?: string; category?: string } = {}): Observable<Task[]> {
+  list(
+    filters: {
+      clientId?: string;
+      cycleId?: string;
+      status?: string;
+      category?: string;
+      completedFrom?: string;
+      completedTo?: string;
+    } = {},
+  ): Observable<Task[]> {
     const qs = new URLSearchParams();
     Object.entries(filters).forEach(([k, v]) => v && qs.set(k, v));
     return this.http.get<Task[]>(`${this.base}/tasks?${qs.toString()}`);
