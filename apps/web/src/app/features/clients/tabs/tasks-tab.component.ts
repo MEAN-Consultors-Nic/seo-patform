@@ -388,13 +388,21 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
               <input class="input" [(ngModel)]="editForm.title" placeholder="Task title" />
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div>
                 <label class="label">Category</label>
                 <select class="input" [(ngModel)]="editForm.category">
                   @for (cat of categories; track cat) {
                     <option [value]="cat">{{ cat }}</option>
                   }
+                </select>
+              </div>
+              <div>
+                <label class="label">Status</label>
+                <select class="input" [(ngModel)]="editForm.status">
+                  <option value="pending">Pending</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="blocked">Blocked</option>
                 </select>
               </div>
               <div>
@@ -804,6 +812,7 @@ export class ClientTasksTab implements OnChanges {
     title: string;
     description?: string;
     category: TaskCategory;
+    status: 'pending' | 'in_progress' | 'blocked';
     priority: 'high' | 'medium' | 'low';
     estimatedHours: number;
     notes?: string;
@@ -812,6 +821,7 @@ export class ClientTasksTab implements OnChanges {
     title: '',
     description: '',
     category: 'onpage',
+    status: 'pending',
     priority: 'medium',
     estimatedHours: 0,
     notes: '',
@@ -989,6 +999,7 @@ export class ClientTasksTab implements OnChanges {
       title: '',
       description: '',
       category: 'onpage',
+      status: 'pending',
       priority: 'medium',
       estimatedHours: 1,
       notes: '',
@@ -1070,7 +1081,7 @@ export class ClientTasksTab implements OnChanges {
       estimatedHours: Number(this.editForm.estimatedHours) || 0,
       notes,
       subtasks: this.cleanSubtasks(),
-      status: 'pending',
+      status: this.editForm.status,
       clientId: this.clientId,
       cycleId: cycle._id,
     };
@@ -1196,6 +1207,13 @@ export class ClientTasksTab implements OnChanges {
       title: t.title || '',
       description: t.description || '',
       category: t.category,
+      // Map 'completed' to 'pending' in the edit form — the form's
+      // status select intentionally omits 'completed' because the
+      // completion flow lives in setStatus() (with subtask check + doc
+      // sync confirm). If the user wants to revive a completed task
+      // they pick pending/in_progress here; if they want to complete
+      // a task they use the kanban menu.
+      status: t.status === 'completed' ? 'pending' : t.status,
       priority: t.priority,
       estimatedHours: t.estimatedHours || 0,
       notes: t.notes || '',
@@ -1245,6 +1263,14 @@ export class ClientTasksTab implements OnChanges {
       notes,
       subtasks: this.cleanSubtasks(),
     };
+    // Only carry status changes when the task isn't currently completed.
+    // Completed tasks should only be un-completed via the explicit
+    // kanban menu flow so the doc-sync side effects stay paired with
+    // intent — accidental un-completion via Edit would silently leave
+    // a stale entry in the Google Doc.
+    if (t.status !== 'completed') {
+      patch.status = this.editForm.status;
+    }
     this.tasksSvc.update(t._id, patch).subscribe({
       next: () => {
         this.savingEdit.set(false);
