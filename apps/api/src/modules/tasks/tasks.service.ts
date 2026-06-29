@@ -254,6 +254,31 @@ export class TasksService {
     }
   }
 
+  /**
+   * Manually triggers a Google Doc sync for an already-completed task.
+   * Used by the kanban menu's "Send to Doc" action — handy when the
+   * original auto-sync failed (no doc linked yet, GSC tab missing,
+   * token expired) or when the user wants to re-emit the entry into a
+   * different month tab. The task is NOT modified; this is purely a
+   * side-effect call. Refuses anything that isn't already completed
+   * because the doc layout assumes a completedAt timestamp.
+   */
+  async sendToDoc(
+    id: string,
+    skipImages: boolean,
+    user: AuthenticatedUser,
+  ): Promise<{ ok: boolean; message?: string }> {
+    await this.ensureAccessToTask(id, user);
+    const task = await this.model.findById(id).lean().exec();
+    if (!task) throw new NotFoundException(`Task ${id} not found`);
+    if (task.status !== 'completed') {
+      throw new BadRequestException(
+        'Only completed tasks can be sent to the Google Doc.',
+      );
+    }
+    return this.mirrorCompletionToGoogleDoc(task, user.userId, skipImages);
+  }
+
   async remove(id: string, user?: AuthenticatedUser) {
     await this.ensureAccessToTask(id, user);
     const deleted = await this.model.findByIdAndDelete(id).lean().exec();

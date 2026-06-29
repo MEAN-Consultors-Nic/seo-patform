@@ -102,6 +102,15 @@ export class TasksController {
     return this.tasks.removeAttachment(id, body.publicId, user);
   }
 
+  @Post(':id/send-to-doc')
+  sendToDoc(
+    @Param('id') id: string,
+    @Body() body: { skipImages?: boolean },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasks.sendToDoc(id, !!body?.skipImages, user);
+  }
+
   @Post(':id/subtasks')
   addSubtask(
     @Param('id') id: string,

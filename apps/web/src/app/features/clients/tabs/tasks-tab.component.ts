@@ -272,6 +272,18 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                           </svg>
                           Move to another client…
                         </button>
+                        @if (t.status === 'completed') {
+                          <button type="button"
+                                  (click)="sendToDoc(t)"
+                                  [disabled]="sendingToDocId() === t._id"
+                                  class="w-full text-left px-3 py-2 hover:bg-ink-50 disabled:opacity-50 text-ink-700 inline-flex items-center gap-2">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                              <path d="M3 2h7l3 3v9H3V2z" stroke-linejoin="round" />
+                              <path d="M10 2v3h3M6 8h4M6 11h4" stroke-linecap="round" />
+                            </svg>
+                            {{ sendingToDocId() === t._id ? 'Sending…' : 'Send to Doc' }}
+                          </button>
+                        }
                         <div class="border-t border-ink-100 my-1"></div>
                         <button type="button"
                                 (click)="remove(t)"
@@ -506,7 +518,11 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
             <div>
               <h2 class="text-lg font-bold text-ink-900">Include images in the Google Doc?</h2>
               <p class="text-xs text-ink-500 mt-0.5">
-                You're completing <strong class="text-ink-900">{{ p.title }}</strong>.
+                @if (completionPromptMode() === 'sendToDoc') {
+                  Sending <strong class="text-ink-900">{{ p.title }}</strong> to the Google Doc.
+                } @else {
+                  You're completing <strong class="text-ink-900">{{ p.title }}</strong>.
+                }
                 Pick whether the attached images get inserted under the task entry.
               </p>
             </div>
@@ -795,6 +811,15 @@ export class ClientTasksTab implements OnChanges {
    * action, plus the explicit Cancel.
    */
   completionPrompt = signal<Task | null>(null);
+  /**
+   * Differentiates the completionPrompt modal between the two flows
+   * that use it: a fresh completion (status change → 'completed') or
+   * a manual 'Send to Doc' re-send for an already-completed task. The
+   * modal copy and the confirm handler branch on this.
+   */
+  completionPromptMode = signal<'complete' | 'sendToDoc'>('complete');
+  /** ID of the task whose Send-to-Doc request is in flight. */
+  sendingToDocId = signal<string | null>(null);
 
   /**
    * The task being moved to a different client. When non-null the
@@ -1131,11 +1156,52 @@ export class ClientTasksTab implements OnChanges {
       // mirrored into the Google Doc. Tasks with no images skip the
       // dialog and complete immediately — no reason to interrupt.
       if (this.imageAttachmentsOf(t).length > 0) {
+        this.completionPromptMode.set('complete');
         this.completionPrompt.set(t);
         return;
       }
     }
     this.applyStatusChange(t, status, false);
+  }
+
+  /**
+   * Re-runs the doc-sync side effect for an already-completed task. If
+   * the task has images, route through the same 'include images?'
+   * confirm modal so the user always has a chance to opt out — same
+   * UX as the initial completion path.
+   */
+  sendToDoc(t: Task) {
+    this.menuOpenId.set(null);
+    if (!t._id || t.status !== 'completed') return;
+    if (this.imageAttachmentsOf(t).length > 0) {
+      this.completionPromptMode.set('sendToDoc');
+      this.completionPrompt.set(t);
+      return;
+    }
+    this.performSendToDoc(t, false);
+  }
+
+  private performSendToDoc(t: Task, skipImages: boolean) {
+    if (!t._id) return;
+    this.sendingToDocId.set(t._id);
+    this.tasksSvc.sendToDoc(t._id, skipImages).subscribe({
+      next: (sync) => {
+        this.sendingToDocId.set(null);
+        if (sync.ok) {
+          this.docSyncToast.set(sync.message ?? 'Task sent to Google Doc.');
+          setTimeout(() => this.docSyncToast.set(null), 4000);
+        } else {
+          alert(`Doc sync failed: ${sync.message ?? 'Unknown error'}`);
+        }
+      },
+      error: (err) => {
+        this.sendingToDocId.set(null);
+        const m = err?.error?.message;
+        alert(
+          `Doc sync failed: ${Array.isArray(m) ? m.join(', ') : m || 'Unknown error'}`,
+        );
+      },
+    });
   }
 
   /**
@@ -1150,8 +1216,13 @@ export class ClientTasksTab implements OnChanges {
   confirmComplete(skipImages: boolean) {
     const t = this.completionPrompt();
     if (!t || !t._id) return;
+    const mode = this.completionPromptMode();
     this.completionPrompt.set(null);
-    this.applyStatusChange(t, 'completed', skipImages);
+    if (mode === 'sendToDoc') {
+      this.performSendToDoc(t, skipImages);
+    } else {
+      this.applyStatusChange(t, 'completed', skipImages);
+    }
   }
 
   dismissCompletionPrompt() {

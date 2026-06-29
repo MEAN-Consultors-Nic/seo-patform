@@ -47,6 +47,13 @@ export class TasksService {
     });
   }
 
+  sendToDoc(taskId: string, skipImages: boolean) {
+    return this.http.post<{ ok: boolean; message?: string }>(
+      `${this.base}/tasks/${taskId}/send-to-doc`,
+      { skipImages },
+    );
+  }
+
   addSubtask(taskId: string, title: string, done = false) {
     return this.http.post<Task>(`${this.base}/tasks/${taskId}/subtasks`, {
       title,
