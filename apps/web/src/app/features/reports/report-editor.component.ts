@@ -355,7 +355,7 @@ interface KpiGroup {
                   <button class="btn-secondary text-xs"
                           type="button"
                           (click)="pullKpisFromGoogle()"
-                          [disabled]="pullingKpis() || !clientId() || !cycleId()"
+                          [disabled]="pullingKpis() || !ready()"
                           title="Fetch KPIs from Google Search Console + Google Analytics for the selected range.">
                     @if (pullingKpis()) {
                       <span class="inline-flex items-center gap-1.5"><span class="spinner" style="width:10px;height:10px;"></span> Pulling…</span>
@@ -1691,26 +1691,10 @@ export class ReportEditorComponent implements OnInit {
       this.coverUploadProgress.set(null);
       this.uploadingCover.set(false);
       if (this.ready()) {
-        this.reportsSvc
-          .upsert({
-            clientId: this.clientId(),
-            cycleId: this.cycleId(),
-            coverImageUrl: this.coverImageUrl(),
-            executiveSummary: this.summaryText.trim(),
-            findings: this.findings,
-            nextPeriodPlan: this.nextPeriodPlan,
-            clientBlockers: this.clientBlockers,
-            finalConsiderations: this.finalConsiderations,
-          includeServiceAreas: this.includeServiceAreas,
-          comparePeriods: this.comparePeriods,
-          locationsSort: this.locationsSort,
-          hiddenKpis: Array.from(this.hiddenKpis),
-            kpis: this.cleanKpis(),
-          })
-          .subscribe({
-            next: (r) => this.report.set(r),
-            error: () => null,
-          });
+        this.reportsSvc.upsert(this.buildUpsertDto()).subscribe({
+          next: (r) => this.report.set(r),
+          error: () => null,
+        });
       }
     } catch (err) {
       this.uploadingCover.set(false);
@@ -1774,6 +1758,12 @@ export class ReportEditorComponent implements OnInit {
       start.setDate(start.getDate() - (preset === 'last7' ? 7 : 28));
       return { from: this.formatIsoDate(start), to: this.formatIsoDate(end) };
     }
+    // In custom-range mode, 'cycle' preset folds to the report's own
+    // From/To dates so the picker label stays meaningful.
+    if (this.customMode() && preset === 'cycle') {
+      if (!this.customFrom() || !this.customTo()) return null;
+      return { from: this.customFrom(), to: this.customTo() };
+    }
     const cycle = this.cycles().find((c) => c._id === this.cycleId());
     if (!cycle) return null;
     if (preset === 'cycle') {
@@ -1803,8 +1793,7 @@ export class ReportEditorComponent implements OnInit {
 
   pullKpisFromGoogle() {
     const clientId = this.clientId();
-    const cycleId = this.cycleId();
-    if (!clientId || !cycleId) return;
+    if (!clientId || !this.ready()) return;
     const range = this.resolvePullRange(this.pullRangePreset());
     if (!range) {
       this.pullResult.set({
