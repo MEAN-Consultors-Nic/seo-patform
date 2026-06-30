@@ -134,13 +134,16 @@ interface KpiGroup {
                      (ngModelChange)="onCustomToChange($event)" />
             </div>
           </div>
-          <div class="mt-3 rounded-md border border-warning-500/30 bg-warning-100/40 px-3 py-2 text-[11px] text-warning-500 leading-snug">
-            <strong>Custom range — preview only.</strong>
-            Tasks completed in this window load below; pull fresh KPIs from
-            the 'Pull from Google' button inside the KPI section. Save,
-            Share, PDF and Word export are not available for custom ranges
-            yet — pick a cycle to enable them.
-          </div>
+          @if (creatingCustom()) {
+            <div class="mt-3 text-[11px] text-ink-500 italic">
+              Creating custom report…
+            </div>
+          } @else if (customReportId()) {
+            <div class="mt-3 rounded-md border border-positive-500/30 bg-positive-100/40 px-3 py-2 text-[11px] text-positive-500 leading-snug">
+              <strong>Custom range active.</strong>
+              Save, Share, PDF and Word work just like a cycle-anchored report — the period below carries the from/to dates instead of a cycle label.
+            </div>
+          }
         }
         @if (loadingReport()) {
           <div class="flex items-center gap-2 mt-3 text-xs text-ink-500">
@@ -875,6 +878,14 @@ export class ReportEditorComponent implements OnInit {
   customMode = signal(false);
   customFrom = signal<string>('');
   customTo = signal<string>('');
+  /**
+   * _id of the custom-range Report document we're editing. Created on
+   * the first valid date pick; subsequent saves/PDF/share/word route
+   * through the byId endpoints using this id.
+   */
+  customReportId = signal<string>('');
+  /** True while the initial createCustom POST is in flight. */
+  creatingCustom = signal(false);
   report = signal<Report | null>(null);
   downloading = signal(false);
   downloadingWord = signal(false);
@@ -1114,6 +1125,9 @@ export class ReportEditorComponent implements OnInit {
   }
 
   ready(): boolean {
+    if (this.customMode()) {
+      return !!(this.clientId() && this.customReportId());
+    }
     return !!(this.clientId() && this.cycleId());
   }
 
@@ -1128,32 +1142,66 @@ export class ReportEditorComponent implements OnInit {
     if (v === '__custom__') {
       this.customMode.set(true);
       this.cycleId.set('');
-      this.tryLoadCustom();
+      this.customReportId.set('');
+      this.report.set(null);
       return;
     }
     this.customMode.set(false);
+    this.customReportId.set('');
     this.cycleId.set(v);
     this.tryLoad();
   }
 
   onCustomFromChange(v: string) {
     this.customFrom.set(v);
+    // Range changed — invalidate any in-progress custom report and
+    // start fresh on the next valid pick.
+    this.customReportId.set('');
+    this.report.set(null);
     this.tryLoadCustom();
   }
 
   onCustomToChange(v: string) {
     this.customTo.set(v);
+    this.customReportId.set('');
+    this.report.set(null);
     this.tryLoadCustom();
   }
 
   /**
-   * Loads the tasks completed within the custom window. KPIs are NOT
-   * loaded automatically — the user uses the existing 'Pull from
-   * Google' controls in the KPI section to fetch fresh metrics for
-   * the range. Save and export are disabled for Phase 1.
+   * Custom-mode entry point. Creates a Report document for the range
+   * (one row per (clientId, from, to) pick), loads its data, then
+   * pulls tasks completed in the window + the previous-period KPIs.
+   * Idempotent: calling this with the same dates while a report is
+   * already loaded is a no-op.
    */
   private tryLoadCustom() {
     if (!this.clientId() || !this.customFrom() || !this.customTo()) return;
+    if (this.customReportId()) return; // Already created for this range.
+    if (this.creatingCustom()) return;
+    this.creatingCustom.set(true);
+    this.loadingReport.set(true);
+    this.reportsSvc
+      .createCustom(this.clientId(), this.customFrom(), this.customTo())
+      .subscribe({
+        next: (r) => {
+          const id = (r as Report & { _id?: string })._id;
+          if (id) this.customReportId.set(id);
+          this.report.set(r);
+          this.populate(r);
+          this.creatingCustom.set(false);
+          this.loadingReport.set(false);
+          this.loadTasksForCustomRange();
+          this.loadPreviousKpisForCustom();
+        },
+        error: () => {
+          this.creatingCustom.set(false);
+          this.loadingReport.set(false);
+        },
+      });
+  }
+
+  private loadTasksForCustomRange() {
     this.tasksSvc
       .list({
         clientId: this.clientId(),
@@ -1161,6 +1209,23 @@ export class ReportEditorComponent implements OnInit {
         completedTo: this.customTo(),
       })
       .subscribe((tasks) => this.cycleTasks.set(tasks));
+  }
+
+  private loadPreviousKpisForCustom() {
+    const id = this.customReportId();
+    if (!id) return;
+    this.previousKpis.set(null);
+    this.previousKpisSource.set(null);
+    this.reportsSvc.previousKpisById(id).subscribe({
+      next: (r) => {
+        this.previousKpis.set(r.kpisPrevious);
+        this.previousKpisSource.set(r.kpisPreviousSource);
+      },
+      error: () => {
+        this.previousKpis.set(null);
+        this.previousKpisSource.set(null);
+      },
+    });
   }
 
   tryLoad() {
@@ -1323,7 +1388,10 @@ export class ReportEditorComponent implements OnInit {
       this.pdfError.set('Could not save the report before sharing.');
       return;
     }
-    this.reportsSvc.share(this.clientId(), this.cycleId()).subscribe({
+    const shareObs = this.customMode()
+      ? this.reportsSvc.shareById(this.customReportId())
+      : this.reportsSvc.share(this.clientId(), this.cycleId());
+    shareObs.subscribe({
       next: (res) => {
         this.shareToken.set(res.shareToken);
         if (res.pin) {
@@ -1357,7 +1425,10 @@ export class ReportEditorComponent implements OnInit {
 
   revokeShare() {
     if (!confirm('Are you sure? The current link will stop working.')) return;
-    this.reportsSvc.revokeShare(this.clientId(), this.cycleId()).subscribe(() => {
+    const obs = this.customMode()
+      ? this.reportsSvc.revokeShareById(this.customReportId())
+      : this.reportsSvc.revokeShare(this.clientId(), this.cycleId());
+    obs.subscribe(() => {
       this.shareToken.set(null);
       this.sharePin.set(null);
     });
@@ -1380,7 +1451,10 @@ export class ReportEditorComponent implements OnInit {
   resetPin() {
     if (!confirm('Generate a new PIN? The previous PIN will stop working immediately.')) return;
     this.resettingPin.set(true);
-    this.reportsSvc.resetSharePin(this.clientId(), this.cycleId()).subscribe({
+    const obs = this.customMode()
+      ? this.reportsSvc.resetSharePinById(this.customReportId())
+      : this.reportsSvc.resetSharePin(this.clientId(), this.cycleId());
+    obs.subscribe({
       next: (res) => {
         this.sharePin.set(res.pin);
         this.pinCopied.set(false);
@@ -1435,9 +1509,14 @@ export class ReportEditorComponent implements OnInit {
     this.sending.set(true);
     this.sendError.set(null);
     this.sendSuccess.set(null);
-    this.reportsSvc
-      .sendNotification(this.clientId(), this.cycleId(), recipients)
-      .subscribe({
+    const obs = this.customMode()
+      ? this.reportsSvc.sendNotificationById(this.customReportId(), recipients)
+      : this.reportsSvc.sendNotification(
+          this.clientId(),
+          this.cycleId(),
+          recipients,
+        );
+    obs.subscribe({
         next: (res) => {
           this.sending.set(false);
           // Clear any previously-shown PIN — it's been replaced; the new PIN
@@ -1820,21 +1899,7 @@ export class ReportEditorComponent implements OnInit {
     this.saveMessage.set(null);
     this.pdfError.set(null);
     this.reportsSvc
-      .upsert({
-        clientId: this.clientId(),
-        cycleId: this.cycleId(),
-        coverImageUrl: this.coverImageUrl() || undefined,
-        executiveSummary: this.summaryText.trim(),
-        findings: this.findings,
-        nextPeriodPlan: this.nextPeriodPlan,
-        clientBlockers: this.clientBlockers,
-        finalConsiderations: this.finalConsiderations,
-          includeServiceAreas: this.includeServiceAreas,
-          comparePeriods: this.comparePeriods,
-          locationsSort: this.locationsSort,
-          hiddenKpis: Array.from(this.hiddenKpis),
-        kpis: this.cleanKpis(),
-      })
+      .upsert(this.buildUpsertDto())
       .subscribe({
         next: (r) => {
           this.report.set(r);
@@ -1855,36 +1920,51 @@ export class ReportEditorComponent implements OnInit {
 
   autoCompose() {
     if (!this.ready()) return;
-    this.reportsSvc.autoCompose(this.clientId(), this.cycleId()).subscribe((r) => {
+    const obs = this.customMode()
+      ? this.reportsSvc.autoComposeById(this.customReportId())
+      : this.reportsSvc.autoCompose(this.clientId(), this.cycleId());
+    obs.subscribe((r) => {
       this.report.set(r);
       this.populate(r);
     });
   }
 
+  /**
+   * Builds the upsert DTO for the current mode. Cycle mode keys by
+   * (clientId, cycleId); custom mode keys by reportId so the existing
+   * custom Report document is updated in place.
+   */
+  private buildUpsertDto() {
+    const base = {
+      clientId: this.clientId(),
+      coverImageUrl: this.coverImageUrl() || undefined,
+      executiveSummary: this.summaryText.trim(),
+      findings: this.findings,
+      nextPeriodPlan: this.nextPeriodPlan,
+      clientBlockers: this.clientBlockers,
+      finalConsiderations: this.finalConsiderations,
+      includeServiceAreas: this.includeServiceAreas,
+      comparePeriods: this.comparePeriods,
+      locationsSort: this.locationsSort,
+      hiddenKpis: Array.from(this.hiddenKpis),
+      kpis: this.cleanKpis(),
+    } as Parameters<typeof this.reportsSvc.upsert>[0];
+    if (this.customMode()) {
+      return { ...base, reportId: this.customReportId() };
+    }
+    return { ...base, cycleId: this.cycleId() };
+  }
+
   async ensureReportSaved(): Promise<boolean> {
     if (this.report()) return true;
     return new Promise((resolve) => {
-      this.reportsSvc
-        .upsert({
-          clientId: this.clientId(),
-          cycleId: this.cycleId(),
-          coverImageUrl: this.coverImageUrl() || undefined,
-          executiveSummary: this.summaryText.trim(),
-          findings: this.findings,
-          nextPeriodPlan: this.nextPeriodPlan,
-          clientBlockers: this.clientBlockers,
-          comparePeriods: this.comparePeriods,
-          locationsSort: this.locationsSort,
-          hiddenKpis: Array.from(this.hiddenKpis),
-          kpis: this.cleanKpis(),
-        })
-        .subscribe({
-          next: (r) => {
-            this.report.set(r);
-            resolve(true);
-          },
-          error: () => resolve(false),
-        });
+      this.reportsSvc.upsert(this.buildUpsertDto()).subscribe({
+        next: (r) => {
+          this.report.set(r);
+          resolve(true);
+        },
+        error: () => resolve(false),
+      });
     });
   }
 
@@ -1902,7 +1982,10 @@ export class ReportEditorComponent implements OnInit {
       return;
     }
 
-    this.reportsSvc.pdfBlob(this.clientId(), this.cycleId()).subscribe({
+    const pdfObs = this.customMode()
+      ? this.reportsSvc.pdfBlobById(this.customReportId())
+      : this.reportsSvc.pdfBlob(this.clientId(), this.cycleId());
+    pdfObs.subscribe({
       next: (blob) => {
         const url = URL.createObjectURL(blob);
         if (popup) popup.location.href = url;
@@ -1930,14 +2013,19 @@ export class ReportEditorComponent implements OnInit {
       return;
     }
 
-    this.reportsSvc.pdfBlob(this.clientId(), this.cycleId()).subscribe({
+    const pdfObs = this.customMode()
+      ? this.reportsSvc.pdfBlobById(this.customReportId())
+      : this.reportsSvc.pdfBlob(this.clientId(), this.cycleId());
+    pdfObs.subscribe({
       next: (blob) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         const clientName = this.clients().find((c) => c._id === this.clientId())?.name || 'report';
-        const cycleLabel = this.cycles().find((c) => c._id === this.cycleId())?.label || '';
-        a.download = `${clientName}-${cycleLabel}.pdf`.replace(/\s+/g, '_');
+        const label = this.customMode()
+          ? `${this.customFrom()}_${this.customTo()}`
+          : this.cycles().find((c) => c._id === this.cycleId())?.label || '';
+        a.download = `${clientName}-${label}.pdf`.replace(/\s+/g, '_');
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -1963,14 +2051,19 @@ export class ReportEditorComponent implements OnInit {
       return;
     }
 
-    this.reportsSvc.wordBlob(this.clientId(), this.cycleId()).subscribe({
+    const wordObs = this.customMode()
+      ? this.reportsSvc.wordBlobById(this.customReportId())
+      : this.reportsSvc.wordBlob(this.clientId(), this.cycleId());
+    wordObs.subscribe({
       next: (blob) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         const clientName = this.clients().find((c) => c._id === this.clientId())?.name || 'report';
-        const cycleLabel = this.cycles().find((c) => c._id === this.cycleId())?.label || '';
-        a.download = `${clientName}-${cycleLabel}.docx`.replace(/\s+/g, '_');
+        const label = this.customMode()
+          ? `${this.customFrom()}_${this.customTo()}`
+          : this.cycles().find((c) => c._id === this.cycleId())?.label || '';
+        a.download = `${clientName}-${label}.docx`.replace(/\s+/g, '_');
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

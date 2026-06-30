@@ -59,6 +59,238 @@ export class ReportsService {
     return String(randomInt(0, 1_000_000)).padStart(6, '0');
   }
 
+  // --- Shared helpers for cycle-vs-range reports ---------------------------
+
+  /**
+   * Returns a Cycle-shaped object for any report, regardless of whether
+   * it's anchored to a real Cycle document or carries a customRange.
+   * Custom-range reports get a synthetic Cycle with a "May 1 – May 31,
+   * 2026"-style label so PdfService / WordService / cover renderers
+   * work without branching on report shape.
+   */
+  private async cycleLikeFor(report: {
+    cycleId?: Types.ObjectId | string;
+    customRange?: { from: Date | string; to: Date | string };
+  }): Promise<{
+    _id?: string;
+    startDate: Date;
+    endDate: Date;
+    reportDueDate: Date;
+    status: 'active' | 'reporting' | 'closed';
+    label: string;
+  }> {
+    if (report.cycleId) {
+      const cycle = await this.cycles.findOne(report.cycleId.toString());
+      return cycle as never;
+    }
+    if (report.customRange) {
+      const from = new Date(report.customRange.from);
+      const to = new Date(report.customRange.to);
+      return {
+        startDate: from,
+        endDate: to,
+        reportDueDate: to,
+        status: 'reporting',
+        label: this.formatRangeLabel(from, to),
+      };
+    }
+    throw new BadRequestException(
+      'Report has neither cycleId nor customRange — cannot resolve a period.',
+    );
+  }
+
+  private formatRangeLabel(from: Date, to: Date): string {
+    const fmt = (d: Date, withYear: boolean) =>
+      d.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: withYear ? 'numeric' : undefined,
+        timeZone: 'UTC',
+      });
+    const sameYear = from.getUTCFullYear() === to.getUTCFullYear();
+    return sameYear
+      ? `${fmt(from, false)} – ${fmt(to, true)}`
+      : `${fmt(from, true)} – ${fmt(to, true)}`;
+  }
+
+  /**
+   * Inclusive date range used to filter cycle-scoped queries (tasks,
+   * published content). Falls through to the cycle's window when the
+   * report is cycle-anchored.
+   */
+  private async dateRangeFor(report: {
+    cycleId?: Types.ObjectId | string;
+    customRange?: { from: Date | string; to: Date | string };
+  }): Promise<{ from: Date; to: Date }> {
+    const c = await this.cycleLikeFor(report);
+    return { from: new Date(c.startDate), to: new Date(c.endDate) };
+  }
+
+  /**
+   * Filter object passed to tasks.findAll to scope to the report's
+   * period. Cycle-anchored reports filter by cycleId (preserves legacy
+   * behavior even if tasks were re-dated); custom-range reports filter
+   * by completedAt within the window.
+   */
+  private taskFilterFor(report: {
+    clientId: Types.ObjectId | string;
+    cycleId?: Types.ObjectId | string;
+    customRange?: { from: Date | string; to: Date | string };
+  }): {
+    clientId: string;
+    cycleId?: string;
+    completedFrom?: string;
+    completedTo?: string;
+  } {
+    const clientId = report.clientId.toString();
+    if (report.cycleId) {
+      return { clientId, cycleId: report.cycleId.toString() };
+    }
+    const from = new Date(report.customRange!.from);
+    const to = new Date(report.customRange!.to);
+    return {
+      clientId,
+      completedFrom: from.toISOString(),
+      completedTo: to.toISOString(),
+    };
+  }
+
+  /**
+   * Looks up a report by primary key. Used by the custom-range editor
+   * flow + every byId controller endpoint. The access check is enforced
+   * on the resolved clientId so contributors only see their own clients'
+   * reports.
+   */
+  async findOneById(
+    reportId: string,
+    user: { userId: string; role: 'root' | 'seo-manager' | 'seo-strategist' },
+  ) {
+    const doc = await this.model.findById(reportId).lean().exec();
+    if (!doc) throw new NotFoundException('Report not found');
+    await this.clients.assertAccess(doc.clientId.toString(), user as never);
+    return this.sanitizeReportRichText(doc);
+  }
+
+  /**
+   * Creates a new custom-range report seeded with zero KPIs and empty
+   * text fields. The frontend then upserts text/KPIs via the regular
+   * upsert flow keyed by reportId.
+   */
+  async createCustomReport(
+    clientId: string,
+    from: string,
+    to: string,
+    user: { userId: string; role: 'root' | 'seo-manager' | 'seo-strategist' },
+  ) {
+    await this.clients.assertAccess(clientId, user as never);
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    if (!(fromDate instanceof Date) || isNaN(fromDate.getTime())) {
+      throw new BadRequestException('Invalid "from" date.');
+    }
+    if (!(toDate instanceof Date) || isNaN(toDate.getTime())) {
+      throw new BadRequestException('Invalid "to" date.');
+    }
+    if (fromDate > toDate) {
+      throw new BadRequestException('"from" must be on or before "to".');
+    }
+    // End-of-day so a date string like '2026-06-25' includes everything
+    // that happened that day.
+    toDate.setUTCHours(23, 59, 59, 999);
+    const doc = await this.model.create({
+      clientId: new Types.ObjectId(clientId),
+      customRange: { from: fromDate, to: toDate },
+      kpis: {},
+      executiveSummary: '',
+      findings: '',
+      nextPeriodPlan: '',
+      clientBlockers: '',
+      finalConsiderations: '',
+      generatedAt: new Date(),
+    });
+    return doc.toObject();
+  }
+
+  /** Same as previousKpisForCycle but works on a loaded report doc — handles both modes. */
+  async previousKpisForReport(report: {
+    clientId: Types.ObjectId | string;
+    cycleId?: Types.ObjectId | string;
+    customRange?: { from: Date | string; to: Date | string };
+  }): Promise<{
+    kpisPrevious: ReportKpis | null;
+    kpisPreviousSource: 'previous' | 'baseline' | null;
+  }> {
+    const clientId = report.clientId.toString();
+    const client = await this.clients.findOne(clientId).catch(() => null);
+    let priorKpis: ReportKpis | null = null;
+    if (report.cycleId) {
+      priorKpis = await this.findPriorCycleKpis(
+        clientId,
+        report.cycleId.toString(),
+      );
+    } else if (report.customRange) {
+      priorKpis = await this.findPriorReportKpisByDate(
+        clientId,
+        new Date(report.customRange.from),
+      );
+    }
+    if (priorKpis) {
+      const baseline = client?.baselineKpis;
+      const merged =
+        baseline && Object.keys(baseline).length > 0
+          ? { ...baseline, ...priorKpis }
+          : priorKpis;
+      return { kpisPrevious: merged, kpisPreviousSource: 'previous' };
+    }
+    const baseline = client?.baselineKpis;
+    if (baseline && Object.keys(baseline).length > 0) {
+      return { kpisPrevious: baseline, kpisPreviousSource: 'baseline' };
+    }
+    return { kpisPrevious: null, kpisPreviousSource: null };
+  }
+
+  /**
+   * Finds the most recent report (cycle or custom) for this client whose
+   * effective end-date is before the given date. Powers custom-range
+   * 'previous period' comparisons.
+   */
+  private async findPriorReportKpisByDate(
+    clientId: string,
+    before: Date,
+  ): Promise<ReportKpis | null> {
+    const prior = await this.model
+      .aggregate([
+        { $match: { clientId: new Types.ObjectId(clientId) } },
+        {
+          $lookup: {
+            from: 'cycles',
+            localField: 'cycleId',
+            foreignField: '_id',
+            as: 'cycle',
+          },
+        },
+        // Effective end date: cycle.endDate when cycle-anchored, customRange.to otherwise.
+        {
+          $addFields: {
+            effectiveEnd: {
+              $cond: [
+                { $gt: [{ $size: '$cycle' }, 0] },
+                { $arrayElemAt: ['$cycle.endDate', 0] },
+                '$customRange.to',
+              ],
+            },
+          },
+        },
+        { $match: { effectiveEnd: { $lt: before } } },
+        { $sort: { effectiveEnd: -1 } },
+        { $limit: 1 },
+      ])
+      .exec();
+    const kpis = prior[0]?.kpis as ReportKpis | undefined;
+    if (kpis && Object.keys(kpis).length > 0) return kpis;
+    return null;
+  }
+
   async findByClient(clientId: string) {
     return this.model
       .find({ clientId: new Types.ObjectId(clientId) })
@@ -209,6 +441,120 @@ export class ReportsService {
     return { revoked: true };
   }
 
+  // --- byId variants (used by custom-range reports + by-id endpoints) ------
+
+  async ensureShareTokenById(reportId: string) {
+    const report = await this.model.findById(reportId).exec();
+    if (!report) throw new NotFoundException('Report not found.');
+    let pin: string | undefined;
+    if (!report.shareToken) {
+      report.shareToken = randomBytes(18).toString('base64url');
+      report.sharedAt = new Date();
+      pin = this.generatePin();
+      report.sharePin = pin;
+      report.sharePinHash = await bcrypt.hash(pin, 10);
+      report.pinAttempts = 0;
+      report.pinLockedUntil = undefined;
+      await report.save();
+    }
+    return {
+      shareToken: report.shareToken,
+      sharedAt: report.sharedAt,
+      pin,
+      pinProtected: !!report.sharePinHash,
+    };
+  }
+
+  async regeneratePinById(reportId: string) {
+    const report = await this.model.findById(reportId).exec();
+    if (!report || !report.shareToken)
+      throw new NotFoundException('Active share link not found.');
+    const pin = this.generatePin();
+    report.sharePin = pin;
+    report.sharePinHash = await bcrypt.hash(pin, 10);
+    report.pinAttempts = 0;
+    report.pinLockedUntil = undefined;
+    await report.save();
+    return { pin };
+  }
+
+  async revokeShareTokenById(reportId: string) {
+    const result = await this.model
+      .updateOne(
+        { _id: new Types.ObjectId(reportId) },
+        {
+          $unset: {
+            shareToken: '',
+            sharedAt: '',
+            sharePinHash: '',
+            sharePin: '',
+            pinLockedUntil: '',
+          },
+          $set: { pinAttempts: 0 },
+        },
+      )
+      .exec();
+    if (result.matchedCount === 0)
+      throw new NotFoundException('Report not found.');
+    return { revoked: true };
+  }
+
+  async sendNotificationById(reportId: string, recipients: string[]) {
+    if (!this.mail.isReady()) {
+      throw new BadRequestException(
+        'Email service is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS in the API .env file.',
+      );
+    }
+    const cleanRecipients = Array.from(
+      new Set(
+        recipients
+          .map((r) => r.trim().toLowerCase())
+          .filter((r) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r)),
+      ),
+    );
+    if (!cleanRecipients.length) {
+      throw new BadRequestException(
+        'No valid recipients provided. Add at least one email address.',
+      );
+    }
+    const report = await this.model.findById(reportId).exec();
+    if (!report) throw new NotFoundException('Report not found.');
+    if (!report.shareToken) {
+      throw new BadRequestException(
+        'Generate the share link first before sending the notification.',
+      );
+    }
+    const pin = this.generatePin();
+    report.sharePin = pin;
+    report.sharePinHash = await bcrypt.hash(pin, 10);
+    report.pinAttempts = 0;
+    report.pinLockedUntil = undefined;
+    await report.save();
+
+    const [client, cycle] = await Promise.all([
+      this.clients.findOne(report.clientId.toString()),
+      this.cycleLikeFor(report.toObject()),
+    ]);
+    const webBase = (
+      this.configSvc.get<string>('PUBLIC_WEB_URL') || 'http://localhost:4200'
+    ).replace(/\/+$/, '');
+    const reportUrl = `${webBase}/r/${report.shareToken}`;
+
+    const result = await this.mail.sendReportNotification({
+      recipients: cleanRecipients,
+      clientName: client.name,
+      cycleLabel: cycle.label,
+      cycleStart: new Date(cycle.startDate),
+      cycleEnd: new Date(cycle.endDate),
+      reportUrl,
+      pin,
+      preparedBy:
+        this.configSvc.get<string>('SMTP_FROM_NAME') || 'Media Spearhead',
+    });
+
+    return { sentTo: result.sentTo, messageId: result.messageId };
+  }
+
   async findByShareToken(token: string) {
     const report = await this.model.findOne({ shareToken: token }).lean().exec();
     if (!report)
@@ -220,7 +566,7 @@ export class ReportsService {
     const report = await this.findByShareToken(token);
     const [client, cycle] = await Promise.all([
       this.clients.findOne(report.clientId.toString()),
-      this.cycles.findOne(report.cycleId.toString()),
+      this.cycleLikeFor(report),
     ]);
     return {
       locked: !!report.sharePinHash,
@@ -351,6 +697,7 @@ export class ReportsService {
 
   async getPublicPayload(token: string) {
     const report = await this.findByShareToken(token);
+    const taskFilter = this.taskFilterFor(report);
     const [
       client,
       cycle,
@@ -363,11 +710,8 @@ export class ReportsService {
       contentIdeas,
     ] = await Promise.all([
       this.clients.findOne(report.clientId.toString()),
-      this.cycles.findOne(report.cycleId.toString()),
-      this.tasks.findAll({
-        clientId: report.clientId.toString(),
-        cycleId: report.cycleId.toString(),
-      }),
+      this.cycleLikeFor(report),
+      this.tasks.findAll(taskFilter),
       this.keywords.byClient(report.clientId.toString()),
       this.keywords.movements(report.clientId.toString()),
       this.backlinks.summary(report.clientId.toString()),
@@ -379,7 +723,7 @@ export class ReportsService {
       }),
     ]);
 
-    // Pieces published during the cycle window — fed into Actions Taken.
+    // Pieces published during the report's period — fed into Actions Taken.
     const contentPublished = await this.content.publishedInRange(
       report.clientId.toString(),
       new Date(cycle.startDate),
@@ -468,7 +812,7 @@ export class ReportsService {
 
   private async buildPublicServiceAreas(report: {
     clientId: Types.ObjectId | string;
-    cycleId: Types.ObjectId | string;
+    cycleId?: Types.ObjectId | string;
     includeServiceAreas?: boolean;
     serviceAreasSnapshot?: unknown;
   }) {
@@ -477,10 +821,14 @@ export class ReportsService {
       ? (report.serviceAreasSnapshot as Array<Record<string, unknown>>)
       : [];
     if (current.length === 0) return [];
-    const prev = await this.findPreviousServiceAreasSnapshot(
-      report.clientId.toString(),
-      report.cycleId.toString(),
-    );
+    // Custom-range reports skip the 'previous period delta' because
+    // there's no cycle to anchor the lookup against.
+    const prev = report.cycleId
+      ? await this.findPreviousServiceAreasSnapshot(
+          report.clientId.toString(),
+          report.cycleId.toString(),
+        )
+      : [];
     const prevByName = new Map<string, Record<string, unknown>>();
     for (const p of prev) {
       prevByName.set(String(p.name || '').toLowerCase(), p);
@@ -505,7 +853,13 @@ export class ReportsService {
 
   async generatePdfByToken(token: string): Promise<Buffer> {
     const report = await this.findByShareToken(token);
-    return this.generatePdf(report.clientId.toString(), report.cycleId.toString());
+    if (report.cycleId) {
+      return this.generatePdf(
+        report.clientId.toString(),
+        report.cycleId.toString(),
+      );
+    }
+    return this.generatePdfById(String(report._id));
   }
 
   async kpiHistory(clientId: string, limit = 6) {
@@ -519,7 +873,17 @@ export class ReportsService {
     return reports
       .reverse()
       .map((r) => ({
-        cycleLabel: (r.cycleId as unknown as { label?: string })?.label,
+        // Cycle-anchored reports use the cycle's canonical label.
+        // Custom-range reports synthesize one from their from/to dates so
+        // the history chart still has a meaningful x-axis label.
+        cycleLabel: r.cycleId
+          ? (r.cycleId as unknown as { label?: string })?.label
+          : r.customRange
+            ? this.formatRangeLabel(
+                new Date(r.customRange.from),
+                new Date(r.customRange.to),
+              )
+            : undefined,
         generatedAt: r.generatedAt,
         kpis: r.kpis,
       }));
@@ -580,6 +944,25 @@ export class ReportsService {
         : undefined;
     }
 
+    // When reportId is provided, update by primary key instead of
+    // upserting by (clientId, cycleId). This is the custom-range path —
+    // and also works for cycle-anchored reports if the frontend prefers
+    // to route updates by id.
+    if (dto.reportId) {
+      const updated = await this.model
+        .findByIdAndUpdate(dto.reportId, { $set }, { new: true })
+        .lean()
+        .exec();
+      if (!updated) throw new NotFoundException('Report not found.');
+      return updated;
+    }
+
+    if (!dto.cycleId) {
+      throw new BadRequestException(
+        'Either cycleId or reportId must be provided to upsert a report.',
+      );
+    }
+
     // Determine kpisPrevious for $setOnInsert (only used when creating new doc):
     // - First try: KPIs from the previous cycle's report
     // - Fallback: client baseline KPIs
@@ -626,6 +1009,7 @@ export class ReportsService {
       _id?: unknown;
       clientId?: unknown;
       cycleId?: unknown;
+      customRange?: { from: Date | string; to: Date | string };
       kpis?: ReportKpis;
       kpisPrevious?: ReportKpis;
       comparePeriods?: boolean;
@@ -651,6 +1035,11 @@ export class ReportsService {
     let priorCycleKpis: ReportKpis | null = null;
     if (clientId && cycleId) {
       priorCycleKpis = await this.findPriorCycleKpis(clientId, cycleId);
+    } else if (clientId && report.customRange) {
+      priorCycleKpis = await this.findPriorReportKpisByDate(
+        clientId,
+        new Date(report.customRange.from),
+      );
     }
     const baseline = client.baselineKpis;
     const baselineHasValues =
@@ -906,7 +1295,33 @@ export class ReportsService {
   }
 
   async autoCompose(clientId: string, cycleId: string) {
-    const tasks = await this.tasks.findAll({ clientId, cycleId });
+    const existing = await this.findOneByCycle(clientId, cycleId);
+    return this.autoComposeFromReportShape({
+      existing,
+      dtoFor: () => ({ clientId, cycleId }),
+      taskFilter: { clientId, cycleId },
+    });
+  }
+
+  async autoComposeById(reportId: string) {
+    const existing = await this.model.findById(reportId).lean().exec();
+    if (!existing) throw new NotFoundException('Report not found.');
+    return this.autoComposeFromReportShape({
+      existing,
+      dtoFor: () => ({
+        clientId: existing.clientId.toString(),
+        reportId,
+      }),
+      taskFilter: this.taskFilterFor(existing),
+    });
+  }
+
+  private async autoComposeFromReportShape(args: {
+    existing: { executiveSummary?: string } | null;
+    dtoFor: () => UpsertReportDto;
+    taskFilter: Parameters<typeof this.tasks.findAll>[0];
+  }) {
+    const tasks = await this.tasks.findAll(args.taskFilter);
     const completed = tasks.filter((t) => t.status === 'completed');
     const planned = tasks.filter((t) => t.status !== 'completed');
     const findings = completed.length
@@ -921,27 +1336,53 @@ export class ReportsService {
     if (completed.length) {
       lines.push(`${completed.length} SEO actions executed during the period`);
     }
-    if (planned.length) lines.push(`${planned.length} actions remain in pipeline for the next cycle`);
+    if (planned.length)
+      lines.push(`${planned.length} actions remain in pipeline for the next cycle`);
     const exec = lines.join('. ') + (lines.length ? '.' : '');
-    // Only set executiveSummary if there's no existing one (don't overwrite user-written intro)
-    const existing = await this.findOneByCycle(clientId, cycleId);
-    const dto: Parameters<typeof this.upsert>[0] = {
-      clientId,
-      cycleId,
-      findings,
-      nextPeriodPlan,
-    };
-    if (!existing?.executiveSummary || typeof existing.executiveSummary !== 'string' || !existing.executiveSummary.trim()) {
+    const dto = args.dtoFor();
+    dto.findings = findings;
+    dto.nextPeriodPlan = nextPeriodPlan;
+    if (
+      !args.existing?.executiveSummary ||
+      typeof args.existing.executiveSummary !== 'string' ||
+      !args.existing.executiveSummary.trim()
+    ) {
       dto.executiveSummary = exec;
     }
     return this.upsert(dto);
   }
 
   async generatePdf(clientId: string, cycleId: string): Promise<Buffer> {
+    const report = await this.findOneByCycle(clientId, cycleId);
+    if (!report)
+      throw new NotFoundException(
+        'Report for that client/cycle does not exist yet. Save it first.',
+      );
+    return this.generatePdfFromReportDoc(report as never);
+  }
+
+  async generatePdfById(reportId: string): Promise<Buffer> {
+    const report = await this.model.findById(reportId).lean().exec();
+    if (!report) throw new NotFoundException('Report not found.');
+    return this.generatePdfFromReportDoc(
+      this.sanitizeReportRichText(report) as never,
+    );
+  }
+
+  private async generatePdfFromReportDoc(
+    report: ReportType & {
+      _id?: unknown;
+      cycleId?: Types.ObjectId | string;
+      customRange?: { from: Date | string; to: Date | string };
+      shareToken?: string;
+      sharePin?: string;
+    },
+  ): Promise<Buffer> {
+    const clientId = report.clientId.toString();
+    const taskFilter = this.taskFilterFor(report);
     const [
       client,
       cycle,
-      report,
       tasks,
       keywords,
       movements,
@@ -950,20 +1391,15 @@ export class ReportsService {
       contentIdeas,
     ] = await Promise.all([
       this.clients.findOne(clientId),
-      this.cycles.findOne(cycleId),
-      this.findOneByCycle(clientId, cycleId),
-      this.tasks.findAll({ clientId, cycleId }),
+      this.cycleLikeFor(report),
+      this.tasks.findAll(taskFilter),
       this.keywords.byClient(clientId),
       this.keywords.movements(clientId),
       this.backlinks.summary(clientId),
       this.appSettings.getReportLayout(),
       this.content.list({ clientId, status: 'idea' }),
     ]);
-    if (!report)
-      throw new NotFoundException(
-        'Report for that client/cycle does not exist yet. Save it first.',
-      );
-    // Content pieces published during the cycle window — used by Actions
+    // Content pieces published during the report's window — used by Actions
     // Taken in the PDF (parity with the web report).
     const contentPublished = await this.content.publishedInRange(
       clientId,
@@ -1066,10 +1502,34 @@ export class ReportsService {
    * inline at the top of the document.
    */
   async generateWord(clientId: string, cycleId: string): Promise<Buffer> {
+    const report = await this.findOneByCycle(clientId, cycleId);
+    if (!report)
+      throw new NotFoundException(
+        'Report for that client/cycle does not exist yet. Save it first.',
+      );
+    return this.generateWordFromReportDoc(report as never);
+  }
+
+  async generateWordById(reportId: string): Promise<Buffer> {
+    const report = await this.model.findById(reportId).lean().exec();
+    if (!report) throw new NotFoundException('Report not found.');
+    return this.generateWordFromReportDoc(
+      this.sanitizeReportRichText(report) as never,
+    );
+  }
+
+  private async generateWordFromReportDoc(
+    report: ReportType & {
+      _id?: unknown;
+      cycleId?: Types.ObjectId | string;
+      customRange?: { from: Date | string; to: Date | string };
+    },
+  ): Promise<Buffer> {
+    const clientId = report.clientId.toString();
+    const taskFilter = this.taskFilterFor(report);
     const [
       client,
       cycle,
-      report,
       tasks,
       keywords,
       movements,
@@ -1078,19 +1538,14 @@ export class ReportsService {
       contentIdeas,
     ] = await Promise.all([
       this.clients.findOne(clientId),
-      this.cycles.findOne(cycleId),
-      this.findOneByCycle(clientId, cycleId),
-      this.tasks.findAll({ clientId, cycleId }),
+      this.cycleLikeFor(report),
+      this.tasks.findAll(taskFilter),
       this.keywords.byClient(clientId),
       this.keywords.movements(clientId),
       this.backlinks.summary(clientId),
       this.appSettings.getReportLayout(),
       this.content.list({ clientId, status: 'idea' }),
     ]);
-    if (!report)
-      throw new NotFoundException(
-        'Report for that client/cycle does not exist yet. Save it first.',
-      );
     const contentPublished = await this.content.publishedInRange(
       clientId,
       new Date(cycle.startDate),

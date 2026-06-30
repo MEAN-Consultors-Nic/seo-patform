@@ -506,7 +506,7 @@ export class PdfService {
                       margin: [0, 0, 0, 4],
                     },
                     {
-                      text: `Cycle ${cycle.label}`,
+                      text: cycle.label,
                       fontSize: 10,
                       color: INK_500,
                       alignment: 'center',

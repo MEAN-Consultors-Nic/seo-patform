@@ -202,7 +202,7 @@ interface PublicPayload {
           </div>
 
           <p class="text-center text-[10px] text-ink-400 mt-5 uppercase tracking-wider">
-            Cycle {{ m.cycle.label }} · {{ m.cycle.startDate | date: 'mediumDate' }} – {{ m.cycle.endDate | date: 'mediumDate' }}
+            {{ m.cycle.label }} · {{ m.cycle.startDate | date: 'mediumDate' }} – {{ m.cycle.endDate | date: 'mediumDate' }}
           </p>
         </div>
       </div>
@@ -261,7 +261,7 @@ interface PublicPayload {
                 </div>
               </div>
               <div>
-                <div class="text-[10px] uppercase tracking-wider text-white/50 mb-1">Cycle</div>
+                <div class="text-[10px] uppercase tracking-wider text-white/50 mb-1">Report</div>
                 <div class="text-lg font-semibold">{{ d.cycle.label }}</div>
               </div>
               <div>

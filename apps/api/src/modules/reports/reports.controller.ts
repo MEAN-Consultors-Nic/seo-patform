@@ -180,6 +180,126 @@ export class ReportsController {
   ) {
     return this.reports.previewByShareToken(token, user);
   }
+
+  // --- byId / custom-range endpoints ----------------------------------------
+
+  /**
+   * Creates a fresh custom-range report and returns it. The frontend
+   * then routes save/share/PDF/Word via the byId endpoints below.
+   */
+  @Post('custom')
+  async createCustom(
+    @Body() body: { clientId: string; from: string; to: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.reports.createCustomReport(
+      body.clientId,
+      body.from,
+      body.to,
+      user,
+    );
+  }
+
+  @Get('by-id/:reportId')
+  async byId(
+    @Param('reportId') reportId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.reports.findOneById(reportId, user);
+  }
+
+  @Get('previous-kpis-by-id/:reportId')
+  async previousKpisById(
+    @Param('reportId') reportId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const report = await this.reports.findOneById(reportId, user);
+    return this.reports.previousKpisForReport(report);
+  }
+
+  @Post('auto-compose-by-id')
+  async autoComposeById(
+    @Body() body: { reportId: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    // assertAccess happens inside findOneById; loading first also verifies access.
+    await this.reports.findOneById(body.reportId, user);
+    return this.reports.autoComposeById(body.reportId);
+  }
+
+  @Get('pdf-by-id/:reportId')
+  async pdfById(
+    @Param('reportId') reportId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    await this.reports.findOneById(reportId, user);
+    const buf = await this.reports.generatePdfById(reportId);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="report-${reportId}.pdf"`,
+    );
+    res.send(buf);
+  }
+
+  @Get('word-by-id/:reportId')
+  async wordById(
+    @Param('reportId') reportId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    await this.reports.findOneById(reportId, user);
+    const buf = await this.reports.generateWordById(reportId);
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="report-${reportId}.docx"`,
+    );
+    res.send(buf);
+  }
+
+  @Post('share-by-id')
+  async shareById(
+    @Body() body: { reportId: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.reports.findOneById(body.reportId, user);
+    return this.reports.ensureShareTokenById(body.reportId);
+  }
+
+  @Post('share-by-id/reset-pin')
+  async resetPinById(
+    @Body() body: { reportId: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.reports.findOneById(body.reportId, user);
+    return this.reports.regeneratePinById(body.reportId);
+  }
+
+  @Post('share-by-id/send-notification')
+  async sendNotificationById(
+    @Body() body: { reportId: string; recipients: string[] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.reports.findOneById(body.reportId, user);
+    return this.reports.sendNotificationById(
+      body.reportId,
+      body.recipients || [],
+    );
+  }
+
+  @Delete('share-by-id')
+  async revokeById(
+    @Body() body: { reportId: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.reports.findOneById(body.reportId, user);
+    return this.reports.revokeShareTokenById(body.reportId);
+  }
 }
 
 // --- Public controller (no auth) -------------------------------------------

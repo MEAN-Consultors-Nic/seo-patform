@@ -136,4 +136,77 @@ export class ReportsService {
       `${this.base}/reports/kpi-history?clientId=${clientId}&limit=${limit}`,
     );
   }
+
+  // --- byId / custom-range -------------------------------------------------
+
+  /** Creates a fresh custom-range report and returns it. */
+  createCustom(clientId: string, from: string, to: string) {
+    return this.http.post<Report>(`${this.base}/reports/custom`, {
+      clientId,
+      from,
+      to,
+    });
+  }
+
+  byId(reportId: string): Observable<Report | null> {
+    return this.http.get<Report | null>(
+      `${this.base}/reports/by-id/${reportId}`,
+    );
+  }
+
+  previousKpisById(reportId: string) {
+    return this.http.get<{
+      kpisPrevious: Record<string, number> | null;
+      kpisPreviousSource: 'previous' | 'baseline' | null;
+    }>(`${this.base}/reports/previous-kpis-by-id/${reportId}`);
+  }
+
+  autoComposeById(reportId: string) {
+    return this.http.post<Report>(`${this.base}/reports/auto-compose-by-id`, {
+      reportId,
+    });
+  }
+
+  pdfBlobById(reportId: string) {
+    return this.http.get(`${this.base}/reports/pdf-by-id/${reportId}`, {
+      responseType: 'blob',
+    });
+  }
+
+  wordBlobById(reportId: string) {
+    return this.http.get(`${this.base}/reports/word-by-id/${reportId}`, {
+      responseType: 'blob',
+    });
+  }
+
+  shareById(reportId: string) {
+    return this.http.post<{
+      shareToken: string;
+      sharedAt: string;
+      pin?: string;
+      pinProtected: boolean;
+    }>(`${this.base}/reports/share-by-id`, { reportId });
+  }
+
+  resetSharePinById(reportId: string) {
+    return this.http.post<{ pin: string }>(
+      `${this.base}/reports/share-by-id/reset-pin`,
+      { reportId },
+    );
+  }
+
+  sendNotificationById(reportId: string, recipients: string[]) {
+    return this.http.post<{ sentTo: string[]; messageId: string }>(
+      `${this.base}/reports/share-by-id/send-notification`,
+      { reportId, recipients },
+    );
+  }
+
+  revokeShareById(reportId: string) {
+    return this.http.request<{ revoked: boolean }>(
+      'DELETE',
+      `${this.base}/reports/share-by-id`,
+      { body: { reportId } },
+    );
+  }
 }

@@ -25,13 +25,33 @@ class KpisSubSchema implements ReportKpis {
   @Prop() gbpReviews?: number;
 }
 
+/**
+ * Custom date range for ad-hoc reports that don't snap to a cycle.
+ * When set, the parent report uses these dates for filtering tasks,
+ * pulling KPIs, computing the previous-period comparison, and labelling
+ * the cover. Exactly one of (cycleId, customRange) must be present.
+ */
+@Schema({ _id: false })
+class CustomRangeSubSchema {
+  @Prop({ type: Date, required: true }) from!: Date;
+  @Prop({ type: Date, required: true }) to!: Date;
+}
+
 @Schema({ timestamps: true, collection: 'reports' })
 export class Report {
   @Prop({ type: Types.ObjectId, ref: 'Client', required: true, index: true })
   clientId!: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Cycle', required: true, index: true })
-  cycleId!: Types.ObjectId;
+  /**
+   * Set for cycle-anchored reports. When undefined, customRange must be
+   * set. Exactly one of (cycleId, customRange) is present.
+   */
+  @Prop({ type: Types.ObjectId, ref: 'Cycle', required: false, index: true })
+  cycleId?: Types.ObjectId;
+
+  /** Set for ad-hoc date-range reports. */
+  @Prop({ type: CustomRangeSubSchema })
+  customRange?: { from: Date; to: Date };
 
   @Prop({ type: KpisSubSchema, default: {} })
   kpis!: ReportKpis;
@@ -114,4 +134,18 @@ export class Report {
 }
 
 export const ReportSchema = SchemaFactory.createForClass(Report);
-ReportSchema.index({ clientId: 1, cycleId: 1 }, { unique: true });
+// Partial unique index: enforces 'one report per (client, cycle)' only
+// for cycle-anchored reports. Custom-range reports have no uniqueness
+// constraint — a client can have many ad-hoc reports over time.
+ReportSchema.index(
+  { clientId: 1, cycleId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { cycleId: { $exists: true } },
+  },
+);
+ReportSchema.index({
+  clientId: 1,
+  'customRange.from': 1,
+  'customRange.to': 1,
+});

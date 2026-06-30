@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsMongoId,
   IsNumber,
@@ -9,6 +10,11 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+
+class CustomRangeDto {
+  @IsDateString() from!: string;
+  @IsDateString() to!: string;
+}
 
 class KpisDto {
   @IsOptional() @IsNumber() organicSessions?: number;
@@ -32,7 +38,18 @@ class KpisDto {
 
 export class UpsertReportDto {
   @IsMongoId() clientId!: string;
-  @IsMongoId() cycleId!: string;
+  /**
+   * Required for cycle-anchored upserts (the original flow). Custom-
+   * range reports go through the dedicated /reports/custom + /by-id
+   * endpoints instead so this DTO never sees a customRange.
+   */
+  @IsOptional() @IsMongoId() cycleId?: string;
+  /**
+   * Optional reportId for routing the upsert by primary key. When set,
+   * the service updates that specific document instead of upserting by
+   * (clientId, cycleId). Used by the custom-range editor save flow.
+   */
+  @IsOptional() @IsMongoId() reportId?: string;
 
   @IsOptional() @ValidateNested() @Type(() => KpisDto) kpis?: KpisDto;
   @IsOptional() @ValidateNested() @Type(() => KpisDto) kpisPrevious?: KpisDto;
