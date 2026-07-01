@@ -284,6 +284,17 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                             {{ sendingToDocId() === t._id ? 'Sending…' : 'Send to Doc' }}
                           </button>
                         }
+                        @if (!isCurrentCycle() && (t.status === 'pending' || t.status === 'in_progress')) {
+                          <button type="button"
+                                  (click)="moveToCurrentCycle(t)"
+                                  [disabled]="movingToCycleId() === t._id"
+                                  class="w-full text-left px-3 py-2 hover:bg-ink-50 disabled:opacity-50 text-ink-700 inline-flex items-center gap-2">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                              <path d="M8 2v12M4 6l4-4 4 4" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            {{ movingToCycleId() === t._id ? 'Moving…' : 'Move to current cycle' }}
+                          </button>
+                        }
                         <div class="border-t border-ink-100 my-1"></div>
                         <button type="button"
                                 (click)="remove(t)"
@@ -820,6 +831,8 @@ export class ClientTasksTab implements OnChanges {
   completionPromptMode = signal<'complete' | 'sendToDoc'>('complete');
   /** ID of the task whose Send-to-Doc request is in flight. */
   sendingToDocId = signal<string | null>(null);
+  /** ID of the task being bumped forward to the current cycle. */
+  movingToCycleId = signal<string | null>(null);
 
   /**
    * The task being moved to a different client. When non-null the
@@ -1179,6 +1192,39 @@ export class ClientTasksTab implements OnChanges {
       return;
     }
     this.performSendToDoc(t, false);
+  }
+
+  /**
+   * Bumps a pending / in-progress task from an older (usually closed)
+   * cycle forward to the currently active cycle so it enters the
+   * regular workflow instead of sitting stranded in a past period.
+   * Removes it from the local list because it's no longer scoped to
+   * whichever cycle the tab is viewing.
+   */
+  moveToCurrentCycle(t: Task) {
+    this.menuOpenId.set(null);
+    if (!t._id) return;
+    if (t.status !== 'pending' && t.status !== 'in_progress') return;
+    const targetCycleId = this.currentCycleId();
+    if (!targetCycleId) {
+      alert('No active cycle right now — cannot bump this task forward.');
+      return;
+    }
+    if (t.cycleId === targetCycleId) return; // Already there — noop.
+    this.movingToCycleId.set(t._id);
+    this.tasksSvc.update(t._id, { cycleId: targetCycleId }).subscribe({
+      next: () => {
+        this.movingToCycleId.set(null);
+        this.tasks.update((list) => list.filter((x) => x._id !== t._id));
+      },
+      error: (err) => {
+        this.movingToCycleId.set(null);
+        const m = err?.error?.message;
+        alert(
+          `Could not move the task: ${Array.isArray(m) ? m.join(', ') : m || 'Unknown error'}`,
+        );
+      },
+    });
   }
 
   private performSendToDoc(t: Task, skipImages: boolean) {
