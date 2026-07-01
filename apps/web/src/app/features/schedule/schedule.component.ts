@@ -15,6 +15,7 @@ import { TasksService } from '../../core/tasks.service';
 import {
   PullFromCalendarSummary,
   TimeBlocksService,
+  WeeklyPlan,
 } from '../../core/time-blocks.service';
 import { WorkingHoursService } from '../../core/working-hours.service';
 
@@ -57,6 +58,21 @@ function hash(str: string): number {
 
 function todayIso(): string {
   const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Returns the Monday of the current week in YYYY-MM-DD format. Sunday
+ * counts as belonging to the following week's Monday so the planner
+ * defaults to "next Monday" when the user opens it on a Sunday.
+ */
+function todayMondayIso(): string {
+  const d = new Date();
+  const day = d.getDay(); // 0 = Sunday, 1 = Monday, ...
+  // Sunday → advance to NEXT Monday (about to start a new week).
+  // Mon-Sat → snap back to THIS week's Monday.
+  const offset = day === 0 ? 1 : 1 - day;
+  d.setDate(d.getDate() + offset);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
@@ -106,6 +122,113 @@ function weekdayLabel(iso: string): { weekday: string; label: string } {
           </button>
         </div>
       </header>
+
+      <!-- Weekly plan generator. Sorts active clients by tier + last
+           worked, drops one 5h slot per client into Mon-Fri × 2/day, and
+           overflows to subsequent weeks when there are more than 10.
+           Slots already present on Google Calendar (matched by client
+           name) are preserved instead of re-created. -->
+      <section class="card mb-4">
+        <header class="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div>
+            <h2 class="text-sm font-bold text-ink-900 flex items-center gap-2">
+              <span class="text-base">🗓️</span>
+              <span>Weekly plan</span>
+            </h2>
+            <p class="text-[11px] text-ink-500 mt-0.5 leading-snug">
+              5h per client, 10 clients per week. Tier A → B → C, oldest-worked first. Slots already on Google Calendar are preserved.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <label class="text-[11px] text-ink-500 inline-flex items-center gap-1.5">
+              Week starting
+              <input type="date" class="input !py-1 !text-xs !w-auto"
+                     [(ngModel)]="planWeekStart"
+                     (change)="loadPlan()" />
+            </label>
+            <button class="btn-secondary text-xs"
+                    (click)="loadPlan()"
+                    [disabled]="loadingPlan()">
+              {{ loadingPlan() ? 'Loading…' : '↻ Regenerate' }}
+            </button>
+            <button class="btn-primary text-xs"
+                    (click)="commitAndPush()"
+                    [disabled]="!plan() || committing() || pushing()">
+              {{ committing() || pushing() ? 'Sending…' : '📅 Send to Google Calendar' }}
+            </button>
+          </div>
+        </header>
+
+        @if (planError(); as e) {
+          <div class="text-xs text-danger-500 bg-danger-100 border border-danger-500/30 rounded-md px-3 py-2 mb-3">
+            {{ e }}
+          </div>
+        }
+        @if (planMessage(); as m) {
+          <div class="text-xs text-positive-500 bg-positive-100 border border-positive-500/30 rounded-md px-3 py-2 mb-3">
+            {{ m }}
+          </div>
+        }
+
+        @if (loadingPlan() && !plan()) {
+          <div class="py-6 text-center text-xs text-ink-500">
+            Computing weekly plan…
+          </div>
+        } @else if (plan(); as p) {
+          @if (p.weeks.length === 0) {
+            <div class="py-6 text-center text-xs text-ink-500">
+              No active clients to schedule.
+            </div>
+          } @else {
+            <div class="space-y-3">
+              @for (w of p.weeks; track w.start; let i = $index) {
+                <div class="border border-ink-200 rounded-md">
+                  <header class="flex items-center justify-between px-3 py-2 border-b border-ink-100 bg-ink-50/40">
+                    <div class="text-[11px] font-bold uppercase tracking-wider text-ink-700">
+                      Week {{ i + 1 }} · {{ w.start | date: 'MMM d' }} – {{ w.end | date: 'MMM d' }}
+                    </div>
+                    <div class="text-[10px] text-ink-500">
+                      {{ w.slots.length }} client{{ w.slots.length === 1 ? '' : 's' }}
+                    </div>
+                  </header>
+                  <ul class="divide-y divide-ink-100">
+                    @for (s of w.slots; track s.clientId + s.date + s.startTime) {
+                      <li class="flex items-center gap-3 px-3 py-2 text-xs">
+                        <span [class]="'tier-' + s.tier">{{ s.tier }}</span>
+                        <span class="font-semibold text-ink-900 flex-1 truncate">{{ s.clientName }}</span>
+                        @if (s.source === 'calendar') {
+                          <span class="text-[10px] font-semibold text-sky-600 bg-sky-100 px-1.5 py-0.5 rounded">
+                            On calendar
+                          </span>
+                        }
+                        @if (s.conflict) {
+                          <span class="text-[10px] font-semibold text-warning-500 bg-warning-100 px-1.5 py-0.5 rounded"
+                                [title]="s.conflict.existingTitle">
+                            No free slot
+                          </span>
+                        } @else {
+                          <span class="text-ink-600 tabular-nums">
+                            {{ dayLabel(s.date) }} · {{ s.startTime }}–{{ s.endTime }}
+                          </span>
+                        }
+                        @if (s.googleEventLink) {
+                          <a [href]="s.googleEventLink" target="_blank" rel="noopener"
+                             class="text-[10px] text-sky-600 hover:underline">Open</a>
+                        }
+                      </li>
+                    }
+                  </ul>
+                </div>
+              }
+            </div>
+            @if (p.unassigned > 0) {
+              <div class="mt-3 text-[11px] text-warning-500">
+                ⚠ {{ p.unassigned }} slot{{ p.unassigned === 1 ? '' : 's' }} could not be placed automatically — the week is already full of pre-existing calendar events.
+              </div>
+            }
+          }
+        }
+      </section>
 
       <!-- Cycle bar -->
       @if (cycle(); as c) {
@@ -399,6 +522,15 @@ export class ScheduleComponent implements OnInit {
   pullResult = signal<PullFromCalendarSummary | null>(null);
   pullError = signal<string | null>(null);
 
+  // Weekly-plan state
+  planWeekStart = todayMondayIso();
+  plan = signal<WeeklyPlan | null>(null);
+  loadingPlan = signal(false);
+  planError = signal<string | null>(null);
+  planMessage = signal<string | null>(null);
+  committing = signal(false);
+  pushing = signal(false);
+
   editor = signal<BlockEditor | null>(null);
   editingStatus = signal<string | null>(null);
   editorError = signal<string | null>(null);
@@ -574,6 +706,7 @@ export class ScheduleComponent implements OnInit {
     this.clientsSvc.list().subscribe((cs) => this.clients.set(cs));
     this.updateNow();
     setInterval(() => this.updateNow(), 60_000);
+    this.loadPlan();
   }
 
   private setWeekStartFromCycle(c: Cycle | null) {
@@ -613,6 +746,90 @@ export class ScheduleComponent implements OnInit {
   }
 
   // --- Pull from Google Calendar -------------------------------------------
+
+  // --- Weekly plan ---------------------------------------------------------
+
+  loadPlan() {
+    if (!this.planWeekStart) return;
+    this.loadingPlan.set(true);
+    this.planError.set(null);
+    this.planMessage.set(null);
+    this.blocksSvc.weeklyPlan(this.planWeekStart).subscribe({
+      next: (p) => {
+        this.plan.set(p);
+        this.loadingPlan.set(false);
+      },
+      error: (err) => {
+        this.loadingPlan.set(false);
+        this.planError.set(
+          err?.error?.message || 'Could not generate the weekly plan.',
+        );
+      },
+    });
+  }
+
+  /**
+   * One-click flow: persist the plan as TimeBlocks, then push
+   * calendar-less slots to Google Calendar. Conflict detection happens
+   * server-side inside pushWeeklyPlanToCalendar so the user sees a
+   * count of conflicts in the success message.
+   */
+  commitAndPush() {
+    const p = this.plan();
+    if (!p) return;
+    this.committing.set(true);
+    this.planError.set(null);
+    this.planMessage.set(null);
+    this.blocksSvc.commitWeeklyPlan(this.planWeekStart, p).subscribe({
+      next: (commitRes) => {
+        this.committing.set(false);
+        this.pushing.set(true);
+        this.blocksSvc.pushWeeklyPlanToCalendar(p).subscribe({
+          next: (pushRes) => {
+            this.pushing.set(false);
+            const parts: string[] = [];
+            if (commitRes.created > 0)
+              parts.push(`${commitRes.created} block(s) saved`);
+            if (pushRes.pushed > 0)
+              parts.push(`${pushRes.pushed} event(s) pushed to Google Calendar`);
+            if (pushRes.conflicts > 0)
+              parts.push(`${pushRes.conflicts} skipped (calendar conflict)`);
+            this.planMessage.set(
+              parts.length ? parts.join(' · ') : 'Everything already scheduled.',
+            );
+            const c = this.cycle();
+            if (c?._id) this.loadCycleData(c._id);
+            setTimeout(() => this.planMessage.set(null), 6000);
+          },
+          error: (err) => {
+            this.pushing.set(false);
+            this.planError.set(
+              err?.error?.message ||
+                'Blocks saved but pushing to Google Calendar failed.',
+            );
+          },
+        });
+      },
+      error: (err) => {
+        this.committing.set(false);
+        this.planError.set(
+          err?.error?.message || 'Could not save the weekly plan.',
+        );
+      },
+    });
+  }
+
+  dayLabel(iso: string): string {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    return dt.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+  }
 
   runPullFromCalendar() {
     const c = this.cycle();

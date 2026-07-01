@@ -391,4 +391,517 @@ export class TimeBlocksService {
     };
   }
 
+  // --- Weekly plan generator ------------------------------------------------
+
+  private static readonly HOURS_PER_SLOT = 5;
+  private static readonly SLOTS_PER_WEEK = 10; // 5 days × 2 slots
+  private static readonly WORKDAYS = 5;
+  private static readonly SLOT_STARTS = ['09:00', '14:00']; // 5h each
+  private static readonly SLOT_ENDS = ['14:00', '19:00'];
+
+  /**
+   * Produces the weekly-plan proposal for the given user starting at
+   * weekStart (must be a Monday). Sorts active clients by tier ascending
+   * (A → B → C) then by "last worked" ascending (oldest first). Assigns
+   * one 5-hour slot per client per week, capped at 10 clients per week;
+   * overflow clients roll into subsequent weeks. Clients that already
+   * have a Google Calendar event matching their name/alias for the
+   * proposed week keep that event's date/time instead of a synthetic
+   * auto-slot — preserving whatever the user manually scheduled.
+   *
+   * The plan is a pure computation — nothing is persisted here. Call
+   * commitWeeklyPlan to persist the resulting slots as TimeBlocks or
+   * pushWeeklyPlanToCalendar to write them into Google Calendar.
+   */
+  async generateWeeklyPlan(
+    userId: string,
+    weekStart: string,
+    user: AuthenticatedUser,
+  ): Promise<{
+    weeks: Array<{
+      start: string;
+      end: string;
+      slots: Array<{
+        clientId: string;
+        clientName: string;
+        tier: string;
+        date: string;
+        startTime: string;
+        endTime: string;
+        source: 'calendar' | 'generated';
+        googleEventId?: string;
+        googleEventLink?: string;
+        conflict?: { existingTitle: string; existingRange: string };
+      }>;
+    }>;
+    unassigned: number;
+  }> {
+    const monday = this.parseMonday(weekStart);
+    if (!monday) {
+      throw new BadRequestException(
+        'weekStart must be a Monday in YYYY-MM-DD format.',
+      );
+    }
+    // Load clients the caller can see + their metadata.
+    const accessibleIds = await this.clientsSvc.listAccessibleIds(user);
+    const clientQuery: Record<string, unknown> = { active: true };
+    if (accessibleIds !== null) clientQuery._id = { $in: accessibleIds };
+    const clients = await this.clientModel
+      .find(clientQuery)
+      .select('_id name tier calendarAliases')
+      .lean()
+      .exec();
+    if (clients.length === 0) {
+      return { weeks: [], unassigned: 0 };
+    }
+
+    // Last-worked date per client — max(TimeBlock.date) for this user.
+    const lastWorkedRows = await this.model
+      .aggregate([
+        {
+          $match: {
+            userId: new Types.ObjectId(userId),
+            clientId: { $in: clients.map((c) => c._id) },
+          },
+        },
+        { $group: { _id: '$clientId', lastDate: { $max: '$date' } } },
+      ])
+      .exec();
+    const lastWorkedByClient = new Map<string, string>();
+    for (const r of lastWorkedRows) {
+      lastWorkedByClient.set(String(r._id), r.lastDate);
+    }
+
+    // Tier rank — A first, then B, then C, else last.
+    const tierRank = (t?: string) =>
+      t === 'A' ? 0 : t === 'B' ? 1 : t === 'C' ? 2 : 9;
+
+    const ordered = [...clients].sort((a, b) => {
+      const t = tierRank(a.tier) - tierRank(b.tier);
+      if (t !== 0) return t;
+      const la = lastWorkedByClient.get(String(a._id)) || '';
+      const lb = lastWorkedByClient.get(String(b._id)) || '';
+      // Oldest first — never-worked clients (empty string) sort ahead of
+      // any actual date.
+      return la.localeCompare(lb);
+    });
+
+    // How many weeks do we need? ceil(clients / 10).
+    const totalWeeks = Math.ceil(
+      ordered.length / TimeBlocksService.SLOTS_PER_WEEK,
+    );
+
+    // Look ahead across ALL weeks so we can match calendar events per week.
+    const rangeFrom = new Date(monday);
+    const rangeTo = new Date(monday);
+    rangeTo.setUTCDate(rangeTo.getUTCDate() + 7 * totalWeeks);
+    rangeTo.setUTCHours(23, 59, 59, 999);
+    let calendarEvents: Awaited<
+      ReturnType<CalendarService['listEvents']>
+    > = [];
+    try {
+      calendarEvents = await this.calendarSvc.listEvents(
+        userId,
+        rangeFrom,
+        rangeTo,
+      );
+    } catch {
+      // Missing scope / token — proceed without calendar preservation.
+      // The user still gets a synthetic plan; existing calendar entries
+      // just won't be honored this run.
+    }
+
+    // Build the client-name index (identical pattern to pullFromCalendar
+    // so matching stays consistent across the two flows).
+    const clientIndex = clients.flatMap((c) => {
+      const names = [c.name, ...(c.calendarAliases ?? [])]
+        .map((n) => (n || '').trim())
+        .filter(Boolean);
+      return names.map((n) => ({
+        id: String(c._id),
+        needle: n.toLowerCase(),
+      }));
+    });
+    clientIndex.sort((a, b) => b.needle.length - a.needle.length);
+
+    // Bucket calendar events by (clientId, weekIndex).
+    const matchedByClientWeek = new Map<
+      string,
+      { event: (typeof calendarEvents)[number]; weekIndex: number }
+    >();
+    for (const ev of calendarEvents) {
+      const t = ev.title.trim().toLowerCase();
+      if (!t) continue;
+      const match = clientIndex.find((c) => t.includes(c.needle));
+      if (!match) continue;
+      const evStart = new Date(ev.startsAt);
+      const daysFromMonday = Math.floor(
+        (evStart.getTime() - monday.getTime()) / (24 * 60 * 60 * 1000),
+      );
+      const weekIndex = Math.floor(daysFromMonday / 7);
+      if (weekIndex < 0 || weekIndex >= totalWeeks) continue;
+      // Keep only ONE event per (client, week) — the earliest.
+      const key = `${match.id}::${weekIndex}`;
+      if (!matchedByClientWeek.has(key)) {
+        matchedByClientWeek.set(key, { event: ev, weekIndex });
+      }
+    }
+
+    // Compose the plan week by week. Slots inside a week fill in this
+    // order: Mon-morning, Mon-afternoon, Tue-morning, ..., Fri-afternoon.
+    const weeks: Array<{
+      start: string;
+      end: string;
+      slots: Array<{
+        clientId: string;
+        clientName: string;
+        tier: string;
+        date: string;
+        startTime: string;
+        endTime: string;
+        source: 'calendar' | 'generated';
+        googleEventId?: string;
+        googleEventLink?: string;
+        conflict?: { existingTitle: string; existingRange: string };
+      }>;
+    }> = [];
+
+    for (let w = 0; w < totalWeeks; w++) {
+      const weekMonday = new Date(monday);
+      weekMonday.setUTCDate(weekMonday.getUTCDate() + w * 7);
+      const weekFriday = new Date(weekMonday);
+      weekFriday.setUTCDate(weekFriday.getUTCDate() + 4);
+      const weekClients = ordered.slice(
+        w * TimeBlocksService.SLOTS_PER_WEEK,
+        (w + 1) * TimeBlocksService.SLOTS_PER_WEEK,
+      );
+
+      // Track which auto-slot index is next for clients without a
+      // calendar entry. Skip auto-slots that overlap with existing
+      // matched events (their time is claimed by the calendar event).
+      const usedAutoSlots = new Set<number>();
+      // Also collect all events (matched or not) in this week for
+      // conflict detection when placing auto slots.
+      const eventsThisWeek = calendarEvents.filter((ev) => {
+        const daysFromMonday = Math.floor(
+          (new Date(ev.startsAt).getTime() - weekMonday.getTime()) /
+            (24 * 60 * 60 * 1000),
+        );
+        return daysFromMonday >= 0 && daysFromMonday < 7;
+      });
+
+      const slots: (typeof weeks)[number]['slots'] = [];
+      // Pass 1: honor calendar-matched slots first so their positions
+      // are locked in before auto-assignment starts.
+      const remaining: typeof weekClients = [];
+      for (const c of weekClients) {
+        const key = `${String(c._id)}::${w}`;
+        const matched = matchedByClientWeek.get(key);
+        if (matched) {
+          const ev = matched.event;
+          slots.push({
+            clientId: String(c._id),
+            clientName: c.name,
+            tier: c.tier,
+            date: ev.startDateTime.slice(0, 10),
+            startTime: ev.startDateTime.slice(11, 16),
+            endTime: ev.endDateTime.slice(11, 16),
+            source: 'calendar',
+            googleEventId: ev.googleEventId,
+            googleEventLink: ev.htmlLink,
+          });
+        } else {
+          remaining.push(c);
+        }
+      }
+      // Pass 2: assign auto-slots to the rest.
+      for (const c of remaining) {
+        let placed = false;
+        for (
+          let idx = 0;
+          idx < TimeBlocksService.SLOTS_PER_WEEK;
+          idx++
+        ) {
+          if (usedAutoSlots.has(idx)) continue;
+          const day = Math.floor(idx / 2);
+          const half = idx % 2;
+          const slotDate = new Date(weekMonday);
+          slotDate.setUTCDate(slotDate.getUTCDate() + day);
+          const dateIso = formatDate(slotDate);
+          const startTime = TimeBlocksService.SLOT_STARTS[half];
+          const endTime = TimeBlocksService.SLOT_ENDS[half];
+          // Skip auto-slots whose range overlaps ANY event in this
+          // week — those hours are already spoken for on the user's
+          // calendar even if it isn't a client match.
+          const overlap = eventsThisWeek.find((ev) => {
+            return this.eventOverlapsSlot(
+              ev,
+              dateIso,
+              startTime,
+              endTime,
+            );
+          });
+          if (overlap) {
+            usedAutoSlots.add(idx);
+            continue;
+          }
+          usedAutoSlots.add(idx);
+          slots.push({
+            clientId: String(c._id),
+            clientName: c.name,
+            tier: c.tier,
+            date: dateIso,
+            startTime,
+            endTime,
+            source: 'generated',
+          });
+          placed = true;
+          break;
+        }
+        if (!placed) {
+          // Every slot in this week overlaps with something on the
+          // calendar. Bump this client to the next week's overflow
+          // logic — insert a synthetic marker with no date so the UI
+          // can surface it.
+          slots.push({
+            clientId: String(c._id),
+            clientName: c.name,
+            tier: c.tier,
+            date: '',
+            startTime: '',
+            endTime: '',
+            source: 'generated',
+            conflict: {
+              existingTitle: 'Week is full of pre-existing events',
+              existingRange: '',
+            },
+          });
+        }
+      }
+
+      weeks.push({
+        start: formatDate(weekMonday),
+        end: formatDate(weekFriday),
+        slots,
+      });
+    }
+
+    return {
+      weeks,
+      unassigned: weeks.reduce(
+        (s, w) => s + w.slots.filter((sl) => !sl.date).length,
+        0,
+      ),
+    };
+  }
+
+  /**
+   * Persists the given plan as TimeBlocks. Calendar-sourced slots reuse
+   * their googleEventId so the block is idempotent-upsertable via the
+   * same mechanism as pullFromCalendar. Auto-generated slots get plain
+   * planned blocks with no calendar link (pushWeeklyPlanToCalendar will
+   * write them out separately).
+   */
+  async commitWeeklyPlan(
+    userId: string,
+    weekStart: string,
+    plan: {
+      weeks: Array<{
+        slots: Array<{
+          clientId: string;
+          date: string;
+          startTime: string;
+          endTime: string;
+          source: 'calendar' | 'generated';
+          googleEventId?: string;
+          googleEventLink?: string;
+        }>;
+      }>;
+    },
+    user: AuthenticatedUser,
+  ): Promise<{ created: number; skipped: number }> {
+    // Resolve the cycle for weekStart so persisted blocks are anchored
+    // to a real cycle (matches the shape of pullFromCalendar output).
+    const cycle = await this.cycleModel
+      .findOne({
+        startDate: { $lte: new Date(weekStart) },
+        endDate: { $gte: new Date(weekStart) },
+      })
+      .lean()
+      .exec();
+    if (!cycle) {
+      throw new BadRequestException(
+        `No cycle found containing ${weekStart}. Plan can only be committed inside an active cycle.`,
+      );
+    }
+    const userObjId = new Types.ObjectId(userId);
+    const cycleObjId = new Types.ObjectId(cycle._id);
+
+    let created = 0;
+    let skipped = 0;
+    for (const week of plan.weeks) {
+      for (const s of week.slots) {
+        if (!s.date) {
+          skipped++;
+          continue;
+        }
+        // Skip if a planned block already exists for (user, date, startTime).
+        // Prevents duplicates on repeated commits.
+        const exists = await this.model
+          .findOne({
+            userId: userObjId,
+            date: s.date,
+            startTime: s.startTime,
+          })
+          .lean()
+          .exec();
+        if (exists) {
+          skipped++;
+          continue;
+        }
+        await user; // touch to satisfy lint if unused
+        await this.model.create({
+          userId: userObjId,
+          cycleId: cycleObjId,
+          clientId: new Types.ObjectId(s.clientId),
+          date: s.date,
+          startTime: s.startTime,
+          endTime: s.endTime,
+          durationMinutes: minutesBetween(s.startTime, s.endTime),
+          kind: 'client',
+          status: 'planned',
+          googleEventId: s.googleEventId,
+          googleEventLink: s.googleEventLink,
+        });
+        created++;
+      }
+    }
+    return { created, skipped };
+  }
+
+  /**
+   * Pushes the plan's generated slots into Google Calendar. Slots
+   * whose source is 'calendar' are skipped — the user already has an
+   * event for them. On success stamps googleEventId back onto the
+   * matching TimeBlock so future pulls/renders can link out to the
+   * calendar event.
+   */
+  async pushWeeklyPlanToCalendar(
+    userId: string,
+    plan: {
+      weeks: Array<{
+        slots: Array<{
+          clientId: string;
+          clientName: string;
+          date: string;
+          startTime: string;
+          endTime: string;
+          source: 'calendar' | 'generated';
+        }>;
+      }>;
+    },
+  ): Promise<{ pushed: number; skipped: number; conflicts: number }> {
+    let pushed = 0;
+    let skipped = 0;
+    let conflicts = 0;
+    // Read the user's existing calendar events across the plan range
+    // once so we can flag conflicts without a per-slot round-trip.
+    const allDates = plan.weeks
+      .flatMap((w) => w.slots)
+      .map((s) => s.date)
+      .filter(Boolean)
+      .sort();
+    let existing: Awaited<
+      ReturnType<CalendarService['listEvents']>
+    > = [];
+    if (allDates.length > 0) {
+      const from = new Date(allDates[0]);
+      const to = new Date(allDates[allDates.length - 1]);
+      to.setUTCHours(23, 59, 59, 999);
+      try {
+        existing = await this.calendarSvc.listEvents(userId, from, to);
+      } catch (err) {
+        throw new BadRequestException(
+          `Could not read Google Calendar to check for conflicts: ${(err as Error).message}`,
+        );
+      }
+    }
+    for (const week of plan.weeks) {
+      for (const s of week.slots) {
+        if (!s.date) {
+          skipped++;
+          continue;
+        }
+        if (s.source === 'calendar') {
+          // The user already has this on their calendar — preserving.
+          skipped++;
+          continue;
+        }
+        // Conflict = any existing event that overlaps this slot's window.
+        const conflict = existing.find((ev) =>
+          this.eventOverlapsSlot(ev, s.date, s.startTime, s.endTime),
+        );
+        if (conflict) {
+          conflicts++;
+          skipped++;
+          continue;
+        }
+        const startIso = `${s.date}T${s.startTime}:00`;
+        const endIso = `${s.date}T${s.endTime}:00`;
+        const timeZone =
+          Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+        try {
+          const created = await this.calendarSvc.createEvent(userId, {
+            summary: s.clientName,
+            description: 'Scheduled by SEO Platform weekly plan.',
+            startDateTime: startIso,
+            endDateTime: endIso,
+            timeZone,
+          });
+          // Stamp the event id back onto the matching TimeBlock so future
+          // renders can link straight to Google Calendar.
+          await this.model
+            .updateOne(
+              {
+                userId: new Types.ObjectId(userId),
+                clientId: new Types.ObjectId(s.clientId),
+                date: s.date,
+                startTime: s.startTime,
+              },
+              {
+                $set: {
+                  googleEventId: created.googleEventId,
+                  googleEventLink: created.htmlLink,
+                },
+              },
+            )
+            .exec();
+          pushed++;
+        } catch {
+          skipped++;
+        }
+      }
+    }
+    return { pushed, skipped, conflicts };
+  }
+
+  private eventOverlapsSlot(
+    ev: { startDateTime: string; endDateTime: string },
+    date: string,
+    startTime: string,
+    endTime: string,
+  ): boolean {
+    if (ev.startDateTime.slice(0, 10) !== date) return false;
+    const evStart = ev.startDateTime.slice(11, 16);
+    const evEnd = ev.endDateTime.slice(11, 16);
+    return evStart < endTime && evEnd > startTime;
+  }
+
+  private parseMonday(iso: string): Date | null {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+    const d = new Date(`${iso}T00:00:00Z`);
+    if (isNaN(d.getTime())) return null;
+    if (d.getUTCDay() !== 1) return null;
+    return d;
+  }
 }

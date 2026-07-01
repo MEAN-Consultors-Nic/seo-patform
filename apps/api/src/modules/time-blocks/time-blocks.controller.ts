@@ -115,4 +115,28 @@ export class TimeBlocksController {
   ) {
     return this.svc.pullFromCalendar(user.userId, dto.cycleId);
   }
+
+  @Get('weekly-plan')
+  weeklyPlan(
+    @Query('weekStart') weekStart: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.svc.generateWeeklyPlan(user.userId, weekStart, user);
+  }
+
+  @Post('weekly-plan/commit')
+  commitWeeklyPlan(
+    @Body() body: { weekStart: string; plan: Parameters<TimeBlocksService['commitWeeklyPlan']>[2] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.svc.commitWeeklyPlan(user.userId, body.weekStart, body.plan, user);
+  }
+
+  @Post('weekly-plan/push-to-calendar')
+  pushWeeklyPlan(
+    @Body() body: { plan: Parameters<TimeBlocksService['pushWeeklyPlanToCalendar']>[1] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.svc.pushWeeklyPlanToCalendar(user.userId, body.plan);
+  }
 }

@@ -86,4 +86,47 @@ export class CalendarService {
 
     return events;
   }
+
+  /**
+   * Inserts a single event into the user's primary calendar. Returns the
+   * created event's id + htmlLink so callers can stamp them onto local
+   * records for idempotency. Times are ISO strings with an explicit
+   * timezone offset so Google places them at the user's wall-clock time
+   * without accidental UTC shifts.
+   */
+  async createEvent(
+    userId: string,
+    input: {
+      summary: string;
+      description?: string;
+      startDateTime: string;
+      endDateTime: string;
+      timeZone?: string;
+    },
+  ): Promise<{ googleEventId: string; htmlLink?: string }> {
+    const auth = await this.oauth.getAuthorizedClient(userId);
+    const calendar = google.calendar({ version: 'v3', auth });
+    const res = await calendar.events.insert({
+      calendarId: 'primary',
+      requestBody: {
+        summary: input.summary,
+        description: input.description,
+        start: {
+          dateTime: input.startDateTime,
+          timeZone: input.timeZone,
+        },
+        end: {
+          dateTime: input.endDateTime,
+          timeZone: input.timeZone,
+        },
+      },
+    });
+    if (!res.data.id) {
+      throw new Error('Google Calendar did not return an event id.');
+    }
+    return {
+      googleEventId: res.data.id,
+      htmlLink: res.data.htmlLink ?? undefined,
+    };
+  }
 }

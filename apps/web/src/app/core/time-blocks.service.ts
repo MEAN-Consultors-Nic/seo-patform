@@ -74,4 +74,43 @@ export class TimeBlocksService {
       { cycleId },
     );
   }
+
+  weeklyPlan(weekStart: string): Observable<WeeklyPlan> {
+    return this.http.get<WeeklyPlan>(
+      `${this.base}/time-blocks/weekly-plan?weekStart=${weekStart}`,
+    );
+  }
+
+  commitWeeklyPlan(weekStart: string, plan: WeeklyPlan) {
+    return this.http.post<{ created: number; skipped: number }>(
+      `${this.base}/time-blocks/weekly-plan/commit`,
+      { weekStart, plan },
+    );
+  }
+
+  pushWeeklyPlanToCalendar(plan: WeeklyPlan) {
+    return this.http.post<{
+      pushed: number;
+      skipped: number;
+      conflicts: number;
+    }>(`${this.base}/time-blocks/weekly-plan/push-to-calendar`, { plan });
+  }
+}
+
+export interface WeeklyPlanSlot {
+  clientId: string;
+  clientName: string;
+  tier: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  source: 'calendar' | 'generated';
+  googleEventId?: string;
+  googleEventLink?: string;
+  conflict?: { existingTitle: string; existingRange: string };
+}
+
+export interface WeeklyPlan {
+  weeks: Array<{ start: string; end: string; slots: WeeklyPlanSlot[] }>;
+  unassigned: number;
 }
