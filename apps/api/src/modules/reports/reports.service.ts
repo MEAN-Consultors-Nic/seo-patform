@@ -156,6 +156,53 @@ export class ReportsService {
   }
 
   /**
+   * Loads the tasks that feed a report's "Actions Taken" + "Next Period
+   * Plan" sections. Cycle-anchored reports pull everything for the cycle
+   * (existing behavior). Custom-range reports pull completed tasks from
+   * the range window PLUS pending/in-progress tasks from the current
+   * cycle — those are what will actually carry into the next period,
+   * regardless of the report window the user picked.
+   *
+   * Dedupes by _id so a task that's both in the range AND in the current
+   * cycle (rare, but possible for a same-day flip) only shows up once.
+   */
+  private async loadTasksForReport(report: {
+    clientId: Types.ObjectId | string;
+    cycleId?: Types.ObjectId | string;
+    customRange?: { from: Date | string; to: Date | string };
+  }): Promise<Awaited<ReturnType<TasksService['findAll']>>> {
+    if (report.cycleId) {
+      return this.tasks.findAll(this.taskFilterFor(report));
+    }
+    const clientId = report.clientId.toString();
+    const from = new Date(report.customRange!.from);
+    const to = new Date(report.customRange!.to);
+    const completedInRange = await this.tasks.findAll({
+      clientId,
+      completedFrom: from.toISOString(),
+      completedTo: to.toISOString(),
+    });
+    let pendingInCurrent: typeof completedInRange = [];
+    try {
+      const currentCycle = await this.cycles.getCurrent();
+      const currentTasks = await this.tasks.findAll({
+        clientId,
+        cycleId: currentCycle._id.toString(),
+      });
+      pendingInCurrent = currentTasks.filter(
+        (t) => t.status !== 'completed',
+      );
+    } catch {
+      // No active cycle right now — nothing to carry over.
+    }
+    const seen = new Set(completedInRange.map((t) => String(t._id)));
+    return [
+      ...completedInRange,
+      ...pendingInCurrent.filter((t) => !seen.has(String(t._id))),
+    ];
+  }
+
+  /**
    * Looks up a report by primary key. Used by the custom-range editor
    * flow + every byId controller endpoint. The access check is enforced
    * on the resolved clientId so contributors only see their own clients'
@@ -697,7 +744,6 @@ export class ReportsService {
 
   async getPublicPayload(token: string) {
     const report = await this.findByShareToken(token);
-    const taskFilter = this.taskFilterFor(report);
     const [
       client,
       cycle,
@@ -711,7 +757,7 @@ export class ReportsService {
     ] = await Promise.all([
       this.clients.findOne(report.clientId.toString()),
       this.cycleLikeFor(report),
-      this.tasks.findAll(taskFilter),
+      this.loadTasksForReport(report),
       this.keywords.byClient(report.clientId.toString()),
       this.keywords.movements(report.clientId.toString()),
       this.backlinks.summary(report.clientId.toString()),
@@ -1379,7 +1425,6 @@ export class ReportsService {
     },
   ): Promise<Buffer> {
     const clientId = report.clientId.toString();
-    const taskFilter = this.taskFilterFor(report);
     const [
       client,
       cycle,
@@ -1392,7 +1437,7 @@ export class ReportsService {
     ] = await Promise.all([
       this.clients.findOne(clientId),
       this.cycleLikeFor(report),
-      this.tasks.findAll(taskFilter),
+      this.loadTasksForReport(report),
       this.keywords.byClient(clientId),
       this.keywords.movements(clientId),
       this.backlinks.summary(clientId),
@@ -1526,7 +1571,6 @@ export class ReportsService {
     },
   ): Promise<Buffer> {
     const clientId = report.clientId.toString();
-    const taskFilter = this.taskFilterFor(report);
     const [
       client,
       cycle,
@@ -1539,7 +1583,7 @@ export class ReportsService {
     ] = await Promise.all([
       this.clients.findOne(clientId),
       this.cycleLikeFor(report),
-      this.tasks.findAll(taskFilter),
+      this.loadTasksForReport(report),
       this.keywords.byClient(clientId),
       this.keywords.movements(clientId),
       this.backlinks.summary(clientId),

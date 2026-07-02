@@ -1247,14 +1247,42 @@ export class ReportEditorComponent implements OnInit {
       });
   }
 
+  /**
+   * Loads the tasks that feed Actions Taken + Next Period Plan for a
+   * custom-range report. Actions Taken = completed inside the window;
+   * Next Period Plan = pending/in-progress from the active cycle (what
+   * will actually be worked next, regardless of the report's window).
+   * Mirrors reports.service.ts:loadTasksForReport so the editor
+   * preview matches the PDF exactly.
+   */
   private loadTasksForCustomRange() {
+    const clientId = this.clientId();
     this.tasksSvc
       .list({
-        clientId: this.clientId(),
+        clientId,
         completedFrom: this.customFrom(),
         completedTo: this.customTo(),
       })
-      .subscribe((tasks) => this.cycleTasks.set(tasks));
+      .subscribe((completed) => {
+        this.cyclesSvc.current().subscribe({
+          next: (currentCycle) => {
+            if (!currentCycle?._id) {
+              this.cycleTasks.set(completed);
+              return;
+            }
+            this.tasksSvc
+              .list({ clientId, cycleId: currentCycle._id })
+              .subscribe((currentTasks) => {
+                const seen = new Set(completed.map((t) => t._id));
+                const pending = currentTasks.filter(
+                  (t) => t.status !== 'completed' && !seen.has(t._id),
+                );
+                this.cycleTasks.set([...completed, ...pending]);
+              });
+          },
+          error: () => this.cycleTasks.set(completed),
+        });
+      });
   }
 
   private loadPreviousKpisForCustom() {
