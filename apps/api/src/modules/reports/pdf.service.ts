@@ -150,6 +150,13 @@ export class PdfService {
 
     const generatedAt = new Date();
 
+    // Cover image (uploaded via the editor). Fetched here so a slow /
+    // failing Cloudinary node doesn't stall the whole PDF build. Falls
+    // back to null on any error and the section renders without it.
+    const coverImageDataUrl = report.coverImageUrl
+      ? await this.fetchAsDataUrl(report.coverImageUrl)
+      : null;
+
     const docDefinition = {
       pageSize: 'LETTER',
       pageMargins: [40, 70, 40, 60],
@@ -164,7 +171,16 @@ export class PdfService {
         currentPage === 1 ? null : this.pageHeader(client, cycle),
       footer: (currentPage: number, pageCount: number) =>
         this.pageFooter(currentPage, pageCount, client, generatedAt),
-      content: this.buildSections(client, cycle, report, ctx, logoDataUrl, tierColor, generatedAt),
+      content: this.buildSections(
+        client,
+        cycle,
+        report,
+        ctx,
+        logoDataUrl,
+        tierColor,
+        generatedAt,
+        coverImageDataUrl,
+      ),
     };
 
     const pdfDoc = pdfmake.createPdf(docDefinition);
@@ -187,6 +203,7 @@ export class PdfService {
     logoDataUrl: string | null,
     tierColor: string,
     generatedAt: Date,
+    coverImageDataUrl: string | null,
   ): unknown[] {
     const layout = ctx.layout?.length
       ? ctx.layout
@@ -201,7 +218,13 @@ export class PdfService {
 
     for (const section of layout) {
       if (!section.visible) continue;
-      const block = this.renderSection(section.key, num, report, ctx);
+      const block = this.renderSection(
+        section.key,
+        num,
+        report,
+        ctx,
+        coverImageDataUrl,
+      );
       if (block) content.push(...block);
     }
     return content;
@@ -212,10 +235,25 @@ export class PdfService {
     num: () => string,
     report: Report,
     ctx: PdfContext,
+    coverImageDataUrl: string | null,
   ): unknown[] | null {
     switch (key) {
       case 'executive-summary':
         return [
+          // Cover image sits at the top of the Executive Summary page.
+          // Only rendered when the user uploaded an image AND the fetch
+          // succeeded — silent skip otherwise so a Cloudinary hiccup
+          // never breaks the whole PDF.
+          ...(coverImageDataUrl
+            ? [
+                {
+                  image: coverImageDataUrl,
+                  width: 515, // Full content width for LETTER minus 40+40 margins.
+                  margin: [0, 0, 0, 16] as [number, number, number, number],
+                  alignment: 'center' as const,
+                },
+              ]
+            : []),
           this.sectionHeader(num(), 'Executive Summary'),
           this.executiveSummaryBlock(report),
         ];
