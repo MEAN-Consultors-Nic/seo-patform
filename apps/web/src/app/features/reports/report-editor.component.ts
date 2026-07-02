@@ -448,6 +448,12 @@ interface KpiGroup {
                     ({{ range.days }} day{{ range.days === 1 ? '' : 's' }})
                   </div>
                 }
+                @if (previousWindowUsed(); as prev) {
+                  <div class="mt-1 text-[11px] text-ink-600">
+                    Compared vs previous period: <strong>{{ prev.from }}</strong> → <strong>{{ prev.to }}</strong>
+                    ({{ prev.days }} day{{ prev.days === 1 ? '' : 's' }})
+                  </div>
+                }
                 @if (r.sources.gsc && pullHasRecentDates()) {
                   <div class="mt-1 text-[11px] text-warning-500">
                     ⚠ GSC data has a ~2-day lag — the last 2 days of the range may be empty.
@@ -990,6 +996,14 @@ export class ReportEditorComponent implements OnInit {
   pullFromDate = signal<string>('');
   pullToDate = signal<string>('');
   pullRangeUsed = signal<{ from: string; to: string; days: number } | null>(null);
+  /**
+   * KPIs pulled from Google for the previous-period window. Populated
+   * as a side effect of pullKpisFromGoogle() and persisted alongside
+   * the primary KPIs on save so the comparison sticks across sessions.
+   */
+  previousKpisPulled = signal<Record<string, number> | null>(null);
+  /** Range actually used for the previous-period pull, for the UI banner. */
+  previousWindowUsed = signal<{ from: string; to: string; days: number } | null>(null);
   pullHasRecentDates = signal(false);
 
   /**
@@ -1900,15 +1914,45 @@ export class ReportEditorComponent implements OnInit {
     const days = this.daysBetween(range.from, range.to);
     this.pullRangeUsed.set({ from: range.from, to: range.to, days });
     this.pullHasRecentDates.set(this.isRecent(range.to));
+    // Compute the immediately-preceding window of the same length so a
+    // 30-day report auto-compares against the prior 30 days. Comparison
+    // is what makes 'up 60%' meaningful — comparing to the client
+    // baseline works but the prior period is the truer signal for
+    // trend detection. Runs in parallel with the primary pull.
+    const prev = this.computePreviousWindow(range.from, range.to);
     this.googleSvc.kpisForClient(clientId, range.from, range.to).subscribe({
       next: (r) => {
-        this.pullingKpis.set(false);
         this.pullResult.set(r);
         for (const [key, value] of Object.entries(r.kpis)) {
           if (typeof value === 'number' && !Number.isNaN(value)) {
             this.kpis[key] = value;
           }
         }
+        this.googleSvc.kpisForClient(clientId, prev.from, prev.to).subscribe({
+          next: (rp) => {
+            this.pullingKpis.set(false);
+            const previous: Record<string, number> = {};
+            for (const [key, value] of Object.entries(rp.kpis)) {
+              if (typeof value === 'number' && !Number.isNaN(value)) {
+                previous[key] = value;
+              }
+            }
+            this.previousKpisPulled.set(previous);
+            this.previousKpis.set(previous);
+            this.previousKpisSource.set('previous');
+            this.previousWindowUsed.set({
+              from: prev.from,
+              to: prev.to,
+              days: this.daysBetween(prev.from, prev.to),
+            });
+          },
+          error: () => {
+            // Primary window loaded; secondary failing shouldn't nuke
+            // the user's UX. Just stop the spinner and leave the
+            // previous-period fallback (baseline) in place.
+            this.pullingKpis.set(false);
+          },
+        });
       },
       error: (err) => {
         this.pullingKpis.set(false);
@@ -1919,6 +1963,28 @@ export class ReportEditorComponent implements OnInit {
         });
       },
     });
+  }
+
+  /**
+   * Given the current [from, to] window, returns the equal-length window
+   * immediately preceding it. Example: Jun 1 – Jun 30 (30 days) → prev
+   * window is May 2 – May 31.
+   */
+  private computePreviousWindow(
+    from: string,
+    to: string,
+  ): { from: string; to: string } {
+    const fromDate = new Date(`${from}T00:00:00Z`);
+    const toDate = new Date(`${to}T00:00:00Z`);
+    const days = Math.max(
+      1,
+      Math.round((toDate.getTime() - fromDate.getTime()) / 86_400_000) + 1,
+    );
+    const prevTo = new Date(fromDate);
+    prevTo.setUTCDate(prevTo.getUTCDate() - 1);
+    const prevFrom = new Date(prevTo);
+    prevFrom.setUTCDate(prevFrom.getUTCDate() - (days - 1));
+    return { from: this.formatIsoDate(prevFrom), to: this.formatIsoDate(prevTo) };
   }
 
   private formatIsoDate(d: Date | string): string {
@@ -2012,6 +2078,15 @@ export class ReportEditorComponent implements OnInit {
       hiddenKpis: Array.from(this.hiddenKpis),
       kpis: this.cleanKpis(),
     } as Parameters<typeof this.reportsSvc.upsert>[0];
+    // Persist a fresh previous-period pull if we have one. Absence
+    // means either the user hasn't clicked 'Pull KPIs' yet OR the
+    // secondary pull failed — in both cases the backend's stored
+    // kpisPrevious (if any) is preserved by the upsert's $set
+    // partial-update semantics.
+    const pulledPrev = this.previousKpisPulled();
+    if (pulledPrev && Object.keys(pulledPrev).length > 0) {
+      base.kpisPrevious = pulledPrev;
+    }
     if (this.customMode()) {
       return { ...base, reportId: this.customReportId() };
     }

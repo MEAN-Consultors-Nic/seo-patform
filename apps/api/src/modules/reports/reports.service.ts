@@ -279,12 +279,27 @@ export class ReportsService {
     clientId: Types.ObjectId | string;
     cycleId?: Types.ObjectId | string;
     customRange?: { from: Date | string; to: Date | string };
+    kpisPrevious?: ReportKpis;
   }): Promise<{
     kpisPrevious: ReportKpis | null;
     kpisPreviousSource: 'previous' | 'baseline' | null;
   }> {
     const clientId = report.clientId.toString();
     const client = await this.clients.findOne(clientId).catch(() => null);
+    // Custom-range reports: an explicit previous-period pull (done by
+    // clicking 'Pull KPIs from Google' in the editor) writes the
+    // equal-length preceding window into kpisPrevious. Honor that first
+    // — the user's fresh pull beats any inferred previous-report
+    // lookup. Cycle-anchored reports still auto-compute so the delta
+    // tracks the live prior-cycle number, not a snapshot.
+    if (report.customRange && this.hasStoredKpisPrevious(report)) {
+      const baseline = client?.baselineKpis;
+      const merged =
+        baseline && Object.keys(baseline).length > 0
+          ? { ...baseline, ...report.kpisPrevious! }
+          : report.kpisPrevious!;
+      return { kpisPrevious: merged, kpisPreviousSource: 'previous' };
+    }
     let priorKpis: ReportKpis | null = null;
     if (report.cycleId) {
       priorKpis = await this.findPriorCycleKpis(
@@ -310,6 +325,16 @@ export class ReportsService {
       return { kpisPrevious: baseline, kpisPreviousSource: 'baseline' };
     }
     return { kpisPrevious: null, kpisPreviousSource: null };
+  }
+
+  private hasStoredKpisPrevious(report: {
+    kpisPrevious?: ReportKpis;
+  }): boolean {
+    const kp = report.kpisPrevious;
+    if (!kp) return false;
+    return Object.values(kp).some(
+      (v) => typeof v === 'number' && !Number.isNaN(v),
+    );
   }
 
   /**
@@ -1089,6 +1114,17 @@ export class ReportsService {
     if (report.comparePeriods === false) {
       out.kpisPrevious = undefined;
       out.kpisPreviousSource = null;
+      return out;
+    }
+
+    // Custom-range reports: if the user did a fresh Pull KPIs (which
+    // includes the equal-length preceding window), that stored value
+    // is authoritative and wins over the auto-recompute path.
+    if (
+      report.customRange &&
+      this.hasStoredKpisPrevious(report as { kpisPrevious?: ReportKpis })
+    ) {
+      out.kpisPreviousSource = 'previous';
       return out;
     }
 
