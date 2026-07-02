@@ -219,9 +219,11 @@ export class ReportsService {
   }
 
   /**
-   * Creates a new custom-range report seeded with zero KPIs and empty
-   * text fields. The frontend then upserts text/KPIs via the regular
-   * upsert flow keyed by reportId.
+   * findOrCreate for a custom-range report. When the caller picks the
+   * same client + from + to that already has a report, we return the
+   * existing document so any text/KPIs the user previously entered
+   * survive across sessions. Only creates a new doc when there's no
+   * match — that avoids duplicate rows and preserves work-in-progress.
    */
   async createCustomReport(
     clientId: string,
@@ -242,10 +244,24 @@ export class ReportsService {
       throw new BadRequestException('"from" must be on or before "to".');
     }
     // End-of-day so a date string like '2026-06-25' includes everything
-    // that happened that day.
+    // that happened that day. Applied AFTER validation so the equality
+    // check for findOrCreate lookup is deterministic.
     toDate.setUTCHours(23, 59, 59, 999);
+
+    // Try to reuse an existing report with the same range first.
+    const clientOid = new Types.ObjectId(clientId);
+    const existing = await this.model
+      .findOne({
+        clientId: clientOid,
+        'customRange.from': fromDate,
+        'customRange.to': toDate,
+      })
+      .lean()
+      .exec();
+    if (existing) return existing;
+
     const doc = await this.model.create({
-      clientId: new Types.ObjectId(clientId),
+      clientId: clientOid,
       customRange: { from: fromDate, to: toDate },
       kpis: {},
       executiveSummary: '',
