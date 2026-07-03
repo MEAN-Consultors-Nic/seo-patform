@@ -866,14 +866,21 @@ interface PublicPayload {
               }
 
               @if (contentIdeas().length > 0) {
-                <div [class.mt-6]="plannedTasks().length > 0">
-                  <div class="flex items-baseline justify-between mb-3">
-                    <h3 class="text-sm font-bold uppercase tracking-[0.15em] text-ink-700">
-                      Content pipeline · ideas
-                    </h3>
-                    <span class="text-[11px] text-ink-400">
-                      {{ contentIdeas().length }} planned
-                    </span>
+                <div [class.mt-10]="plannedTasks().length > 0">
+                  <!-- Sub-section header sized like a main title (bold
+                       + coral underline) but without a section number
+                       because Content Pipeline lives inside the numbered
+                       Next Period Plan parent. Matches the PDF layout. -->
+                  <div class="mb-5">
+                    <div class="flex items-baseline justify-between">
+                      <h3 class="text-2xl font-bold text-ink-900">
+                        Content Pipeline · Ideas
+                      </h3>
+                      <span class="text-xs text-ink-400 font-semibold">
+                        {{ contentIdeas().length }} planned
+                      </span>
+                    </div>
+                    <div class="mt-2 h-[2px] w-10 bg-brand-500"></div>
                   </div>
                   <div class="bg-white rounded-lg border border-ink-200 shadow-card overflow-hidden">
                     <table class="w-full text-sm">
