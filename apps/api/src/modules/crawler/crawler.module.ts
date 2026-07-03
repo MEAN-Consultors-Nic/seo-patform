@@ -6,6 +6,7 @@ import { CrawlPage, CrawlPageSchema } from './crawl-page.schema';
 import { UrlNormalizerService } from './url-normalizer.service';
 import { PageFetcherService } from './page-fetcher.service';
 import { HtmlAnalyzerService } from './html-analyzer.service';
+import { CrawlOrchestratorService } from './crawl-orchestrator.service';
 
 @Module({
   imports: [
@@ -16,7 +17,12 @@ import { HtmlAnalyzerService } from './html-analyzer.service';
     ClientsModule,
   ],
   controllers: [],
-  providers: [UrlNormalizerService, PageFetcherService, HtmlAnalyzerService],
-  exports: [UrlNormalizerService, PageFetcherService, HtmlAnalyzerService],
+  providers: [
+    UrlNormalizerService,
+    PageFetcherService,
+    HtmlAnalyzerService,
+    CrawlOrchestratorService,
+  ],
+  exports: [CrawlOrchestratorService],
 })
 export class CrawlerModule {}
