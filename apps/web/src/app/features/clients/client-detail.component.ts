@@ -18,6 +18,7 @@ import { ClientGscInsightsTab } from './tabs/gsc-insights-tab.component';
 import { ClientServiceAreasTab } from './tabs/service-areas-tab.component';
 import { ClientIndexingTab } from './tabs/indexing-tab.component';
 import { ClientCannibalizationTab } from './tabs/cannibalization-tab.component';
+import { ClientSiteStructureTab } from './tabs/site-structure-tab.component';
 import { ClientAccessTab } from './tabs/access-tab.component';
 import { ClientEcommerceTab } from './tabs/ecommerce-tab.component';
 import { ClientShopifyTab } from './tabs/shopify-tab.component';
@@ -40,6 +41,7 @@ type TabKey =
   | 'gsc-insights'
   | 'indexing'
   | 'cannibalization'
+  | 'site-structure'
   | 'service-areas'
   | 'ecommerce'
   | 'shopify'
@@ -86,6 +88,7 @@ const GROUPS: GroupDef[] = [
     ClientGscInsightsTab,
     ClientIndexingTab,
     ClientCannibalizationTab,
+    ClientSiteStructureTab,
     ClientServiceAreasTab,
     ClientAccessTab,
     ClientEcommerceTab,
@@ -271,6 +274,9 @@ const GROUPS: GroupDef[] = [
           @case ('cannibalization') {
             <app-client-cannibalization-tab [clientId]="c._id!" [gscSiteUrl]="c.gscSiteUrl" />
           }
+          @case ('site-structure') {
+            <app-client-site-structure-tab [clientId]="c._id!" [rootUrl]="c.url || ''" />
+          }
           @case ('service-areas') {
             <app-client-service-areas-tab [client]="c" />
           }
@@ -440,6 +446,7 @@ export class ClientDetailComponent implements OnInit {
       { key: 'gsc-insights', label: 'GSC Insights', group: 'health' },
       { key: 'indexing', label: 'Indexing', group: 'health' },
       { key: 'cannibalization', label: 'Cannibalization', group: 'health' },
+      { key: 'site-structure', label: 'Site Structure', group: 'health' },
 
       { key: 'service-areas', label: 'Service Areas', group: 'setup' },
       { key: 'knowledge', label: 'Knowledge', group: 'setup' },
