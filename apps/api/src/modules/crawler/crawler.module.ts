@@ -8,6 +8,8 @@ import { PageFetcherService } from './page-fetcher.service';
 import { HtmlAnalyzerService } from './html-analyzer.service';
 import { CrawlOrchestratorService } from './crawl-orchestrator.service';
 import { CrawlAnalyzerService } from './crawl-analyzer.service';
+import { CrawlerService } from './crawler.service';
+import { CrawlerController } from './crawler.controller';
 
 @Module({
   imports: [
@@ -17,14 +19,15 @@ import { CrawlAnalyzerService } from './crawl-analyzer.service';
     ]),
     ClientsModule,
   ],
-  controllers: [],
+  controllers: [CrawlerController],
   providers: [
     UrlNormalizerService,
     PageFetcherService,
     HtmlAnalyzerService,
     CrawlOrchestratorService,
     CrawlAnalyzerService,
+    CrawlerService,
   ],
-  exports: [CrawlOrchestratorService, CrawlAnalyzerService],
+  exports: [CrawlOrchestratorService, CrawlAnalyzerService, CrawlerService],
 })
 export class CrawlerModule {}

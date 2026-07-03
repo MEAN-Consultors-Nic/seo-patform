@@ -8,6 +8,7 @@ import { CrawlPage, CrawlPageDocument } from './crawl-page.schema';
 import { PageFetcherService } from './page-fetcher.service';
 import { HtmlAnalyzerService } from './html-analyzer.service';
 import { UrlNormalizerService } from './url-normalizer.service';
+import { CrawlAnalyzerService } from './crawl-analyzer.service';
 
 interface QueueEntry {
   url: string;
@@ -50,6 +51,7 @@ export class CrawlOrchestratorService implements OnModuleDestroy {
     private readonly fetcher: PageFetcherService,
     private readonly analyzer: HtmlAnalyzerService,
     private readonly urls: UrlNormalizerService,
+    private readonly crawlAnalyzer: CrawlAnalyzerService,
   ) {}
 
   /**
@@ -245,6 +247,13 @@ export class CrawlOrchestratorService implements OnModuleDestroy {
       )
       .exec()
       .catch(() => null);
+
+    // Run the post-crawl SEO analyzer before marking completed so the
+    // stats block on the job doc is populated when the UI polls
+    // /status one last time.
+    if (!runner.cancel) {
+      await this.crawlAnalyzer.analyze(jobId).catch(() => null);
+    }
 
     // Mark final status. If the runner was cancelled the cancelCrawl
     // path already set 'interrupted'; only flip queued/running to
