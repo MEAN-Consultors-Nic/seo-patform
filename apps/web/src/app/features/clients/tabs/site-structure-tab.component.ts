@@ -326,6 +326,18 @@ type SubTab = 'tree' | 'issues' | 'pages';
                       <dd class="text-danger-500">{{ p.fetchError }}</dd>
                     </div>
                   }
+                  <!-- Debug panel: exposes why link discovery may have
+                       stalled (bot-gated content, JS-only SPA, empty
+                       response body). -->
+                  <div class="pt-2 mt-2 border-t border-ink-100">
+                    <dt class="text-[10px] uppercase text-ink-500 font-semibold">Debug</dt>
+                    <dd class="text-ink-700 space-y-0.5">
+                      <div>HTML bytes: <span class="tabular-nums">{{ p.htmlBytes ?? 0 }}</span></div>
+                      <div>Raw &lt;a href&gt; found: <span class="tabular-nums">{{ p.rawLinksFound ?? 0 }}</span></div>
+                      <div>After same-origin filter: <span class="tabular-nums">{{ p.filteredLinkCount ?? 0 }}</span></div>
+                      <div>Content-type: <span class="break-all">{{ p.contentType || '—' }}</span></div>
+                    </dd>
+                  </div>
                 </dl>
               } @else {
                 <div class="text-[11px] text-ink-500 italic">

@@ -288,20 +288,26 @@ export class CrawlOrchestratorService implements OnModuleDestroy {
     let robotsMeta: string | undefined;
     const outgoingHashes: string[] = [];
 
+    let htmlBytes = 0;
+    let rawLinksFound = 0;
     if (fetched.html) {
+      htmlBytes = Buffer.byteLength(fetched.html, 'utf8');
       const parsed = this.analyzer.analyze(fetched.html);
       title = parsed.title;
       metaDescription = parsed.metaDescription;
       h1s = parsed.h1s;
       canonical = parsed.canonical;
       robotsMeta = parsed.robotsMeta;
+      rawLinksFound = parsed.links.length;
       // Resolve, normalize, dedupe, filter to same-origin, then enqueue
-      // for BFS and record edges.
+      // for BFS and record edges. Use fetched.finalUrl (post-redirect)
+      // as the reference for same-origin so www ↔ non-www redirects
+      // don't strand every link.
       const seenOnPage = new Set<string>();
       for (const rawHref of parsed.links) {
         const abs = this.urls.resolveHref(rawHref, fetched.finalUrl);
         if (!abs) continue;
-        if (!this.urls.isSameOrigin(abs, rootUrl)) continue;
+        if (!this.urls.isSameOrigin(abs, fetched.finalUrl)) continue;
         const norm = this.urls.normalize(abs, {
           ignoreUtm: settings.ignoreUtm,
         });
@@ -347,6 +353,9 @@ export class CrawlOrchestratorService implements OnModuleDestroy {
             redirectChain: fetched.redirectChain,
             outgoingLinks: outgoingHashes,
             fetchError: fetched.error,
+            htmlBytes,
+            rawLinksFound,
+            filteredLinkCount: outgoingHashes.length,
           },
         },
         { upsert: true },

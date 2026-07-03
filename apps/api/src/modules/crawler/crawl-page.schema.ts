@@ -84,6 +84,22 @@ export class CrawlPage {
   /** Free-text error surfaced when the fetch failed (timeout, DNS, etc.). */
   @Prop()
   fetchError?: string;
+
+  /**
+   * Diagnostic fields — help pinpoint why a crawl might stall at the
+   * root (bot-gated content, JS-only SPA, wrong content-type). Never
+   * displayed to the client-facing report, only in the debug panel.
+   */
+  @Prop({ type: Number })
+  htmlBytes?: number;
+
+  /** Number of <a href> hrefs cheerio found in the fetched HTML — BEFORE any filtering. */
+  @Prop({ type: Number })
+  rawLinksFound?: number;
+
+  /** Number of links that survived same-origin + normalize filters. */
+  @Prop({ type: Number })
+  filteredLinkCount?: number;
 }
 
 export const CrawlPageSchema = SchemaFactory.createForClass(CrawlPage);

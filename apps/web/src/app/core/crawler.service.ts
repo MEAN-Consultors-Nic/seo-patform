@@ -59,6 +59,9 @@ export interface CrawlPage {
   outgoingLinks: string[];
   redirectChain: string[];
   fetchError?: string;
+  htmlBytes?: number;
+  rawLinksFound?: number;
+  filteredLinkCount?: number;
 }
 
 export interface StartCrawlDto {
