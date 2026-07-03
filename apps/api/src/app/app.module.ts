@@ -31,7 +31,6 @@ import { SupervisorModule } from '../modules/supervisor/supervisor.module';
 import { IndexingModule } from '../modules/indexing/indexing.module';
 import { CannibalizationModule } from '../modules/cannibalization/cannibalization.module';
 import { PriorityQueueModule } from '../modules/priority-queue/priority-queue.module';
-import { CrawlerModule } from '../modules/crawler/crawler.module';
 import { SeedModule } from '../seed/seed.module';
 
 @Module({
@@ -65,7 +64,6 @@ import { SeedModule } from '../seed/seed.module';
     IndexingModule,
     CannibalizationModule,
     PriorityQueueModule,
-    CrawlerModule,
     SeedModule,
   ],
   controllers: [AppController],
