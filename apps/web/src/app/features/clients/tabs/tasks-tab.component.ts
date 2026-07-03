@@ -703,30 +703,52 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
               </div>
             }
 
-            @if ((d.subtasks?.length || 0) > 0) {
-              <div class="mt-5">
-                <div class="flex items-baseline justify-between mb-2">
-                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-400">Subtasks</div>
+            <div class="mt-5">
+              <div class="flex items-baseline justify-between mb-2">
+                <div class="text-[10px] uppercase tracking-wider font-bold text-ink-400">
+                  Subtasks ({{ d.subtasks?.length || 0 }})
+                </div>
+                @if ((d.subtasks?.length || 0) > 0) {
                   <div class="text-[11px] text-ink-500 font-semibold">
                     {{ subtasksDone(d) }} / {{ d.subtasks?.length }} done
                   </div>
-                </div>
-                <ul class="space-y-1">
+                }
+              </div>
+              @if ((d.subtasks?.length || 0) > 0) {
+                <ul class="space-y-1 mb-2">
                   @for (s of d.subtasks; track $index; let i = $index) {
-                    <li class="flex items-center gap-2 text-sm">
+                    <li class="group flex items-center gap-2 text-sm">
                       <input type="checkbox" class="rounded border-ink-300 text-positive-500 focus:ring-positive-500"
                              [checked]="s.done"
                              (change)="toggleSubtaskFromDetail(d, i, $any($event.target).checked)" />
-                      <span class="text-ink-700"
+                      <span class="text-ink-700 flex-1"
                             [class.line-through]="s.done"
                             [class.text-ink-400]="s.done">
                         {{ s.title }}
                       </span>
+                      <button type="button"
+                              (click)="removeSubtaskFromDetail(d, i)"
+                              class="opacity-0 group-hover:opacity-100 text-ink-400 hover:text-danger-500 text-sm leading-none px-1 transition-opacity"
+                              title="Remove subtask">×</button>
                     </li>
                   }
                 </ul>
+              }
+              <!-- Inline add. Enter creates the subtask so users can
+                   type several in a row without reaching for the mouse. -->
+              <div class="flex items-center gap-2">
+                <input class="input !py-1.5 !text-sm flex-1"
+                       [(ngModel)]="newSubtaskTitle"
+                       (keydown.enter)="addSubtaskFromDetail(d); $event.preventDefault()"
+                       placeholder="+ Add subtask (press Enter)" />
+                <button type="button"
+                        class="btn-primary text-xs !py-1.5 !px-3"
+                        (click)="addSubtaskFromDetail(d)"
+                        [disabled]="!newSubtaskTitle.trim() || addingSubtaskId() === d._id">
+                  {{ addingSubtaskId() === d._id ? '…' : 'Add' }}
+                </button>
               </div>
-            }
+            </div>
 
             <div class="mt-5">
               <div class="flex items-baseline justify-between mb-2">
@@ -969,6 +991,10 @@ export class ClientTasksTab implements OnChanges {
   sendingToDocId = signal<string | null>(null);
   /** ID of the task being bumped forward to the current cycle. */
   movingToCycleId = signal<string | null>(null);
+  /** ID of the task whose add-subtask request is in flight. */
+  addingSubtaskId = signal<string | null>(null);
+  /** Input model for the inline add-subtask field in the detail modal. */
+  newSubtaskTitle = '';
 
   /**
    * The task being moved to a different client. When non-null the
@@ -1214,6 +1240,40 @@ export class ClientTasksTab implements OnChanges {
   toggleSubtaskFromDetail(t: Task, index: number, done: boolean) {
     if (!t._id) return;
     const next = (t.subtasks || []).map((s, i) => (i === index ? { ...s, done } : s));
+    this.tasksSvc.update(t._id, { subtasks: next }).subscribe({
+      next: (updated) => {
+        const list = this.tasks().map((x) => (x._id === t._id ? updated : x));
+        this.tasks.set(list);
+        this.detailTask.set(updated);
+      },
+    });
+  }
+
+  /**
+   * Adds a subtask from the detail modal's inline input. Uses the
+   * dedicated POST endpoint (idempotent-friendly, keeps the subtask
+   * array append on the server side) rather than a full-array PATCH.
+   */
+  addSubtaskFromDetail(t: Task) {
+    if (!t._id) return;
+    const title = this.newSubtaskTitle.trim();
+    if (!title) return;
+    this.addingSubtaskId.set(t._id);
+    this.tasksSvc.addSubtask(t._id, title, false).subscribe({
+      next: (updated) => {
+        this.addingSubtaskId.set(null);
+        this.newSubtaskTitle = '';
+        const list = this.tasks().map((x) => (x._id === t._id ? updated : x));
+        this.tasks.set(list);
+        this.detailTask.set(updated);
+      },
+      error: () => this.addingSubtaskId.set(null),
+    });
+  }
+
+  removeSubtaskFromDetail(t: Task, index: number) {
+    if (!t._id) return;
+    const next = (t.subtasks || []).filter((_, i) => i !== index);
     this.tasksSvc.update(t._id, { subtasks: next }).subscribe({
       next: (updated) => {
         const list = this.tasks().map((x) => (x._id === t._id ? updated : x));
