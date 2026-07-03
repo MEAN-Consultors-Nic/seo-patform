@@ -107,33 +107,51 @@ interface KpiGroup {
           <div>
             <label class="label">Cycle</label>
             <select class="input"
-                    [ngModel]="customMode() ? '__custom__' : cycleId()"
+                    [ngModel]="monthMode() ? '__month__' : (customMode() ? '__custom__' : cycleId())"
                     (ngModelChange)="onCycleChange($event)"
                     [disabled]="loadingReport()">
               <option value="">Select cycle</option>
               @for (c of cycles(); track c._id) {
                 <option [value]="c._id">{{ c.label }} ({{ c.status }})</option>
               }
+              <option value="__month__">Full month…</option>
               <option value="__custom__">Custom date range…</option>
             </select>
           </div>
         </div>
 
         @if (customMode()) {
-          <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label class="label">From</label>
-              <input type="date" class="input"
-                     [ngModel]="customFrom()"
-                     (ngModelChange)="onCustomFromChange($event)" />
+          @if (monthMode()) {
+            <!-- Month-picker shortcut: user picks a YYYY-MM value and the
+                 from/to auto-fill to the first and last day of that
+                 month. Everything else reuses the custom-range flow. -->
+            <div class="mt-3">
+              <label class="label">Month</label>
+              <input type="month" class="input"
+                     [ngModel]="monthValue()"
+                     (ngModelChange)="onMonthChange($event)" />
+              @if (customFrom() && customTo()) {
+                <p class="text-[11px] text-ink-500 mt-1">
+                  {{ customFrom() }} → {{ customTo() }}
+                </p>
+              }
             </div>
-            <div>
-              <label class="label">To</label>
-              <input type="date" class="input"
-                     [ngModel]="customTo()"
-                     (ngModelChange)="onCustomToChange($event)" />
+          } @else {
+            <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="label">From</label>
+                <input type="date" class="input"
+                       [ngModel]="customFrom()"
+                       (ngModelChange)="onCustomFromChange($event)" />
+              </div>
+              <div>
+                <label class="label">To</label>
+                <input type="date" class="input"
+                       [ngModel]="customTo()"
+                       (ngModelChange)="onCustomToChange($event)" />
+              </div>
             </div>
-          </div>
+          }
           @if (customLoadError(); as e) {
             <div class="mt-3 rounded-md border border-danger-500/30 bg-danger-100 px-3 py-2 text-[11px] text-danger-700 leading-snug">
               ⚠ {{ e }}
@@ -911,6 +929,14 @@ export class ReportEditorComponent implements OnInit {
   customFrom = signal<string>('');
   customTo = signal<string>('');
   /**
+   * Month-picker shortcut. When true, the custom-range UI collapses to
+   * a single YYYY-MM month picker and customFrom / customTo are computed
+   * automatically as the first and last day of the selected month. All
+   * downstream logic still runs through the same custom-range flow.
+   */
+  monthMode = signal(false);
+  monthValue = signal<string>('');
+  /**
    * _id of the custom-range Report document we're editing. Created on
    * the first valid date pick; subsequent saves/PDF/share/word route
    * through the byId endpoints using this id.
@@ -1181,19 +1207,52 @@ export class ReportEditorComponent implements OnInit {
    * path. Switching back to a real cycleId disables custom mode.
    */
   onCycleChange(v: string) {
-    if (v === '__custom__') {
+    if (v === '__custom__' || v === '__month__') {
       this.customMode.set(true);
+      this.monthMode.set(v === '__month__');
       this.cycleId.set('');
       this.customReportId.set('');
       this.customLoadError.set(null);
       this.report.set(null);
+      // Month mode: clear the free-form dates so the user starts fresh
+      // and picks a month; custom mode: preserve whatever was typed so
+      // switching between the two doesn't wipe input.
+      if (v === '__month__') {
+        this.customFrom.set('');
+        this.customTo.set('');
+        this.monthValue.set('');
+      }
       return;
     }
     this.customMode.set(false);
+    this.monthMode.set(false);
     this.customReportId.set('');
     this.customLoadError.set(null);
     this.cycleId.set(v);
     this.tryLoad();
+  }
+
+  /**
+   * Called when the user picks a month in the month picker. Computes
+   * the first and last day of the selected month and delegates to
+   * the same custom-range flow so nothing downstream branches on
+   * month vs custom.
+   */
+  onMonthChange(value: string) {
+    this.monthValue.set(value);
+    if (!/^\d{4}-\d{2}$/.test(value)) return;
+    const [y, m] = value.split('-').map(Number);
+    const first = `${value}-01`;
+    // Last day = day before the first of next month, computed via
+    // Date arithmetic that handles month lengths + leap years.
+    const lastDate = new Date(Date.UTC(y, m, 0));
+    const last =
+      `${lastDate.getUTCFullYear()}-${String(lastDate.getUTCMonth() + 1).padStart(2, '0')}-${String(lastDate.getUTCDate()).padStart(2, '0')}`;
+    this.customFrom.set(first);
+    this.customTo.set(last);
+    this.customReportId.set('');
+    this.report.set(null);
+    this.tryLoadCustom();
   }
 
   onCustomFromChange(v: string) {
