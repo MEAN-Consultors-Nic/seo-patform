@@ -302,14 +302,9 @@ export class PdfService {
           this.upcomingTasksTable(ctx.tasks),
           ...(ideas.length > 0
             ? [
-                {
-                  text: `CONTENT PIPELINE · IDEAS  ·  ${ideas.length} planned`,
-                  color: INK_500,
-                  fontSize: 8,
-                  bold: true,
-                  characterSpacing: 1.5,
-                  margin: [0, 12, 0, 6],
-                },
+                this.subsectionHeader(
+                  `Content Pipeline · Ideas (${ideas.length})`,
+                ),
                 this.contentIdeasTable(ideas),
               ]
             : []),
@@ -777,6 +772,35 @@ export class PdfService {
         },
       ],
       margin: [0, 16, 0, 14],
+    };
+  }
+
+  /**
+   * Same visual weight as sectionHeader (bold title + coral underline)
+   * but no section number — used for sub-sections that sit inside a
+   * numbered parent section, like Content Pipeline Ideas nested under
+   * Next Period Plan. Keeps the number sequence intact while still
+   * giving the sub-block a strong, scannable heading.
+   */
+  private subsectionHeader(title: string) {
+    return {
+      stack: [
+        { text: title, style: 'sectionTitle', margin: [0, 0, 0, 6] },
+        {
+          canvas: [
+            {
+              type: 'line',
+              x1: 0,
+              y1: 0,
+              x2: 40,
+              y2: 0,
+              lineWidth: 2,
+              lineColor: BRAND,
+            },
+          ],
+        },
+      ],
+      margin: [0, 20, 0, 12],
     };
   }
 
