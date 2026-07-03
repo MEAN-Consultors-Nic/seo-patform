@@ -90,9 +90,6 @@ import { TasksService } from '../../../core/tasks.service';
                         ✎
                       </button>
                     }
-                    <button class="text-ink-400 hover:text-danger-500 text-sm leading-none px-1"
-                            (click)="remove(p)" title="Remove piece">×</button>
-
                     <!-- Contextual menu. The button toggles a small dropdown
                          anchored to the piece card. Keep actions discoverable
                          here as we add more over time. -->
@@ -117,6 +114,11 @@ import { TasksService } from '../../../core/tasks.service';
                               {{ p.briefUrl ? 'Edit draft link' : 'Add draft link' }}
                             </button>
                           }
+                          <div class="my-1 border-t border-ink-100"></div>
+                          <button class="block w-full text-left px-3 py-1.5 hover:bg-danger-100 text-danger-500 hover:text-danger-700"
+                                  (click)="confirmRemove(p)">
+                            Delete piece
+                          </button>
                         </div>
                       }
                     </div>
@@ -374,6 +376,24 @@ export class ClientContentTab implements OnChanges {
   remove(p: ContentPiece) {
     if (!p._id) return;
     this.svc.remove(p._id).subscribe(() => this.load());
+  }
+
+  /**
+   * Delete-piece action from the contextual menu. Confirms with the
+   * user first — content pieces often carry hours of research + drafts
+   * behind them, so an accidental click shouldn't wipe the record.
+   */
+  confirmRemove(p: ContentPiece) {
+    this.menuOpenId.set(null);
+    const label = p.title || 'this piece';
+    if (
+      !confirm(
+        `Delete "${label}"? This removes the content piece from the pipeline. Any linked draft URL or published URL will also be lost.`,
+      )
+    ) {
+      return;
+    }
+    this.remove(p);
   }
 
   // --- Contextual menu --------------------------------------------------
