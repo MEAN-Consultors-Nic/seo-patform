@@ -92,12 +92,21 @@ export class UrlNormalizerService {
     }
   }
 
-  /** True when target and base share the same host (case-insensitive). */
+  /**
+   * True when target and base share the same host. Strips 'www.' from
+   * both sides before comparing so mbglogistics.com and www.mbglogistics.com
+   * are treated as the same origin. Case-insensitive. This is the
+   * common case for sites that redirect between the two — without this
+   * every internal link would be filtered out and the crawl would stop
+   * after the root page.
+   */
   isSameOrigin(target: string, base: string): boolean {
     try {
       const t = new URL(target);
       const b = new URL(base);
-      return t.host.toLowerCase() === b.host.toLowerCase();
+      const th = t.host.toLowerCase().replace(/^www\./, '');
+      const bh = b.host.toLowerCase().replace(/^www\./, '');
+      return th === bh;
     } catch {
       return false;
     }

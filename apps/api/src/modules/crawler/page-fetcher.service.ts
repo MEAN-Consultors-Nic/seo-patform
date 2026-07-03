@@ -35,8 +35,16 @@ export class PageFetcherService {
   private static readonly TIMEOUT_MS = 10_000;
   private static readonly MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
   private static readonly MAX_REDIRECTS = 5;
+  /**
+   * User-Agent following Google's own convention: real browser UA
+   * string with a compatible-crawler suffix that clearly identifies us.
+   * This gets us past most Cloudflare / WordPress security plugin
+   * bot-gates that returned empty pages to the plain 'MediaSpearheadCrawler'
+   * UA. The '+URL' suffix is the standard way to give webmasters a way
+   * to identify or block our crawler if they want to.
+   */
   private static readonly DEFAULT_UA =
-    'MediaSpearheadCrawler/1.0 (+https://seo-tracker.mediaspearhead.com)';
+    'Mozilla/5.0 (compatible; MediaSpearheadCrawler/1.0; +https://seo-tracker.mediaspearhead.com/bot)';
 
   async fetch(url: string, userAgent?: string): Promise<FetchResult> {
     const start = Date.now();
