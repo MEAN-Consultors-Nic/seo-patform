@@ -40,6 +40,8 @@ class CrawlSettingsSubSchema {
   @Prop({ default: false }) respectRobots!: boolean;
   @Prop({ default: true }) ignoreUtm!: boolean;
   @Prop() userAgent?: string;
+  /** Explicit sitemap URL provided by the user — bypasses auto-discovery. */
+  @Prop() sitemapUrl?: string;
 }
 
 @Schema({ timestamps: true, collection: 'crawl_jobs' })
@@ -80,6 +82,7 @@ export class CrawlJob {
     respectRobots: boolean;
     ignoreUtm: boolean;
     userAgent?: string;
+    sitemapUrl?: string;
   };
 
   @Prop({ type: CrawlStatsSubSchema, default: () => ({}) })

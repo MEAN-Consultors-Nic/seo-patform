@@ -41,39 +41,46 @@ export class SitemapLoaderService {
   async discover(
     rootUrl: string,
     userAgent?: string,
+    explicitSitemapUrl?: string,
   ): Promise<string[]> {
     const deadline =
       Date.now() + SitemapLoaderService.TOTAL_DISCOVERY_BUDGET_MS;
     const timeLeft = () => Math.max(0, deadline - Date.now());
     const candidateSitemaps: string[] = [];
 
-    // 1) Check robots.txt for Sitemap: directives.
-    try {
-      const robotsUrl = new URL('/robots.txt', rootUrl).toString();
-      const raw = await this.fetchRaw(robotsUrl, userAgent, timeLeft());
-      if (raw) {
-        const matches = raw.match(/^\s*sitemap:\s*(\S+)/gim);
-        if (matches) {
-          for (const line of matches) {
-            const url = line.replace(/^\s*sitemap:\s*/i, '').trim();
-            if (url) candidateSitemaps.push(url);
+    // Fast path: user pasted a sitemap URL. Skip robots.txt + /sitemap.xml
+    // fallback entirely — go straight to the file they gave us.
+    if (explicitSitemapUrl) {
+      candidateSitemaps.push(explicitSitemapUrl);
+    } else {
+      // 1) Check robots.txt for Sitemap: directives.
+      try {
+        const robotsUrl = new URL('/robots.txt', rootUrl).toString();
+        const raw = await this.fetchRaw(robotsUrl, userAgent, timeLeft());
+        if (raw) {
+          const matches = raw.match(/^\s*sitemap:\s*(\S+)/gim);
+          if (matches) {
+            for (const line of matches) {
+              const url = line.replace(/^\s*sitemap:\s*/i, '').trim();
+              if (url) candidateSitemaps.push(url);
+            }
           }
         }
-      }
-    } catch {
-      // Robots.txt is optional — no worries if it 404s or times out.
-    }
-
-    // 2) Fall back to the conventional locations if robots.txt didn't
-    //    point us anywhere.
-    if (candidateSitemaps.length === 0) {
-      try {
-        candidateSitemaps.push(new URL('/sitemap.xml', rootUrl).toString());
-        candidateSitemaps.push(
-          new URL('/sitemap_index.xml', rootUrl).toString(),
-        );
       } catch {
-        return [];
+        // Robots.txt is optional — no worries if it 404s or times out.
+      }
+
+      // 2) Fall back to the conventional locations if robots.txt didn't
+      //    point us anywhere.
+      if (candidateSitemaps.length === 0) {
+        try {
+          candidateSitemaps.push(new URL('/sitemap.xml', rootUrl).toString());
+          candidateSitemaps.push(
+            new URL('/sitemap_index.xml', rootUrl).toString(),
+          );
+        } catch {
+          return [];
+        }
       }
     }
 

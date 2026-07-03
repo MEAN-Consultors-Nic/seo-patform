@@ -40,6 +40,7 @@ export class CrawlerController {
       respectRobots: !!dto.respectRobots,
       ignoreUtm: dto.ignoreUtm !== false,
       userAgent: dto.userAgent,
+      sitemapUrl: dto.sitemapUrl,
     });
   }
 

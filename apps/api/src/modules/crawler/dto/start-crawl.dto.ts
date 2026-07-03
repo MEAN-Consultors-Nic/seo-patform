@@ -42,4 +42,14 @@ export class StartCrawlDto {
   @IsOptional()
   @IsString()
   userAgent?: string;
+
+  /**
+   * Optional pre-known sitemap URL. When provided, skips the
+   * auto-discovery (robots.txt + /sitemap.xml fallback) and seeds
+   * directly from this file — much faster + more reliable than
+   * guessing common paths.
+   */
+  @IsOptional()
+  @IsUrl({ require_protocol: true })
+  sitemapUrl?: string;
 }

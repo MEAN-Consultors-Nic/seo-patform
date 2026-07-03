@@ -97,6 +97,16 @@ type SubTab = 'tree' | 'issues' | 'pages';
               </select>
             </div>
           </div>
+          <div class="mt-3">
+            <label class="label">
+              Sitemap URL <span class="text-ink-400 font-normal">(optional — recommended for JS-only sites)</span>
+            </label>
+            <input class="input" type="url" [(ngModel)]="sitemapUrl"
+                   placeholder="https://buckwaste.com/sitemap.xml" />
+            <p class="text-[11px] text-ink-500 mt-1 leading-snug">
+              Paste the sitemap URL directly to skip auto-discovery. Especially useful when the site is JS-rendered (React/Next.js/Wix) and cheerio can't extract links from the shell HTML.
+            </p>
+          </div>
           <div class="mt-3 flex flex-wrap items-center gap-3">
             <label class="text-xs text-ink-700 inline-flex items-center gap-1.5">
               <input type="checkbox" class="rounded border-ink-300" [(ngModel)]="respectRobots" />
@@ -471,6 +481,7 @@ export class ClientSiteStructureTab
   maxPages = 500;
   respectRobots = false;
   ignoreUtm = true;
+  sitemapUrl = '';
 
   jobs = signal<CrawlJob[]>([]);
   selectedJobId = signal<string>('');
@@ -572,6 +583,7 @@ export class ClientSiteStructureTab
         rateLimit: 3,
         respectRobots: this.respectRobots,
         ignoreUtm: this.ignoreUtm,
+        sitemapUrl: this.sitemapUrl.trim() || undefined,
       })
       .subscribe({
         next: (job) => {

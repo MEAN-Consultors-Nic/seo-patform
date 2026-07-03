@@ -72,6 +72,7 @@ export interface StartCrawlDto {
   respectRobots?: boolean;
   ignoreUtm?: boolean;
   userAgent?: string;
+  sitemapUrl?: string;
 }
 
 export interface CrawlAnalysis {

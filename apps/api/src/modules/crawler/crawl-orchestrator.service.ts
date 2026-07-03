@@ -70,6 +70,7 @@ export class CrawlOrchestratorService implements OnModuleDestroy {
     respectRobots: boolean;
     ignoreUtm: boolean;
     userAgent?: string;
+    sitemapUrl?: string;
   }): Promise<CrawlJobDocument> {
     const job = await this.jobs.create({
       clientId: new Types.ObjectId(params.clientId),
@@ -82,6 +83,7 @@ export class CrawlOrchestratorService implements OnModuleDestroy {
         respectRobots: params.respectRobots,
         ignoreUtm: params.ignoreUtm,
         userAgent: params.userAgent,
+        sitemapUrl: params.sitemapUrl,
       },
     });
     // Fire-and-forget the actual crawl. Errors inside runCrawl update
@@ -240,7 +242,13 @@ export class CrawlOrchestratorService implements OnModuleDestroy {
     await this.jobs
       .updateOne(
         { _id: jobOid },
-        { $set: { currentUrl: 'Discovering sitemap.xml…' } },
+        {
+          $set: {
+            currentUrl: job.settings.sitemapUrl
+              ? `Loading sitemap from ${job.settings.sitemapUrl}…`
+              : 'Discovering sitemap.xml…',
+          },
+        },
       )
       .exec()
       .catch(() => null);
@@ -248,6 +256,7 @@ export class CrawlOrchestratorService implements OnModuleDestroy {
       const sitemapUrls = await this.sitemap.discover(
         job.rootUrl,
         job.settings.userAgent,
+        job.settings.sitemapUrl,
       );
       for (const url of sitemapUrls) {
         const norm = this.urls.normalize(url, {
