@@ -239,7 +239,7 @@ interface PublicPayload {
             <!-- Title block -->
             <div>
               <div class="text-[10px] font-bold uppercase tracking-[0.3em] text-brand-300 mb-3">
-                Bi-Weekly SEO Report
+                SEO Report
               </div>
               <h1 class="text-5xl md:text-6xl font-black tracking-tight leading-tight">{{ d.client.name }}</h1>
               <div class="flex items-center gap-3 mt-3 text-sm">

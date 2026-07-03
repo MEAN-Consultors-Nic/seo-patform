@@ -120,7 +120,7 @@ export class WordService {
         heading: HeadingLevel.TITLE,
         children: [
           new TextRun({
-            text: `Bi-Weekly SEO Report`,
+            text: `SEO Report`,
             color: INK_900,
             bold: true,
           }),
@@ -171,7 +171,7 @@ export class WordService {
     const doc = new Document({
       creator: 'Media Spearhead',
       title: `SEO Report ${client.name} ${cycle.label}`,
-      subject: `Bi-Weekly SEO Report — ${cycle.label}`,
+      subject: `SEO Report — ${cycle.label}`,
       numbering: {
         config: [
           {

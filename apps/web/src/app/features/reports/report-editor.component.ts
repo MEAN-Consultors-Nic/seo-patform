@@ -37,7 +37,7 @@ interface KpiGroup {
           <div class="flex items-center gap-3 min-w-0">
             <div class="min-w-0">
               <h1 class="text-lg sm:text-xl font-bold text-ink-900 leading-tight truncate">
-                Bi-weekly report
+                SEO Report
                 @if (selectedClientName(); as name) {
                   <span class="text-brand-500">· {{ name }}</span>
                 }
@@ -750,7 +750,7 @@ interface KpiGroup {
         <div class="card text-center py-16">
           <div class="text-4xl mb-3">📄</div>
           <h2 class="text-lg font-semibold text-ink-900">Select a client and cycle</h2>
-          <p class="text-sm text-ink-500 mt-1">to start editing the bi-weekly report</p>
+          <p class="text-sm text-ink-500 mt-1">to start editing the report</p>
         </div>
       }
     </div>

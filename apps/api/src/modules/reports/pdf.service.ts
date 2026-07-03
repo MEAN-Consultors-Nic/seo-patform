@@ -164,7 +164,7 @@ export class PdfService {
       info: {
         title: `SEO Report ${client.name} ${cycle.label}`,
         author: 'Media Spearhead',
-        subject: `Bi-Weekly SEO Report — ${cycle.label}`,
+        subject: `SEO Report — ${cycle.label}`,
       },
       styles: this.styles(),
       header: (currentPage: number) =>
@@ -471,7 +471,7 @@ export class PdfService {
         {
           stack: [
             {
-              text: 'BI-WEEKLY SEO REPORT',
+              text: 'SEO REPORT',
               color: BRAND,
               fontSize: 10,
               bold: true,
