@@ -7,6 +7,7 @@ import { UrlNormalizerService } from './url-normalizer.service';
 import { PageFetcherService } from './page-fetcher.service';
 import { HtmlAnalyzerService } from './html-analyzer.service';
 import { CrawlOrchestratorService } from './crawl-orchestrator.service';
+import { CrawlAnalyzerService } from './crawl-analyzer.service';
 
 @Module({
   imports: [
@@ -22,7 +23,8 @@ import { CrawlOrchestratorService } from './crawl-orchestrator.service';
     PageFetcherService,
     HtmlAnalyzerService,
     CrawlOrchestratorService,
+    CrawlAnalyzerService,
   ],
-  exports: [CrawlOrchestratorService],
+  exports: [CrawlOrchestratorService, CrawlAnalyzerService],
 })
 export class CrawlerModule {}
