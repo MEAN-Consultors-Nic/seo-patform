@@ -9,6 +9,7 @@ import { PageFetcherService } from './page-fetcher.service';
 import { HtmlAnalyzerService } from './html-analyzer.service';
 import { UrlNormalizerService } from './url-normalizer.service';
 import { CrawlAnalyzerService } from './crawl-analyzer.service';
+import { SitemapLoaderService } from './sitemap-loader.service';
 
 interface QueueEntry {
   url: string;
@@ -52,6 +53,7 @@ export class CrawlOrchestratorService implements OnModuleDestroy {
     private readonly analyzer: HtmlAnalyzerService,
     private readonly urls: UrlNormalizerService,
     private readonly crawlAnalyzer: CrawlAnalyzerService,
+    private readonly sitemap: SitemapLoaderService,
   ) {}
 
   /**
@@ -230,6 +232,34 @@ export class CrawlOrchestratorService implements OnModuleDestroy {
       depth: 0,
       parentHash: null,
     });
+
+    // Sitemap-based discovery: works around JS-only SPAs whose empty
+    // app-shell HTML has no <a> tags cheerio can find. We try
+    // /sitemap.xml, /sitemap_index.xml, and anything the site's
+    // robots.txt points to. Discovered URLs are seeded at depth 1 —
+    // HTML link discovery then continues from each of them.
+    try {
+      const sitemapUrls = await this.sitemap.discover(
+        job.rootUrl,
+        job.settings.userAgent,
+      );
+      for (const url of sitemapUrls) {
+        const norm = this.urls.normalize(url, {
+          ignoreUtm: job.settings.ignoreUtm,
+        });
+        if (!norm) continue;
+        if (!this.urls.isSameOrigin(norm, rootNorm)) continue;
+        enqueue({
+          url: norm,
+          urlHash: this.urls.hash(norm),
+          depth: 1,
+          parentHash: this.urls.hash(rootNorm),
+        });
+      }
+    } catch {
+      // Sitemap discovery is best-effort — if it fails the HTML link
+      // discovery path continues as normal.
+    }
 
     await queue.onIdle();
 

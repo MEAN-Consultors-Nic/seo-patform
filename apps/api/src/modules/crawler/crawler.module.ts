@@ -8,6 +8,7 @@ import { PageFetcherService } from './page-fetcher.service';
 import { HtmlAnalyzerService } from './html-analyzer.service';
 import { CrawlOrchestratorService } from './crawl-orchestrator.service';
 import { CrawlAnalyzerService } from './crawl-analyzer.service';
+import { SitemapLoaderService } from './sitemap-loader.service';
 import { CrawlerService } from './crawler.service';
 import { CrawlerController } from './crawler.controller';
 
@@ -26,6 +27,7 @@ import { CrawlerController } from './crawler.controller';
     HtmlAnalyzerService,
     CrawlOrchestratorService,
     CrawlAnalyzerService,
+    SitemapLoaderService,
     CrawlerService,
   ],
   exports: [CrawlOrchestratorService, CrawlAnalyzerService, CrawlerService],
