@@ -158,14 +158,31 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
       </div>
 
       <!-- Toolbar -->
-      <div class="card flex items-center justify-end gap-3">
-        <div class="relative w-full md:w-96">
+      <div class="card flex flex-wrap items-center justify-end gap-3">
+        <div class="relative w-full md:flex-1 md:max-w-md">
           <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400 text-sm">⌕</span>
           <input
             class="input pl-7"
             placeholder="Search title or notes…"
             [ngModel]="searchQuery()"
             (ngModelChange)="searchQuery.set($event)" />
+        </div>
+        <!-- View mode toggle. Kanban is the compact default;
+             List keeps title + full description visible for every
+             task at once when you need to scan long descriptions. -->
+        <div class="inline-flex rounded-md border border-ink-200 p-0.5 bg-white">
+          <button type="button"
+                  (click)="setViewMode('kanban')"
+                  [class]="'px-3 py-1 text-xs font-semibold rounded transition ' +
+                    (viewMode() === 'kanban' ? 'bg-ink-900 text-white' : 'text-ink-600 hover:text-ink-900')">
+            ▦ Kanban
+          </button>
+          <button type="button"
+                  (click)="setViewMode('list')"
+                  [class]="'px-3 py-1 text-xs font-semibold rounded transition ' +
+                    (viewMode() === 'list' ? 'bg-ink-900 text-white' : 'text-ink-600 hover:text-ink-900')">
+            ☰ List
+          </button>
         </div>
       </div>
 
@@ -175,6 +192,94 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
           No tasks in {{ isCurrentCycle() ? 'this cycle' : 'cycle ' + (cycle()?.label || '') }} yet. Add one above
           @if (isCurrentCycle()) { or use "Generate cycle tasks" in the Dashboard }
           — or switch to a different cycle using the selector above.
+        </div>
+      } @else if (viewMode() === 'list') {
+        <!-- List view: one full-width row per task with title +
+             description always visible. Grouped by status so scanning
+             remains predictable across the same 4 buckets kanban uses. -->
+        <div class="space-y-5">
+          @for (col of kanbanColumns; track col.status) {
+            @if (kanbanTasksByStatus(col.status).length > 0) {
+              <section>
+                <header class="flex items-center gap-2 mb-2">
+                  <span class="w-2 h-2 rounded-full" [ngClass]="col.dot"></span>
+                  <h3 class="text-sm font-bold text-ink-900">{{ col.label }}</h3>
+                  <span class="text-xs font-semibold text-ink-500 bg-ink-100 rounded-full px-2 py-0.5">
+                    {{ kanbanTasksByStatus(col.status).length }}
+                  </span>
+                </header>
+                <div class="space-y-2">
+                  @for (t of kanbanTasksByStatus(col.status); track t._id) {
+                    <article class="relative rounded-lg border border-ink-200 shadow-card hover:shadow-elevated transition-all bg-white overflow-hidden">
+                      <div class="absolute top-0 left-0 bottom-0 w-1" [ngClass]="statusOf(t).bar"></div>
+                      <div class="pl-5 pr-4 py-3 flex flex-col gap-2">
+                        <div class="flex items-start justify-between gap-3">
+                          <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+                            <span [class]="'inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded ' + statusOf(t).pill">
+                              <span class="w-1.5 h-1.5 rounded-full" [ngClass]="statusOf(t).dot"></span>
+                              {{ statusOf(t).label }}
+                            </span>
+                            <span class="badge-neutral text-[10px]">{{ t.category }}</span>
+                            <span [class]="'text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ' + priorityBadgeClass(t.priority)">
+                              {{ t.priority }}
+                            </span>
+                            @if (t.completedAt && t.status === 'completed') {
+                              <span class="text-[10px] text-ink-400">
+                                · Completed {{ t.completedAt | date: 'MMM d' }}
+                              </span>
+                            }
+                          </div>
+                          <ng-container *ngTemplateOutlet="taskMenu; context: { $implicit: t }"></ng-container>
+                        </div>
+
+                        <h4 class="text-sm font-bold text-ink-900 leading-snug"
+                            [class.line-through]="t.status === 'completed'"
+                            [class.text-ink-400]="t.status === 'completed'">
+                          {{ t.title }}
+                        </h4>
+
+                        @if (t.description) {
+                          <div class="text-xs text-ink-700 leading-relaxed">
+                            <div class="rich-content" [innerHTML]="sanitize(t.description)"></div>
+                          </div>
+                        } @else {
+                          <div class="text-[11px] text-ink-400 italic">
+                            No description
+                          </div>
+                        }
+
+                        <div class="flex items-center justify-between gap-4 pt-2 border-t border-ink-100 text-xs">
+                          <div class="flex items-center gap-3">
+                            <button type="button"
+                                    (click)="openDetailModal(t)"
+                                    class="text-xs font-semibold text-brand-500 hover:text-brand-600 inline-flex items-center gap-1">
+                              View details
+                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M3 1h6v6M9 1L3.5 6.5" stroke-linecap="round" stroke-linejoin="round" />
+                              </svg>
+                            </button>
+                          </div>
+                          <div class="flex items-center gap-4">
+                            <div>
+                              <span class="text-ink-400 uppercase tracking-wider text-[10px] font-semibold mr-1">Est.</span>
+                              <span class="font-semibold text-ink-900">{{ t.estimatedHours || 0 }}h</span>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                              <span class="text-ink-400 uppercase tracking-wider text-[10px] font-semibold">Actual</span>
+                              <input type="number" class="input input-sm w-20 text-right"
+                                     [ngModel]="t.actualHours" (ngModelChange)="updateHours(t, $event)"
+                                     step="0.25" min="0" />
+                              <span class="text-ink-500">h</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  }
+                </div>
+              </section>
+            }
+          }
         </div>
       } @else {
         <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 pb-2">
@@ -217,96 +322,7 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                       {{ t.priority }}
                     </span>
                   </div>
-                  <div class="relative flex-shrink-0">
-                    <button type="button"
-                            (click)="toggleMenu(t._id!, $event)"
-                            [class.bg-ink-100]="menuOpenId() === t._id"
-                            class="w-7 h-7 rounded-md flex items-center justify-center text-ink-500 hover:bg-ink-100 hover:text-ink-900 transition"
-                            aria-label="Task actions">
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                        <circle cx="8" cy="3" r="1.5" />
-                        <circle cx="8" cy="8" r="1.5" />
-                        <circle cx="8" cy="13" r="1.5" />
-                      </svg>
-                    </button>
-                    @if (menuOpenId() === t._id) {
-                      <div (click)="$event.stopPropagation()"
-                           class="absolute right-0 top-8 z-50 w-56 bg-white border border-ink-200 rounded-md shadow-elevated py-1 text-sm">
-                        <div class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-400">Change status</div>
-                        @for (opt of statusOptions; track opt.value) {
-                          <button type="button"
-                                  (click)="setStatus(t, opt.value)"
-                                  [disabled]="t.status === opt.value"
-                                  class="w-full text-left px-3 py-2 hover:bg-ink-50 disabled:opacity-50 disabled:cursor-not-allowed text-ink-700 inline-flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full" [ngClass]="opt.dot"></span>
-                            {{ opt.label }}
-                            @if (t.status === opt.value) {
-                              <span class="ml-auto text-ink-400 text-xs">current</span>
-                            }
-                          </button>
-                        }
-                        <div class="border-t border-ink-100 my-1"></div>
-                        <button type="button"
-                                (click)="openEditModal(t)"
-                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 inline-flex items-center gap-2">
-                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke-linejoin="round" />
-                            <path d="M10 4l2 2" />
-                          </svg>
-                          Edit task
-                        </button>
-                        <button type="button"
-                                (click)="duplicate(t)"
-                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 inline-flex items-center gap-2">
-                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <rect x="3" y="3" width="9" height="9" rx="1.5" />
-                            <path d="M5.5 5.5h7v7" stroke-linecap="round" />
-                          </svg>
-                          Duplicate task
-                        </button>
-                        <button type="button"
-                                (click)="openMoveTaskModal(t)"
-                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 inline-flex items-center gap-2">
-                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <path d="M2 8h10M9 5l3 3-3 3" stroke-linecap="round" stroke-linejoin="round" />
-                          </svg>
-                          Move to another client…
-                        </button>
-                        @if (t.status === 'completed') {
-                          <button type="button"
-                                  (click)="sendToDoc(t)"
-                                  [disabled]="sendingToDocId() === t._id"
-                                  class="w-full text-left px-3 py-2 hover:bg-ink-50 disabled:opacity-50 text-ink-700 inline-flex items-center gap-2">
-                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-                              <path d="M3 2h7l3 3v9H3V2z" stroke-linejoin="round" />
-                              <path d="M10 2v3h3M6 8h4M6 11h4" stroke-linecap="round" />
-                            </svg>
-                            {{ sendingToDocId() === t._id ? 'Sending…' : 'Send to Doc' }}
-                          </button>
-                        }
-                        @if (!isCurrentCycle() && (t.status === 'pending' || t.status === 'in_progress')) {
-                          <button type="button"
-                                  (click)="moveToCurrentCycle(t)"
-                                  [disabled]="movingToCycleId() === t._id"
-                                  class="w-full text-left px-3 py-2 hover:bg-ink-50 disabled:opacity-50 text-ink-700 inline-flex items-center gap-2">
-                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-                              <path d="M8 2v12M4 6l4-4 4 4" stroke-linecap="round" stroke-linejoin="round" />
-                            </svg>
-                            {{ movingToCycleId() === t._id ? 'Moving…' : 'Move to current cycle' }}
-                          </button>
-                        }
-                        <div class="border-t border-ink-100 my-1"></div>
-                        <button type="button"
-                                (click)="remove(t)"
-                                class="w-full text-left px-3 py-2 hover:bg-danger-100 text-danger-500 inline-flex items-center gap-2">
-                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <path d="M3 4.5h10M6.5 7v5M9.5 7v5M5 4.5l.5-2h5l.5 2M4 4.5l.5 9h7l.5-9" stroke-linecap="round" stroke-linejoin="round" />
-                          </svg>
-                          Delete task
-                        </button>
-                      </div>
-                    }
-                  </div>
+                  <ng-container *ngTemplateOutlet="taskMenu; context: { $implicit: t }"></ng-container>
                 </div>
 
                 <!-- Title -->
@@ -788,6 +804,102 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
         </div>
       </div>
     }
+
+    <!-- Shared task-actions menu. Rendered from both kanban cards and
+         list rows via ngTemplateOutlet so both views expose the same
+         status transitions, edit, duplicate, move, doc, delete flow. -->
+    <ng-template #taskMenu let-t>
+      <div class="relative flex-shrink-0">
+        <button type="button"
+                (click)="toggleMenu(t._id!, $event)"
+                [class.bg-ink-100]="menuOpenId() === t._id"
+                class="w-7 h-7 rounded-md flex items-center justify-center text-ink-500 hover:bg-ink-100 hover:text-ink-900 transition"
+                aria-label="Task actions">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <circle cx="8" cy="3" r="1.5" />
+            <circle cx="8" cy="8" r="1.5" />
+            <circle cx="8" cy="13" r="1.5" />
+          </svg>
+        </button>
+        @if (menuOpenId() === t._id) {
+          <div (click)="$event.stopPropagation()"
+               class="absolute right-0 top-8 z-50 w-56 bg-white border border-ink-200 rounded-md shadow-elevated py-1 text-sm">
+            <div class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-400">Change status</div>
+            @for (opt of statusOptions; track opt.value) {
+              <button type="button"
+                      (click)="setStatus(t, opt.value)"
+                      [disabled]="t.status === opt.value"
+                      class="w-full text-left px-3 py-2 hover:bg-ink-50 disabled:opacity-50 disabled:cursor-not-allowed text-ink-700 inline-flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full" [ngClass]="opt.dot"></span>
+                {{ opt.label }}
+                @if (t.status === opt.value) {
+                  <span class="ml-auto text-ink-400 text-xs">current</span>
+                }
+              </button>
+            }
+            <div class="border-t border-ink-100 my-1"></div>
+            <button type="button"
+                    (click)="openEditModal(t)"
+                    class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 inline-flex items-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke-linejoin="round" />
+                <path d="M10 4l2 2" />
+              </svg>
+              Edit task
+            </button>
+            <button type="button"
+                    (click)="duplicate(t)"
+                    class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 inline-flex items-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="3" y="3" width="9" height="9" rx="1.5" />
+                <path d="M5.5 5.5h7v7" stroke-linecap="round" />
+              </svg>
+              Duplicate task
+            </button>
+            <button type="button"
+                    (click)="openMoveTaskModal(t)"
+                    class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 inline-flex items-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M2 8h10M9 5l3 3-3 3" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              Move to another client…
+            </button>
+            @if (t.status === 'completed') {
+              <button type="button"
+                      (click)="sendToDoc(t)"
+                      [disabled]="sendingToDocId() === t._id"
+                      class="w-full text-left px-3 py-2 hover:bg-ink-50 disabled:opacity-50 text-ink-700 inline-flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M3 2h7l3 3v9H3V2z" stroke-linejoin="round" />
+                  <path d="M10 2v3h3M6 8h4M6 11h4" stroke-linecap="round" />
+                </svg>
+                {{ sendingToDocId() === t._id ? 'Sending…' : 'Send to Doc' }}
+              </button>
+            }
+            @if (!isCurrentCycle() && (t.status === 'pending' || t.status === 'in_progress')) {
+              <button type="button"
+                      (click)="moveToCurrentCycle(t)"
+                      [disabled]="movingToCycleId() === t._id"
+                      class="w-full text-left px-3 py-2 hover:bg-ink-50 disabled:opacity-50 text-ink-700 inline-flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M8 2v12M4 6l4-4 4 4" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                {{ movingToCycleId() === t._id ? 'Moving…' : 'Move to current cycle' }}
+              </button>
+            }
+            <div class="border-t border-ink-100 my-1"></div>
+            <button type="button"
+                    (click)="remove(t)"
+                    class="w-full text-left px-3 py-2 hover:bg-danger-100 text-danger-500 inline-flex items-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M3 4.5h10M6.5 7v5M9.5 7v5M5 4.5l.5-2h5l.5 2M4 4.5l.5 9h7l.5-9" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              Delete task
+            </button>
+          </div>
+        }
+      </div>
+    </ng-template>
   `,
 })
 export class ClientTasksTab implements OnChanges {
@@ -808,6 +920,30 @@ export class ClientTasksTab implements OnChanges {
   tasks = signal<Task[]>([]);
   statusFilter = signal<StatusFilter>('all');
   searchQuery = signal('');
+
+  /**
+   * Kanban vs list view. Persisted in localStorage so the user's
+   * preference sticks across sessions. List mode keeps title +
+   * full description visible on every row; kanban keeps the tiles
+   * compact and groups by status column.
+   */
+  viewMode = signal<'kanban' | 'list'>(this.readViewMode());
+  private readViewMode(): 'kanban' | 'list' {
+    try {
+      const v = localStorage.getItem('tasks-view-mode');
+      return v === 'list' ? 'list' : 'kanban';
+    } catch {
+      return 'kanban';
+    }
+  }
+  setViewMode(mode: 'kanban' | 'list') {
+    this.viewMode.set(mode);
+    try {
+      localStorage.setItem('tasks-view-mode', mode);
+    } catch {
+      // Non-fatal — private mode blocks localStorage.
+    }
+  }
   menuOpenId = signal<string | null>(null);
   editingTask = signal<Task | null>(null);
   creatingTask = signal(false);
