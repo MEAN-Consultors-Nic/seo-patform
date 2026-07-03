@@ -36,7 +36,7 @@ interface QueueEntry {
 @Injectable()
 export class CrawlOrchestratorService implements OnModuleDestroy {
   private readonly logger = new Logger(CrawlOrchestratorService.name);
-  private static readonly STATUS_UPDATE_EVERY = 5;
+  private static readonly STATUS_UPDATE_EVERY = 2;
 
   /** Live job runners keyed by jobId so we can cancel from outside. */
   private readonly running = new Map<
@@ -234,10 +234,16 @@ export class CrawlOrchestratorService implements OnModuleDestroy {
     });
 
     // Sitemap-based discovery: works around JS-only SPAs whose empty
-    // app-shell HTML has no <a> tags cheerio can find. We try
-    // /sitemap.xml, /sitemap_index.xml, and anything the site's
-    // robots.txt points to. Discovered URLs are seeded at depth 1 —
-    // HTML link discovery then continues from each of them.
+    // app-shell HTML has no <a> tags cheerio can find. Hard-capped
+    // at 20 seconds total wall-clock (see SitemapLoaderService) so a
+    // slow / hanging sitemap never freezes the crawl.
+    await this.jobs
+      .updateOne(
+        { _id: jobOid },
+        { $set: { currentUrl: 'Discovering sitemap.xml…' } },
+      )
+      .exec()
+      .catch(() => null);
     try {
       const sitemapUrls = await this.sitemap.discover(
         job.rootUrl,
@@ -256,6 +262,20 @@ export class CrawlOrchestratorService implements OnModuleDestroy {
           parentHash: this.urls.hash(rootNorm),
         });
       }
+      await this.jobs
+        .updateOne(
+          { _id: jobOid },
+          {
+            $set: {
+              currentUrl:
+                sitemapUrls.length > 0
+                  ? `Sitemap: ${sitemapUrls.length} URLs seeded`
+                  : 'No sitemap found · using HTML link discovery',
+            },
+          },
+        )
+        .exec()
+        .catch(() => null);
     } catch {
       // Sitemap discovery is best-effort — if it fails the HTML link
       // discovery path continues as normal.

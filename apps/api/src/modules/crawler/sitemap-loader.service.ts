@@ -20,6 +20,15 @@ export class SitemapLoaderService {
   private readonly logger = new Logger(SitemapLoaderService.name);
   private static readonly MAX_SITEMAPS_TO_FOLLOW = 20;
   private static readonly MAX_URLS_FROM_SITEMAPS = 2000;
+  /**
+   * Hard wall-clock limit for the entire discover() pass. Without this
+   * cap, a chain of slow/hanging sitemap responses (20 × 10s each)
+   * would freeze the crawl for 3+ minutes with no page progress —
+   * user experience is a stalled '1 / 500 pages' bar. Discovery
+   * returns whatever it found so far when this budget is hit.
+   */
+  private static readonly TOTAL_DISCOVERY_BUDGET_MS = 20_000;
+  private static readonly PER_FETCH_TIMEOUT_MS = 5_000;
 
   constructor(private readonly fetcher: PageFetcherService) {}
 
@@ -33,32 +42,26 @@ export class SitemapLoaderService {
     rootUrl: string,
     userAgent?: string,
   ): Promise<string[]> {
+    const deadline =
+      Date.now() + SitemapLoaderService.TOTAL_DISCOVERY_BUDGET_MS;
+    const timeLeft = () => Math.max(0, deadline - Date.now());
     const candidateSitemaps: string[] = [];
 
     // 1) Check robots.txt for Sitemap: directives.
     try {
       const robotsUrl = new URL('/robots.txt', rootUrl).toString();
-      const robotsRes = await this.fetcher.fetch(robotsUrl, userAgent);
-      if (
-        robotsRes.html ||
-        (robotsRes.statusCode >= 200 && robotsRes.statusCode < 300)
-      ) {
-        // fetcher only returns .html for text/html content-type; robots.txt
-        // usually comes back as text/plain so html is null. Fall back to
-        // the raw body path by re-fetching without the html filter.
-        const raw = await this.fetchRaw(robotsUrl, userAgent);
-        if (raw) {
-          const matches = raw.match(/^\s*sitemap:\s*(\S+)/gim);
-          if (matches) {
-            for (const line of matches) {
-              const url = line.replace(/^\s*sitemap:\s*/i, '').trim();
-              if (url) candidateSitemaps.push(url);
-            }
+      const raw = await this.fetchRaw(robotsUrl, userAgent, timeLeft());
+      if (raw) {
+        const matches = raw.match(/^\s*sitemap:\s*(\S+)/gim);
+        if (matches) {
+          for (const line of matches) {
+            const url = line.replace(/^\s*sitemap:\s*/i, '').trim();
+            if (url) candidateSitemaps.push(url);
           }
         }
       }
     } catch {
-      // Robots.txt is optional — no worries if it 404s.
+      // Robots.txt is optional — no worries if it 404s or times out.
     }
 
     // 2) Fall back to the conventional locations if robots.txt didn't
@@ -81,14 +84,15 @@ export class SitemapLoaderService {
 
     while (
       queue.length > 0 &&
-      visitedCount < SitemapLoaderService.MAX_SITEMAPS_TO_FOLLOW
+      visitedCount < SitemapLoaderService.MAX_SITEMAPS_TO_FOLLOW &&
+      timeLeft() > 0
     ) {
       const sitemapUrl = queue.shift()!;
       if (visited.has(sitemapUrl)) continue;
       visited.add(sitemapUrl);
       visitedCount++;
 
-      const raw = await this.fetchRaw(sitemapUrl, userAgent);
+      const raw = await this.fetchRaw(sitemapUrl, userAgent, timeLeft());
       if (!raw) continue;
       const parsed = this.parseSitemap(raw);
       // Sitemap index → follow each child sitemap (bounded).
@@ -115,9 +119,17 @@ export class SitemapLoaderService {
   private async fetchRaw(
     url: string,
     userAgent?: string,
+    remainingBudgetMs?: number,
   ): Promise<string | null> {
+    const perFetchTimeout = Math.min(
+      SitemapLoaderService.PER_FETCH_TIMEOUT_MS,
+      remainingBudgetMs ?? SitemapLoaderService.PER_FETCH_TIMEOUT_MS,
+    );
+    if (perFetchTimeout <= 0) return null;
     try {
       const { request } = await import('undici');
+      const controller = new AbortController();
+      const abortTimer = setTimeout(() => controller.abort(), perFetchTimeout);
       const res = await request(url, {
         method: 'GET',
         headers: {
@@ -127,10 +139,11 @@ export class SitemapLoaderService {
           accept: 'application/xml, text/xml, text/plain, */*',
           'accept-encoding': 'gzip, br, deflate',
         },
-        headersTimeout: 10_000,
-        bodyTimeout: 10_000,
+        headersTimeout: perFetchTimeout,
+        bodyTimeout: perFetchTimeout,
         maxRedirections: 5,
-      });
+        signal: controller.signal,
+      }).finally(() => clearTimeout(abortTimer));
       if (res.statusCode < 200 || res.statusCode >= 400) {
         res.body.destroy();
         return null;
