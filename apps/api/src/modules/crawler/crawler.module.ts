@@ -3,6 +3,9 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ClientsModule } from '../clients/clients.module';
 import { CrawlJob, CrawlJobSchema } from './crawl-job.schema';
 import { CrawlPage, CrawlPageSchema } from './crawl-page.schema';
+import { UrlNormalizerService } from './url-normalizer.service';
+import { PageFetcherService } from './page-fetcher.service';
+import { HtmlAnalyzerService } from './html-analyzer.service';
 
 @Module({
   imports: [
@@ -13,7 +16,7 @@ import { CrawlPage, CrawlPageSchema } from './crawl-page.schema';
     ClientsModule,
   ],
   controllers: [],
-  providers: [],
-  exports: [],
+  providers: [UrlNormalizerService, PageFetcherService, HtmlAnalyzerService],
+  exports: [UrlNormalizerService, PageFetcherService, HtmlAnalyzerService],
 })
 export class CrawlerModule {}
