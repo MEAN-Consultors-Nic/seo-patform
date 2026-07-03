@@ -725,7 +725,12 @@ interface PublicPayload {
               </div>
               <p class="text-ink-500 mb-5">
                 <strong class="text-ink-900">{{ completedTasks().length }}</strong>
-                SEO actions executed in this period, organized by category.
+                SEO {{ completedTasks().length === 1 ? 'action' : 'actions' }} worked on in this period, organized by category.
+                @if (inProgressCount() > 0) {
+                  <span class="text-warning-500 font-semibold">
+                    ({{ inProgressCount() }} still in progress)
+                  </span>
+                }
               </p>
 
               <div class="grid grid-cols-1 lg:grid-cols-2 gap-4"
@@ -739,6 +744,11 @@ interface PublicPayload {
                               [ngClass]="categoryBadgeClass(t.category)">
                           {{ t.category }}
                         </span>
+                        @if (t.status === 'in_progress') {
+                          <span class="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded bg-warning-100 text-warning-500">
+                            In progress
+                          </span>
+                        }
                       </div>
                       <h3 class="font-semibold text-ink-900 text-sm leading-snug">{{ t.title }}</h3>
                       @if (t.description) {
@@ -1744,14 +1754,33 @@ export class PublicReportComponent implements OnInit {
     return ranked.reduce((a, k) => a + (k.currentPosition || 0), 0) / ranked.length;
   }
 
+  /**
+   * Actions Taken covers both completed AND in-progress tasks — the
+   * latter still consumed effort within the reporting period, so they
+   * belong here (marked as 'In progress'), not in Next Period Plan.
+   * Completed tasks render first, then in-progress.
+   */
   completedTasks() {
-    return this.data()?.tasks.filter((t) => t.status === 'completed') || [];
+    const tasks = this.data()?.tasks || [];
+    const done = tasks.filter((t) => t.status === 'completed');
+    const inProgress = tasks.filter((t) => t.status === 'in_progress');
+    return [...done, ...inProgress];
   }
 
+  inProgressCount(): number {
+    return (this.data()?.tasks || []).filter((t) => t.status === 'in_progress')
+      .length;
+  }
+
+  /**
+   * Next Period Plan lists only tasks that haven't been started yet:
+   * pending + blocked. In-progress tasks are excluded here because
+   * they're already accounted for in Actions Taken above.
+   */
   plannedTasks() {
     const order: Record<string, number> = { high: 0, medium: 1, low: 2 };
     return (this.data()?.tasks || [])
-      .filter((t) => t.status !== 'completed')
+      .filter((t) => t.status === 'pending' || t.status === 'blocked')
       .sort((a, b) => (order[a.priority] || 9) - (order[b.priority] || 9));
   }
 

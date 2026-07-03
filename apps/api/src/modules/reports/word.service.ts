@@ -219,12 +219,17 @@ export class WordService {
         return body;
       }
       case 'actions-taken': {
-        const completed = ctx.tasks.filter((t) => t.status === 'completed');
+        // Completed + in-progress both count as period effort — the
+        // list marks in-progress ones inline so the reader can tell
+        // them apart from closed work.
+        const done = ctx.tasks.filter((t) => t.status === 'completed');
+        const inProgress = ctx.tasks.filter((t) => t.status === 'in_progress');
+        const actions = [...done, ...inProgress];
         const published = ctx.contentPublished ?? [];
-        if (!completed.length && !published.length) return [];
+        if (!actions.length && !published.length) return [];
         const body: (Paragraph | Table)[] = [];
-        if (completed.length) {
-          body.push(...this.tasksList(completed));
+        if (actions.length) {
+          body.push(...this.tasksList(actions));
         }
         if (published.length) {
           body.push(this.heading3('Content Published'));
@@ -501,19 +506,30 @@ export class WordService {
     if (!tasks.length) return [];
     const out: Paragraph[] = [];
     for (const t of tasks) {
+      const runs = [
+        new TextRun({
+          text: `[${t.category.toUpperCase()}] `,
+          color: BRAND,
+          bold: true,
+          size: 18,
+        }),
+        new TextRun({ text: t.title, color: INK_900, size: 22 }),
+      ];
+      if (t.status === 'in_progress') {
+        runs.push(
+          new TextRun({
+            text: '  · IN PROGRESS',
+            color: 'B45309',
+            bold: true,
+            size: 16,
+          }),
+        );
+      }
       out.push(
         new Paragraph({
           numbering: { reference: 'bullets', level: 0 },
           spacing: { after: 60 },
-          children: [
-            new TextRun({
-              text: `[${t.category.toUpperCase()}] `,
-              color: BRAND,
-              bold: true,
-              size: 18,
-            }),
-            new TextRun({ text: t.title, color: INK_900, size: 22 }),
-          ],
+          children: runs,
         }),
       );
       const desc = this.htmlToPlain(t.description);

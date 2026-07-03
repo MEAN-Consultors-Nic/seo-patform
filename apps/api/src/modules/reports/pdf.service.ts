@@ -1315,20 +1315,38 @@ export class PdfService {
 
   // --- Tasks -----------------------------------------------------------------
   private completedTasksTable(tasks: PdfContext['tasks']) {
-    const completed = tasks.filter((t) => t.status === 'completed');
-    if (!completed.length) {
+    // Actions Taken covers everything that consumed period effort:
+    // completed tasks AND in-progress tasks (they've been worked on
+    // during the period even though they didn't close). The in-progress
+    // ones get an inline 'IN PROGRESS' tag so the reader can tell the
+    // difference without hunting.
+    const done = tasks.filter((t) => t.status === 'completed');
+    const inProgress = tasks.filter((t) => t.status === 'in_progress');
+    const actions = [...done, ...inProgress];
+    if (!actions.length) {
       return {
-        text: 'No actions closed in this period.',
+        text: 'No actions worked on in this period.',
         style: 'meta',
         italics: true,
         margin: [0, 0, 0, 12],
       };
     }
 
+    const summaryParts: string[] = [];
+    if (done.length)
+      summaryParts.push(
+        `${done.length} completed`,
+      );
+    if (inProgress.length)
+      summaryParts.push(
+        `${inProgress.length} in progress`,
+      );
+    const summary = `${summaryParts.join(' · ')} in this period`;
+
     return {
       stack: [
         {
-          text: `${completed.length} SEO actions executed in the period`,
+          text: summary,
           style: 'h3',
           margin: [0, 0, 0, 8],
         },
@@ -1341,13 +1359,27 @@ export class PdfService {
                 { text: 'CATEGORY', style: 'tableHeader' },
                 { text: 'ACTION', style: 'tableHeader' },
               ],
-              ...completed.map((t) => {
+              ...actions.map((t) => {
                 const desc = this.htmlToText(t.description).trim();
+                const titleRow: unknown[] = [
+                  { text: t.title, style: 'tableCellBold' },
+                ];
+                if (t.status === 'in_progress') {
+                  titleRow.push({
+                    text: ' IN PROGRESS ',
+                    color: '#B45309',
+                    background: '#FEF3C7',
+                    fontSize: 7,
+                    bold: true,
+                    characterSpacing: 0.8,
+                    margin: [4, 0, 0, 0],
+                  });
+                }
                 return [
                   this.categoryBadge(t.category),
                   {
                     stack: [
-                      { text: t.title, style: 'tableCellBold' },
+                      { text: titleRow },
                       ...(desc
                         ? [
                             {
@@ -1381,7 +1413,11 @@ export class PdfService {
   }
 
   private upcomingTasksTable(tasks: PdfContext['tasks']) {
-    const planned = tasks.filter((t) => t.status !== 'completed');
+    // Only pending + blocked belong here — in-progress already
+    // consumed period effort and lives in Actions Taken above.
+    const planned = tasks.filter(
+      (t) => t.status === 'pending' || t.status === 'blocked',
+    );
     if (!planned.length) {
       return {
         text: 'No pending actions in the pipeline.',
