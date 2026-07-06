@@ -282,10 +282,16 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
           }
         </div>
       } @else {
+        <!-- Columns intentionally do NOT cap their height or scroll
+             internally. An inner overflow container (overflow-y-auto)
+             would clip the ⋮ menu's absolute-positioned dropdown when
+             the menu is longer than the space below the button, since
+             CSS overflow constraints trap absolute descendants. The
+             whole tab scrolls instead — matches Trello / GitHub
+             Projects and keeps the menu fully visible. -->
         <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 pb-2">
           @for (col of kanbanColumns; track col.status) {
-            <div class="rounded-lg bg-ink-50/60 border border-ink-100 p-2 flex flex-col min-w-0"
-                 [style.max-height.vh]="80">
+            <div class="rounded-lg bg-ink-50/60 border border-ink-100 p-2 flex flex-col min-w-0">
               <div class="flex items-center justify-between px-2 py-2 mb-2">
                 <div class="inline-flex items-center gap-2">
                   <span class="w-2 h-2 rounded-full" [ngClass]="col.dot"></span>
@@ -295,7 +301,7 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                   {{ kanbanTasksByStatus(col.status).length }}
                 </span>
               </div>
-              <div class="space-y-3 overflow-y-auto flex-1 pr-1">
+              <div class="space-y-3 flex-1">
                 @if (kanbanTasksByStatus(col.status).length === 0) {
                   <div class="text-center text-xs text-ink-400 italic py-10">
                     No tasks in this column.
@@ -641,6 +647,63 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
       </div>
     }
 
+    <!-- Move task to another cycle modal. Any cycle (past, current,
+         future) is a valid target — moving to a past cycle is useful
+         for reassigning work that was accidentally logged against the
+         wrong period; moving forward is useful for deferring work. -->
+    @if (movingCycleTask(); as mv) {
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+           (click)="dismissMoveCycleModal()">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6"
+             (click)="$event.stopPropagation()">
+          <div class="flex items-start justify-between mb-3">
+            <div>
+              <h2 class="text-lg font-bold text-ink-900">Move task to another cycle</h2>
+              <p class="text-xs text-ink-500 mt-0.5">
+                Moves <strong class="text-ink-900">{{ mv.title }}</strong> out of the current viewing cycle and into the destination. Time logged, attachments, subtasks, and comments all travel with the task.
+              </p>
+            </div>
+            <button type="button" (click)="dismissMoveCycleModal()"
+                    class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
+          </div>
+
+          <div>
+            <label class="label">Destination cycle</label>
+            <select class="input"
+                    [ngModel]="moveTargetCycleId()"
+                    (ngModelChange)="moveTargetCycleId.set($event)">
+              <option value="">— Pick a cycle —</option>
+              @for (c of cycleOptionsForMove(); track c._id) {
+                <option [value]="c._id">
+                  {{ c.label }} ({{ c.status }})
+                </option>
+              }
+            </select>
+            @if (cycleOptionsForMove().length === 0) {
+              <p class="text-[11px] text-ink-500 mt-1.5">No other cycles available.</p>
+            }
+          </div>
+
+          @if (moveCycleError()) {
+            <div class="text-xs text-danger-500 mt-2">{{ moveCycleError() }}</div>
+          }
+
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-ink-100">
+            <button class="btn-secondary text-xs sm:text-sm"
+                    (click)="dismissMoveCycleModal()"
+                    [disabled]="moveCycleSaving()">
+              Cancel
+            </button>
+            <button class="btn-primary text-xs sm:text-sm"
+                    (click)="confirmMoveCycle()"
+                    [disabled]="moveCycleSaving() || !moveTargetCycleId()">
+              {{ moveCycleSaving() ? 'Moving…' : 'Move task' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
     <!-- Detail task modal -->
     @if (detailTask(); as d) {
       <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4"
@@ -909,6 +972,15 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                 {{ movingToCycleId() === t._id ? 'Moving…' : 'Move to current cycle' }}
               </button>
             }
+            <button type="button"
+                    (click)="openMoveCycleModal(t)"
+                    class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 inline-flex items-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M2 8a6 6 0 0 1 12 0M14 8a6 6 0 0 1-12 0" />
+                <path d="M11 5v3h3M5 11V8H2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              Move to another cycle…
+            </button>
             <div class="border-t border-ink-100 my-1"></div>
             <button type="button"
                     (click)="remove(t)"
@@ -1008,6 +1080,20 @@ export class ClientTasksTab implements OnChanges {
   moveSaving = signal(false);
   moveError = signal<string | null>(null);
   private clientsSvc = inject(ClientsService);
+
+  // Move-to-another-cycle modal state. Cycle list is already loaded
+  // in this.cycles() (used by the top selector) so no extra fetch is
+  // needed when the modal opens.
+  movingCycleTask = signal<Task | null>(null);
+  moveTargetCycleId = signal<string>('');
+  moveCycleSaving = signal(false);
+  moveCycleError = signal<string | null>(null);
+
+  /** Cycles offered as move targets — every cycle EXCEPT the one currently being viewed. */
+  cycleOptionsForMove = computed(() => {
+    const currentViewId = this.cycle()?._id;
+    return this.cycles().filter((c) => c._id !== currentViewId);
+  });
   editForm: {
     title: string;
     description?: string;
@@ -1418,6 +1504,51 @@ export class ClientTasksTab implements OnChanges {
         const m = err?.error?.message;
         alert(
           `Could not move the task: ${Array.isArray(m) ? m.join(', ') : m || 'Unknown error'}`,
+        );
+      },
+    });
+  }
+
+  /**
+   * Opens the 'Move to another cycle' modal. Any cycle in the client's
+   * timeline is a valid target — the dropdown reuses the cycles list
+   * already loaded for the top-level selector.
+   */
+  openMoveCycleModal(t: Task) {
+    this.menuOpenId.set(null);
+    if (!t._id) return;
+    this.moveTargetCycleId.set('');
+    this.moveCycleError.set(null);
+    this.movingCycleTask.set(t);
+  }
+
+  dismissMoveCycleModal() {
+    if (this.moveCycleSaving()) return;
+    this.movingCycleTask.set(null);
+    this.moveTargetCycleId.set('');
+    this.moveCycleError.set(null);
+  }
+
+  confirmMoveCycle() {
+    const t = this.movingCycleTask();
+    const targetId = this.moveTargetCycleId();
+    if (!t?._id || !targetId) return;
+    this.moveCycleSaving.set(true);
+    this.moveCycleError.set(null);
+    this.tasksSvc.update(t._id, { cycleId: targetId }).subscribe({
+      next: () => {
+        this.moveCycleSaving.set(false);
+        this.movingCycleTask.set(null);
+        this.moveTargetCycleId.set('');
+        // The moved task is no longer scoped to the viewing cycle,
+        // so filter it out of the local list immediately.
+        this.tasks.update((list) => list.filter((x) => x._id !== t._id));
+      },
+      error: (err) => {
+        this.moveCycleSaving.set(false);
+        const m = err?.error?.message;
+        this.moveCycleError.set(
+          Array.isArray(m) ? m.join(', ') : m || 'Could not move the task.',
         );
       },
     });
