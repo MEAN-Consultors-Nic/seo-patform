@@ -186,7 +186,14 @@ export class TasksService {
           `Cannot mark task as completed — ${pending} subtask${pending === 1 ? '' : 's'} still pending.`,
         );
       }
-      patch.completedAt = new Date();
+      // Respect an explicit completedAt from the DTO (used by the
+      // 'change completed date' modal) — otherwise stamp 'now'.
+      patch.completedAt = dto.completedAt ? new Date(dto.completedAt) : new Date();
+    } else if (dto.completedAt !== undefined) {
+      // Standalone edit: user changing the completedAt of an already-
+      // completed task from the 'Change completed date' modal without
+      // a status transition. String → Date conversion.
+      patch.completedAt = new Date(dto.completedAt);
     }
     const updated = await this.model
       .findByIdAndUpdate(id, patch, { new: true })

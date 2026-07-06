@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsMongoId,
   IsNumber,
@@ -45,6 +46,13 @@ export class CreateTaskDto {
   priority?: 'high' | 'medium' | 'low';
 
   @IsOptional() @IsString() notes?: string;
+
+  /**
+   * Explicit completed-at date. Normally set automatically by the
+   * service when status flips to 'completed', but exposed here so
+   * the UI can backdate a task (or fix an accidentally-wrong date).
+   */
+  @IsOptional() @IsDateString() completedAt?: string;
 
   @IsOptional()
   @IsArray()

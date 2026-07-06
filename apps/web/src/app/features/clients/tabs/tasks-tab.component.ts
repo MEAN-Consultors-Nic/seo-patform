@@ -704,6 +704,57 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
       </div>
     }
 
+    <!-- Change completed date modal. Only surfaced for already-
+         completed tasks. Useful for backdating a task that was
+         completed on Friday but only marked Monday, or fixing
+         accidental future-dates. Also re-triggers the Google Doc
+         sync so the task appears under the correct month tab. -->
+    @if (completedDateTask(); as cdt) {
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+           (click)="dismissCompletedDateModal()">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6"
+             (click)="$event.stopPropagation()">
+          <div class="flex items-start justify-between mb-3">
+            <div>
+              <h2 class="text-lg font-bold text-ink-900">Change completed date</h2>
+              <p class="text-xs text-ink-500 mt-0.5">
+                Sets when <strong class="text-ink-900">{{ cdt.title }}</strong> is considered completed. This affects which report period it counts against and which monthly tab it lands on in the Google Doc.
+              </p>
+            </div>
+            <button type="button" (click)="dismissCompletedDateModal()"
+                    class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
+          </div>
+
+          <div>
+            <label class="label">Completed at</label>
+            <input type="date" class="input"
+                   [ngModel]="completedDateInput()"
+                   (ngModelChange)="completedDateInput.set($event)" />
+            <p class="text-[11px] text-ink-500 mt-1.5">
+              Current: {{ cdt.completedAt ? (cdt.completedAt | date: 'mediumDate') : '—' }}
+            </p>
+          </div>
+
+          @if (completedDateError()) {
+            <div class="text-xs text-danger-500 mt-2">{{ completedDateError() }}</div>
+          }
+
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-ink-100">
+            <button class="btn-secondary text-xs sm:text-sm"
+                    (click)="dismissCompletedDateModal()"
+                    [disabled]="completedDateSaving()">
+              Cancel
+            </button>
+            <button class="btn-primary text-xs sm:text-sm"
+                    (click)="confirmCompletedDate()"
+                    [disabled]="completedDateSaving() || !completedDateInput()">
+              {{ completedDateSaving() ? 'Saving…' : 'Save date' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
     <!-- Detail task modal -->
     @if (detailTask(); as d) {
       <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4"
@@ -960,6 +1011,15 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                 </svg>
                 {{ sendingToDocId() === t._id ? 'Sending…' : 'Send to Doc' }}
               </button>
+              <button type="button"
+                      (click)="openCompletedDateModal(t)"
+                      class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 inline-flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <rect x="2" y="3" width="12" height="11" rx="1" />
+                  <path d="M2 6h12M5 1v3M11 1v3" stroke-linecap="round" />
+                </svg>
+                Change completed date…
+              </button>
             }
             @if (!isCurrentCycle() && (t.status === 'pending' || t.status === 'in_progress')) {
               <button type="button"
@@ -1088,6 +1148,12 @@ export class ClientTasksTab implements OnChanges {
   moveTargetCycleId = signal<string>('');
   moveCycleSaving = signal(false);
   moveCycleError = signal<string | null>(null);
+
+  // Change-completed-date modal state.
+  completedDateTask = signal<Task | null>(null);
+  completedDateInput = signal<string>('');
+  completedDateSaving = signal(false);
+  completedDateError = signal<string | null>(null);
 
   /** Cycles offered as move targets — every cycle EXCEPT the one currently being viewed. */
   cycleOptionsForMove = computed(() => {
@@ -1549,6 +1615,63 @@ export class ClientTasksTab implements OnChanges {
         const m = err?.error?.message;
         this.moveCycleError.set(
           Array.isArray(m) ? m.join(', ') : m || 'Could not move the task.',
+        );
+      },
+    });
+  }
+
+  /**
+   * Opens the 'Change completed date' modal for a completed task.
+   * Seeds the input with the current completedAt so the user can
+   * see + edit the existing value rather than starting blank.
+   */
+  openCompletedDateModal(t: Task) {
+    this.menuOpenId.set(null);
+    if (!t._id || t.status !== 'completed') return;
+    // <input type="date"> needs a YYYY-MM-DD string. Derive from the
+    // stored ISO Date. Falls back to today when the field is empty.
+    const iso = t.completedAt
+      ? new Date(t.completedAt).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
+    this.completedDateInput.set(iso);
+    this.completedDateError.set(null);
+    this.completedDateTask.set(t);
+  }
+
+  dismissCompletedDateModal() {
+    if (this.completedDateSaving()) return;
+    this.completedDateTask.set(null);
+    this.completedDateInput.set('');
+    this.completedDateError.set(null);
+  }
+
+  confirmCompletedDate() {
+    const t = this.completedDateTask();
+    const iso = this.completedDateInput();
+    if (!t?._id || !iso) return;
+    this.completedDateSaving.set(true);
+    this.completedDateError.set(null);
+    // Send as full ISO string so the backend receives a valid
+    // DateString. Time defaults to midday UTC to avoid timezone-
+    // edge-case flips into the neighbouring day for the user.
+    // Backend accepts an IsDateString via IsOptional() on the DTO —
+    // Partial<Task> is typed as Date but JSON.stringify on a Date
+    // yields the same ISO 8601 string, so passing the pre-serialized
+    // string is semantically identical to passing a Date object.
+    const payload = new Date(`${iso}T12:00:00.000Z`);
+    this.tasksSvc.update(t._id, { completedAt: payload }).subscribe({
+      next: (updated) => {
+        this.completedDateSaving.set(false);
+        this.completedDateTask.set(null);
+        this.completedDateInput.set('');
+        const list = this.tasks().map((x) => (x._id === t._id ? updated : x));
+        this.tasks.set(list);
+      },
+      error: (err) => {
+        this.completedDateSaving.set(false);
+        const m = err?.error?.message;
+        this.completedDateError.set(
+          Array.isArray(m) ? m.join(', ') : m || 'Could not update the date.',
         );
       },
     });
