@@ -36,6 +36,9 @@ import { AppSettingsService } from '../../core/app-settings.service';
           <a routerLink="/settings/packages" routerLinkActive="tab-active" class="tab">
             Packages
           </a>
+          <a routerLink="/settings/onboarding" routerLinkActive="tab-active" class="tab">
+            Onboarding
+          </a>
           <a routerLink="/settings/supervisor" routerLinkActive="tab-active" class="tab">
             Supervisor
           </a>

@@ -30,6 +30,9 @@ import { GoogleIntegrationsService } from '../../core/google-integrations.servic
           <a routerLink="/settings/packages" routerLinkActive="tab-active" class="tab">
             Packages
           </a>
+          <a routerLink="/settings/onboarding" routerLinkActive="tab-active" class="tab">
+            Onboarding
+          </a>
           <a routerLink="/settings/supervisor" routerLinkActive="tab-active" class="tab">
             Supervisor
           </a>

@@ -80,6 +80,13 @@ export const appRoutes: Route[] = [
           ),
       },
       {
+        path: 'settings/onboarding',
+        loadComponent: () =>
+          import('./features/settings/onboarding-settings.component').then(
+            (m) => m.OnboardingSettingsComponent,
+          ),
+      },
+      {
         path: 'settings/supervisor',
         canActivate: [roleGuard('root', 'seo-manager')],
         loadComponent: () =>
