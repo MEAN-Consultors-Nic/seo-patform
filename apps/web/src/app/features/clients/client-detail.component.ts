@@ -23,6 +23,7 @@ import { ClientAccessTab } from './tabs/access-tab.component';
 import { ClientEcommerceTab } from './tabs/ecommerce-tab.component';
 import { ClientShopifyTab } from './tabs/shopify-tab.component';
 import { ClientWordpressTab } from './tabs/wordpress-tab.component';
+import { ClientOnboardingTabComponent } from './tabs/onboarding-tab.component';
 import { DomainInfoButtonComponent } from './domain-info-button.component';
 import { SchemaModelerButtonComponent } from './schema-modeler-button.component';
 
@@ -30,6 +31,7 @@ type TabKey =
   | 'access'
   | 'contacts'
   | 'knowledge'
+  | 'onboarding'
   | 'tasks'
   | 'content'
   | 'keywords'
@@ -92,6 +94,7 @@ const GROUPS: GroupDef[] = [
     ClientEcommerceTab,
     ClientShopifyTab,
     ClientWordpressTab,
+    ClientOnboardingTabComponent,
     DomainInfoButtonComponent,
     SchemaModelerButtonComponent,
   ],
@@ -244,6 +247,9 @@ const GROUPS: GroupDef[] = [
           }
           @case ('knowledge') {
             <app-client-knowledge-tab [client]="c" (changed)="reload()" />
+          }
+          @case ('onboarding') {
+            <app-client-onboarding-tab [clientId]="c._id!" [client]="c" />
           }
           @case ('tasks') {
             <app-client-tasks-tab [clientId]="c._id!" />
@@ -439,6 +445,7 @@ export class ClientDetailComponent implements OnInit {
    */
   allTabs = computed<TabDef[]>(() => {
     const tabs: TabDef[] = [
+      { key: 'onboarding', label: 'Onboarding', group: 'work' },
       { key: 'tasks', label: 'Tasks', group: 'work' },
       { key: 'content', label: 'Content', group: 'work' },
 
