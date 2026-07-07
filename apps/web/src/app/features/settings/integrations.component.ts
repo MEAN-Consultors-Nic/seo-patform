@@ -22,7 +22,7 @@ import { GoogleIntegrationsService } from '../../core/google-integrations.servic
             Working hours
           </a>
           <a routerLink="/settings/integrations" routerLinkActive="tab-active" class="tab">
-            Integrations
+            My Integrations
           </a>
           <a routerLink="/settings/report-layout" routerLinkActive="tab-active" class="tab">
             Report layout
@@ -40,9 +40,13 @@ import { GoogleIntegrationsService } from '../../core/google-integrations.servic
       </nav>
 
       <div class="mb-4">
-        <h2 class="text-xl font-bold text-ink-900">Integrations</h2>
-        <p class="text-sm text-ink-500">
-          Connect Google Search Console and Google Analytics to auto-fill report KPIs.
+        <h2 class="text-xl font-bold text-ink-900">My Integrations</h2>
+        <p class="text-sm text-ink-500 max-w-2xl">
+          Each user connects their own Google account. When the platform
+          pulls Search Console, Analytics, or Business Profile data for a
+          client, it authenticates as the strategist assigned to that
+          client — so you only need to grant access once to see the
+          properties you already manage.
         </p>
       </div>
 
@@ -72,9 +76,9 @@ import { GoogleIntegrationsService } from '../../core/google-integrations.servic
               <div>
                 <h2 class="text-base font-semibold text-ink-900">Google Search Console</h2>
                 <p class="text-xs text-ink-500 mt-0.5 max-w-md">
-                  Used to pull impressions, clicks, CTR and average position for each client's
-                  verified site. Connect once with the account that has access to all your
-                  client GSC properties.
+                  Used to pull impressions, clicks, CTR, and average position for each client's
+                  verified site. Connect with your Google account — the platform will use it
+                  for every client where you are the assigned strategist.
                 </p>
               </div>
             </div>

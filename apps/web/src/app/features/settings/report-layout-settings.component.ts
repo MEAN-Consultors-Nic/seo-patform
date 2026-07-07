@@ -28,7 +28,7 @@ import { AppSettingsService } from '../../core/app-settings.service';
             Working hours
           </a>
           <a routerLink="/settings/integrations" routerLinkActive="tab-active" class="tab">
-            Integrations
+            My Integrations
           </a>
           <a routerLink="/settings/report-layout" routerLinkActive="tab-active" class="tab">
             Report layout

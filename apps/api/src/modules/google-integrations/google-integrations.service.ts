@@ -18,6 +18,25 @@ export class GoogleIntegrationsService {
   ) {}
 
   /**
+   * Given a client + the caller, returns the userId whose Google OAuth
+   * token should be used for downstream API calls. Prefers the client's
+   * assigned owner; falls back to the caller when a legacy client has
+   * no owner yet. This is the per-user OAuth resolution from
+   * Core Slice 1.2 of the modularization roadmap.
+   */
+  private resolveTokenUserId(
+    client: { ownerId?: unknown },
+    caller: AuthenticatedUser,
+  ): string {
+    const owner = client.ownerId;
+    if (typeof owner === 'string') return owner;
+    if (owner && typeof owner === 'object' && '_id' in owner) {
+      return String((owner as { _id: unknown })._id);
+    }
+    return caller.userId;
+  }
+
+  /**
    * Fetches GSC + GA4 KPIs for a client in the given date range and merges
    * them into the ReportKpis shape used by the reports module.
    */
@@ -31,6 +50,11 @@ export class GoogleIntegrationsService {
     sources: { gsc: boolean; ga4: boolean; gbp: boolean; warnings: string[] };
   }> {
     const client = await this.clients.findOne(clientId, user);
+    // Per-user OAuth (Core Slice 1.2): all client-scoped Google calls
+    // authenticate as the client's assigned strategist, not the caller.
+    // Falls back to the caller when a legacy client has no owner
+    // assigned yet — avoids breaking flows during the migration window.
+    const tokenUserId = this.resolveTokenUserId(client, user);
     const warnings: string[] = [];
     const out: ReportKpis = {};
     let gscOk = false;
@@ -39,7 +63,7 @@ export class GoogleIntegrationsService {
     if (client.gscSiteUrl) {
       try {
         const r = await this.gsc.aggregatedKpis(
-          user.userId,
+          tokenUserId,
           client.gscSiteUrl,
           startDate,
           endDate,
@@ -54,7 +78,7 @@ export class GoogleIntegrationsService {
       }
       try {
         const pages = await this.gsc.pageInsights(
-          user.userId,
+          tokenUserId,
           client.gscSiteUrl,
           startDate,
           endDate,
@@ -77,7 +101,7 @@ export class GoogleIntegrationsService {
     if (client.ga4PropertyId) {
       try {
         const r = await this.ga4.aggregatedKpis(
-          user.userId,
+          tokenUserId,
           client.ga4PropertyId,
           startDate,
           endDate,
@@ -106,7 +130,7 @@ export class GoogleIntegrationsService {
     if (clientWithGbp.gbpLocationName) {
       try {
         const r = await this.gbp.fetchPerformance(
-          user.userId,
+          tokenUserId,
           clientWithGbp.gbpAccountName ?? '',
           clientWithGbp.gbpLocationName,
           startDate,
@@ -139,6 +163,11 @@ export class GoogleIntegrationsService {
     to: string,
   ): Promise<GscBreakdown> {
     const client = await this.clients.findOne(clientId, user);
+    // Per-user OAuth (Core Slice 1.2): all client-scoped Google calls
+    // authenticate as the client's assigned strategist, not the caller.
+    // Falls back to the caller when a legacy client has no owner
+    // assigned yet — avoids breaking flows during the migration window.
+    const tokenUserId = this.resolveTokenUserId(client, user);
     if (!client.gscSiteUrl) {
       throw new BadRequestException(
         'GSC site URL is not configured for this client.',
@@ -160,6 +189,11 @@ export class GoogleIntegrationsService {
     to: string,
   ) {
     const client = await this.clients.findOne(clientId, user);
+    // Per-user OAuth (Core Slice 1.2): all client-scoped Google calls
+    // authenticate as the client's assigned strategist, not the caller.
+    // Falls back to the caller when a legacy client has no owner
+    // assigned yet — avoids breaking flows during the migration window.
+    const tokenUserId = this.resolveTokenUserId(client, user);
     if (!client.ga4PropertyId) {
       throw new BadRequestException(
         'GA4 property ID is not configured for this client.',
@@ -175,6 +209,11 @@ export class GoogleIntegrationsService {
 
   async testClientConnections(clientId: string, user: AuthenticatedUser) {
     const client = await this.clients.findOne(clientId, user);
+    // Per-user OAuth (Core Slice 1.2): all client-scoped Google calls
+    // authenticate as the client's assigned strategist, not the caller.
+    // Falls back to the caller when a legacy client has no owner
+    // assigned yet — avoids breaking flows during the migration window.
+    const tokenUserId = this.resolveTokenUserId(client, user);
     const result: {
       gsc: { ok: boolean; message?: string };
       ga4: { ok: boolean; message?: string };
@@ -193,7 +232,7 @@ export class GoogleIntegrationsService {
         const start = new Date(today);
         start.setDate(start.getDate() - 28);
         await this.gsc.aggregatedKpis(
-          user.userId,
+          tokenUserId,
           client.gscSiteUrl,
           formatDate(start),
           formatDate(today),
@@ -224,7 +263,7 @@ export class GoogleIntegrationsService {
       } else {
         try {
           const info = await this.merchant.verifyAccess(
-            user.userId,
+            tokenUserId,
             client.merchantCenterId,
           );
           result.merchantCenter.ok = true;
@@ -244,7 +283,7 @@ export class GoogleIntegrationsService {
       result.gbp = { ok: false };
       try {
         const info = await this.gbp.verifyAccess(
-          user.userId,
+          tokenUserId,
           clientWithGbp.gbpLocationName,
         );
         result.gbp.ok = true;

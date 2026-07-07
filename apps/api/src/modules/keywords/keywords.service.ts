@@ -18,6 +18,24 @@ import { ClientsService } from '../clients/clients.service';
 import { AuthenticatedUser } from '../auth/roles.guard';
 import { GscService } from '../google-integrations/gsc.service';
 
+/**
+ * Per-user OAuth resolver (Core Slice 1.2). Returns the userId whose
+ * Google token should authenticate downstream API calls for the given
+ * client — always the client's assigned owner when set, with a
+ * fallback to the caller for legacy data.
+ */
+function resolveOwnerUserId(
+  client: { ownerId?: unknown },
+  caller: AuthenticatedUser,
+): string {
+  const owner = client.ownerId;
+  if (typeof owner === 'string') return owner;
+  if (owner && typeof owner === 'object' && '_id' in owner) {
+    return String((owner as { _id: unknown })._id);
+  }
+  return caller.userId;
+}
+
 @Injectable()
 export class KeywordsService {
   constructor(
@@ -275,11 +293,15 @@ export class KeywordsService {
         'GSC site URL is not configured for this client. Set it in the Integrations tab first.',
       );
     }
+    // Per-user OAuth: authenticate to GSC as the client's assigned
+    // strategist, not the caller. Falls back to caller for legacy
+    // clients without an ownerId set.
+    const tokenUserId = resolveOwnerUserId(client, user);
     const limit = Math.min(Math.max(opts.limit ?? 100, 1), 1000);
     const minImpressions = Math.max(opts.minImpressions ?? 0, 0);
 
     const rows = await this.gsc.topQueries(
-      user.userId,
+      tokenUserId,
       client.gscSiteUrl,
       opts.from,
       opts.to,
@@ -380,6 +402,7 @@ export class KeywordsService {
         'GSC site URL is not configured for this client. Set it in the Integrations tab first.',
       );
     }
+    const tokenUserId = resolveOwnerUserId(client, user);
     const clientObjId = new Types.ObjectId(clientId);
     const keywords = await this.keywordModel
       .find({ clientId: clientObjId })
@@ -400,7 +423,7 @@ export class KeywordsService {
         batch.map(async (kw) => {
           try {
             const row = await this.gsc.queryStats(
-              user.userId,
+              tokenUserId,
               client.gscSiteUrl as string,
               opts.from,
               opts.to,
