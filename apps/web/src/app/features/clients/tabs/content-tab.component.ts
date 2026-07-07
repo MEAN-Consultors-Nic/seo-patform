@@ -5,11 +5,9 @@ import {
   ContentPiece,
   ContentStatus,
   CONTENT_STATUSES,
-  Cycle,
   Task,
 } from '@seo/shared';
 import { ContentService } from '../../../core/content.service';
-import { CyclesService } from '../../../core/cycles.service';
 import { TasksService } from '../../../core/tasks.service';
 
 @Component({
@@ -241,7 +239,6 @@ import { TasksService } from '../../../core/tasks.service';
 export class ClientContentTab implements OnChanges {
   @Input({ required: true }) clientId!: string;
   private svc = inject(ContentService);
-  private cyclesSvc = inject(CyclesService);
   private tasksSvc = inject(TasksService);
 
   pieces = signal<ContentPiece[]>([]);
@@ -258,7 +255,6 @@ export class ClientContentTab implements OnChanges {
   // Contextual menu + create-task state
   menuOpenId = signal<string | null>(null);
   creatingTaskFor = signal<string | null>(null);
-  currentCycle = signal<Cycle | null>(null);
 
   // Draft link modal state
   draftLinkPiece = signal<ContentPiece | null>(null);
@@ -281,13 +277,6 @@ export class ClientContentTab implements OnChanges {
 
   ngOnChanges() {
     this.load();
-    // Pre-fetch the active cycle so the menu's Create-task action knows
-    // where to anchor new tasks. If no cycle is active right now we just
-    // surface the error when the user actually clicks the action.
-    this.cyclesSvc.current().subscribe({
-      next: (c) => this.currentCycle.set(c),
-      error: () => this.currentCycle.set(null),
-    });
   }
 
   load() {
@@ -420,16 +409,9 @@ export class ClientContentTab implements OnChanges {
    */
   createTaskForPiece(p: ContentPiece) {
     if (!p._id) return;
-    const cycle = this.currentCycle();
-    if (!cycle?._id) {
-      this.flashToast('error', 'No active cycle. Open Tasks to start one.');
-      this.menuOpenId.set(null);
-      return;
-    }
     this.creatingTaskFor.set(p._id);
     const taskPayload: Partial<Task> = {
       clientId: this.clientId,
-      cycleId: cycle._id,
       category: 'content',
       title: `Draft content: ${p.title}`,
       description: p.targetKeyword ? `Target keyword: ${p.targetKeyword}` : '',
