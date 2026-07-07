@@ -121,7 +121,7 @@ export const appRoutes: Route[] = [
       },
       {
         path: 'users',
-        canActivate: [roleGuard('root')],
+        canActivate: [roleGuard('root', 'owner', 'admin')],
         loadComponent: () =>
           import('./features/users/users-list.component').then((m) => m.UsersListComponent),
       },

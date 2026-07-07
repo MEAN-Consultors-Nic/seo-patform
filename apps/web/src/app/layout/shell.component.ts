@@ -214,12 +214,32 @@ export class ShellComponent {
     this.userMenuOpen.update((v) => !v);
   }
 
+  /**
+   * Top-level navigation grouped by module. Order reflects the
+   * modularization laid out in the Phase 2 roadmap:
+   *
+   *   Dashboard    — landing / cross-module summary
+   *   Clients      — client roster + CRUD (spans Clients + SEO tabs
+   *                  inside a single client detail page for now).
+   *   Reports      — report editor + share.
+   *   Settings     — platform admin (users are surfaced from within
+   *                  Settings via a sub-tab once the restructure of
+   *                  the Users page under Core lands).
+   *
+   * Users stays as its own top-level entry for root only during the
+   * transition; the plan is to fold it into Settings -> Users in the
+   * Core UI slice later.
+   */
   private navItems: NavItem[] = [
     { route: '/dashboard', label: 'Dashboard', exact: true },
     { route: '/clients', label: 'Clients' },
     { route: '/reports', label: 'Reports' },
     { route: '/settings/working-hours', label: 'Settings' },
-    { route: '/users', label: 'Users', roles: ['root'] },
+    {
+      route: '/users',
+      label: 'Users',
+      roles: ['root', 'owner', 'admin'],
+    },
   ];
 
   visibleNavItems = computed(() => {

@@ -5,71 +5,61 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { AuthModule } from '../modules/auth/auth.module';
-import { UsersModule } from '../modules/users/users.module';
-import { MailModule } from '../modules/mail/mail.module';
 import { JwtAuthGuard } from '../modules/auth/jwt-auth.guard';
 import { RolesGuard } from '../modules/auth/roles.guard';
-import { ClientsModule } from '../modules/clients/clients.module';
-import { CyclesModule } from '../modules/cycles/cycles.module';
-import { TasksModule } from '../modules/tasks/tasks.module';
+
+// --- Domain module barrels (Phase 2 modularization) ----------------------
+// Each barrel is a conceptual grouping — the underlying feature modules
+// keep their existing files and imports. Anything not yet covered by a
+// barrel is either legacy (SeedModule) or awaits its own phase (Reports).
+
+import { CoreModule } from '../modules/core/core.module';
+import { ClientsDomainModule } from '../modules/clients-domain/clients-domain.module';
+import { SeoModule } from '../modules/seo/seo.module';
+import { WorkModule } from '../modules/work/work.module';
+import { IntegrationsModule } from '../modules/integrations/integrations.module';
+import { ToolsModule } from '../modules/tools/tools.module';
+
+// --- Feature modules not yet under a barrel ------------------------------
 import { ReportsModule } from '../modules/reports/reports.module';
-import { KeywordsModule } from '../modules/keywords/keywords.module';
-import { CompetitorsModule } from '../modules/competitors/competitors.module';
-import { ContentModule } from '../modules/content/content.module';
-import { BacklinksModule } from '../modules/backlinks/backlinks.module';
-import { TaskTemplatesModule } from '../modules/task-templates/task-templates.module';
-import { PackagesModule } from '../modules/packages/packages.module';
-import { OnboardingModule } from '../modules/onboarding/onboarding.module';
-import { ActivityLogModule } from '../modules/activity-log/activity-log.module';
-import { WorkingHoursModule } from '../modules/working-hours/working-hours.module';
-import { TimeBlocksModule } from '../modules/time-blocks/time-blocks.module';
-import { GoogleIntegrationsModule } from '../modules/google-integrations/google-integrations.module';
-import { DomainToolsModule } from '../modules/domain-tools/domain-tools.module';
-import { SchemaToolsModule } from '../modules/schema-tools/schema-tools.module';
-import { ShopifyModule } from '../modules/shopify/shopify.module';
-import { WordpressModule } from '../modules/wordpress/wordpress.module';
-import { AppSettingsModule } from '../modules/app-settings/app-settings.module';
-import { SupervisorModule } from '../modules/supervisor/supervisor.module';
-import { IndexingModule } from '../modules/indexing/indexing.module';
-import { CannibalizationModule } from '../modules/cannibalization/cannibalization.module';
-import { PriorityQueueModule } from '../modules/priority-queue/priority-queue.module';
 import { SeedModule } from '../seed/seed.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     MongooseModule.forRoot(
-      process.env.MONGODB_URI || 'mongodb://localhost:27017/seo-platform',
+      process.env.MONGODB_URI || 'mongodb://localhost:27017/internal-tools',
     ),
     ScheduleModule.forRoot(),
-    MailModule,
-    AuthModule,
-    UsersModule,
-    ClientsModule,
-    CyclesModule,
-    TasksModule,
+
+    // Platform admin — users, roles, auth, app settings, audit log,
+    // supervisor multi-PIN vault.
+    CoreModule,
+
+    // Clients + everything scoped to the client: package/tier, and
+    // onboarding checklist state.
+    ClientsDomainModule,
+
+    // SEO domain — keywords, competitors, backlinks, content pipeline,
+    // cannibalization, indexing.
+    SeoModule,
+
+    // Work planning — tasks, task templates, cycles (legacy compat),
+    // working hours, time blocks, daily priority queue.
+    WorkModule,
+
+    // Third-party integrations — Google (GSC/GA4/GBP/Docs/Drive/Gmail
+    // scope), Shopify, WordPress, outbound SMTP.
+    IntegrationsModule,
+
+    // Standalone utility tools — domain lookup, schema modeller.
+    ToolsModule,
+
+    // Reports (multi-format + PDF/Word/share). Kept out of a barrel
+    // for now because its own restructure is a follow-up slice.
     ReportsModule,
-    KeywordsModule,
-    CompetitorsModule,
-    ContentModule,
-    BacklinksModule,
-    TaskTemplatesModule,
-    PackagesModule,
-    OnboardingModule,
-    ActivityLogModule,
-    WorkingHoursModule,
-    TimeBlocksModule,
-    GoogleIntegrationsModule,
-    DomainToolsModule,
-    SchemaToolsModule,
-    ShopifyModule,
-    WordpressModule,
-    AppSettingsModule,
-    SupervisorModule,
-    IndexingModule,
-    CannibalizationModule,
-    PriorityQueueModule,
+
+    // Legacy: initial seed data.
     SeedModule,
   ],
   controllers: [AppController],
