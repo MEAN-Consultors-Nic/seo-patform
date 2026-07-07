@@ -158,7 +158,7 @@ export class TasksService {
     return this.model.create({
       ...clean,
       clientId: new Types.ObjectId(dto.clientId),
-      cycleId: new Types.ObjectId(dto.cycleId),
+      cycleId: dto.cycleId ? new Types.ObjectId(dto.cycleId) : undefined,
     });
   }
 

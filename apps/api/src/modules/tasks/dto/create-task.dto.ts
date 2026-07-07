@@ -19,7 +19,8 @@ export class SubtaskDto {
 
 export class CreateTaskDto {
   @IsMongoId() clientId!: string;
-  @IsMongoId() cycleId!: string;
+  /** Optional — cycles are being phased out in favor of date-range reports. */
+  @IsOptional() @IsMongoId() cycleId?: string;
 
   @IsEnum([
     'technical',

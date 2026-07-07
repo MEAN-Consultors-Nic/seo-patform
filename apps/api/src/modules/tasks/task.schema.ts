@@ -57,8 +57,15 @@ export class Task {
   @Prop({ type: Types.ObjectId, ref: 'Client', required: true, index: true })
   clientId!: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Cycle', required: true, index: true })
-  cycleId!: Types.ObjectId;
+  /**
+   * Legacy cycle anchor. Kept optional so existing tasks with a
+   * cycleId keep their history intact and legacy report queries
+   * still work. New tasks don't set this — the platform stopped
+   * organizing work into cycles in favor of the reports layer's
+   * custom date-range flow.
+   */
+  @Prop({ type: Types.ObjectId, ref: 'Cycle', required: false, index: true })
+  cycleId?: Types.ObjectId;
 
   @Prop({
     required: true,
