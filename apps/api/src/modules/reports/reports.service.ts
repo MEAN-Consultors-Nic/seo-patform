@@ -229,28 +229,22 @@ export class ReportsService implements OnModuleInit {
     const clientId = report.clientId.toString();
     const from = new Date(report.customRange!.from);
     const to = new Date(report.customRange!.to);
-    const completedInRange = await this.tasks.findAll({
-      clientId,
-      completedFrom: from.toISOString(),
-      completedTo: to.toISOString(),
-    });
-    let pendingInCurrent: typeof completedInRange = [];
-    try {
-      const currentCycle = await this.cycles.getCurrent();
-      const currentTasks = await this.tasks.findAll({
+    const [completedInRange, allClientTasks] = await Promise.all([
+      this.tasks.findAll({
         clientId,
-        cycleId: currentCycle._id.toString(),
-      });
-      pendingInCurrent = currentTasks.filter(
-        (t) => t.status !== 'completed',
-      );
-    } catch {
-      // No active cycle right now — nothing to carry over.
-    }
+        completedFrom: from.toISOString(),
+        completedTo: to.toISOString(),
+      }),
+      this.tasks.findAll({ clientId }),
+    ]);
+    // Any still-open task for the client feeds Next Period Plan.
+    // Post-cycles removal we no longer scope by "current cycle" — the
+    // task list itself is the source of truth for what's coming next.
+    const pending = allClientTasks.filter((t) => t.status !== 'completed');
     const seen = new Set(completedInRange.map((t) => String(t._id)));
     return [
       ...completedInRange,
-      ...pendingInCurrent.filter((t) => !seen.has(String(t._id))),
+      ...pending.filter((t) => !seen.has(String(t._id))),
     ];
   }
 

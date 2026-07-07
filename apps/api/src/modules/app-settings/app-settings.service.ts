@@ -62,9 +62,12 @@ export class AppSettingsService {
 
   /**
    * Merges a persisted layout with the defaults so that:
-   *  - any new section added to the codebase appears at the end (visible)
+   *  - the persisted order is preserved for keys the user already had
+   *  - any new section added to the codebase is inserted at its default
+   *    position (rather than blindly appended), so hero-type entries
+   *    like kpi-snapshot land at the top instead of the bottom
    *  - any persisted key not in defaults is dropped
-   *  - return value is always a complete list in order
+   *  - return value is always a complete list
    */
   private mergeWithDefaults(
     persisted: ReportSectionConfig[] | undefined,
@@ -80,9 +83,14 @@ export class AppSettingsService {
       seen.add(s.key);
       out.push({ key: s.key, visible: s.visible !== false });
     }
-    for (const def of DEFAULT_REPORT_LAYOUT) {
-      if (!seen.has(def.key)) out.push({ ...def });
-    }
+    // Insert missing keys at their default index so newly-introduced
+    // hero sections (like kpi-snapshot at index 0) don't get pushed to
+    // the bottom of the layout.
+    DEFAULT_REPORT_LAYOUT.forEach((def, defaultIndex) => {
+      if (seen.has(def.key)) return;
+      const insertAt = Math.min(defaultIndex, out.length);
+      out.splice(insertAt, 0, { ...def });
+    });
     return out;
   }
 }
