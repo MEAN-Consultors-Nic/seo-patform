@@ -45,6 +45,19 @@ export class AppSettings {
   /** Days from client creation before the onboarding warning kicks in. */
   @Prop({ type: Number })
   onboardingWindowDays?: number;
+
+  /**
+   * Org-level branding surfaced in the shell, outbound emails, and
+   * generated PDFs. Configurable from Settings once the Platform tab
+   * ships in Phase 2 — for now they're reachable via the app-settings
+   * REST endpoints for future modules to consume.
+   */
+  @Prop({ type: String }) organizationName?: string;
+  @Prop({ type: String }) organizationColor?: string;
+
+  /** Default cadence for automated digests (Phase 5 ops modules). */
+  @Prop({ type: String, enum: ['weekly', 'biweekly', 'monthly'] })
+  digestFrequency?: 'weekly' | 'biweekly' | 'monthly';
 }
 
 export const AppSettingsSchema = SchemaFactory.createForClass(AppSettings);

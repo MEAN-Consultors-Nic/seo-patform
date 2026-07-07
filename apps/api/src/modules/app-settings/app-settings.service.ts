@@ -3,6 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
   DEFAULT_ONBOARDING_WINDOW_DAYS,
+  DEFAULT_ORG_COLOR,
+  DEFAULT_ORG_NAME,
   DEFAULT_REPORT_LAYOUT,
   ReportSectionConfig,
   ReportSectionKey,
@@ -80,6 +82,67 @@ export class AppSettingsService {
       .lean()
       .exec();
     return Math.round(days);
+  }
+
+  // --- Org branding + digest prefs ----------------------------------------
+
+  /**
+   * Returns the org-level branding + digest cadence used by future
+   * modules (email templates, digest crons, PDF header). Falls back
+   * to platform defaults when not set.
+   */
+  async getPlatformSettings(): Promise<{
+    organizationName: string;
+    organizationColor: string;
+    digestFrequency: 'weekly' | 'biweekly' | 'monthly';
+  }> {
+    const doc = (await this.model.findOne().lean().exec()) as unknown as
+      | Record<string, unknown>
+      | null;
+    return {
+      organizationName:
+        (doc?.organizationName as string | undefined) || DEFAULT_ORG_NAME,
+      organizationColor:
+        (doc?.organizationColor as string | undefined) || DEFAULT_ORG_COLOR,
+      digestFrequency:
+        (doc?.digestFrequency as 'weekly' | 'biweekly' | 'monthly' | undefined) ||
+        'weekly',
+    };
+  }
+
+  async setPlatformSettings(dto: {
+    organizationName?: string;
+    organizationColor?: string;
+    digestFrequency?: 'weekly' | 'biweekly' | 'monthly';
+  }): Promise<void> {
+    const patch: Record<string, unknown> = {};
+    if (typeof dto.organizationName === 'string') {
+      patch.organizationName = dto.organizationName.trim() || undefined;
+    }
+    if (typeof dto.organizationColor === 'string') {
+      // Only accept hex-ish strings so we don't have to sanitize downstream.
+      if (!/^#?[0-9a-fA-F]{3,8}$/.test(dto.organizationColor)) {
+        throw new BadRequestException(
+          'organizationColor must be a hex code (e.g. #FF7A59).',
+        );
+      }
+      patch.organizationColor = dto.organizationColor.startsWith('#')
+        ? dto.organizationColor
+        : `#${dto.organizationColor}`;
+    }
+    if (dto.digestFrequency !== undefined) {
+      if (!['weekly', 'biweekly', 'monthly'].includes(dto.digestFrequency)) {
+        throw new BadRequestException(
+          'digestFrequency must be weekly, biweekly, or monthly.',
+        );
+      }
+      patch.digestFrequency = dto.digestFrequency;
+    }
+    if (Object.keys(patch).length === 0) return;
+    await this.model
+      .findOneAndUpdate({}, { $set: patch }, { upsert: true, new: true })
+      .lean()
+      .exec();
   }
 
   // Supervisor management lives in SupervisorService now (multi-PIN

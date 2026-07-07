@@ -1089,9 +1089,24 @@ export interface AppSettings {
    * Default 14. Applied globally — every client shares the same window.
    */
   onboardingWindowDays?: number;
+  /**
+   * Org-level branding — surfaced on the shell header, outbound emails,
+   * and generated PDFs. Set once at platform level; individual reports
+   * still respect their own coverImageUrl.
+   */
+  organizationName?: string;
+  organizationColor?: string;
+  /**
+   * Frequency prefs for automated digests (delivery risk, client
+   * health, credentials watchdog). Consumed by cron scheduling once
+   * those modules land.
+   */
+  digestFrequency?: 'weekly' | 'biweekly' | 'monthly';
 }
 
 export const DEFAULT_ONBOARDING_WINDOW_DAYS = 14;
+export const DEFAULT_ORG_NAME = 'Media Spearhead';
+export const DEFAULT_ORG_COLOR = '#FF7A59';
 
 export type WebsitePlatform = 'shopify' | 'wordpress' | 'custom';
 

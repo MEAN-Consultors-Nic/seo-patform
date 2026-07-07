@@ -8,7 +8,7 @@ import {
   Post,
   Put,
 } from '@nestjs/common';
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 import { ReportSectionConfig } from '@seo/shared';
 import { AppSettingsService } from './app-settings.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
@@ -21,6 +21,14 @@ class CreateSupervisorDto {
 class UpdateSupervisorDto {
   @IsOptional() @IsString() name?: string;
   @IsOptional() @IsBoolean() active?: boolean;
+}
+
+class PlatformSettingsDto {
+  @IsOptional() @IsString() organizationName?: string;
+  @IsOptional() @IsString() organizationColor?: string;
+  @IsOptional()
+  @IsIn(['weekly', 'biweekly', 'monthly'])
+  digestFrequency?: 'weekly' | 'biweekly' | 'monthly';
 }
 
 @Controller('app-settings')
@@ -38,6 +46,20 @@ export class AppSettingsController {
   @Put('report-layout')
   setReportLayout(@Body() body: { layout?: ReportSectionConfig[] }) {
     return this.svc.setReportLayout(body?.layout ?? []);
+  }
+
+  // --- Org branding + digest cadence (Core Slice 1.3) --------------------
+
+  @Get('platform')
+  getPlatform() {
+    return this.svc.getPlatformSettings();
+  }
+
+  @Patch('platform')
+  @Roles('root', 'owner', 'admin')
+  async setPlatform(@Body() dto: PlatformSettingsDto) {
+    await this.svc.setPlatformSettings(dto);
+    return this.svc.getPlatformSettings();
   }
 
   // --- Supervisor management (root + manager only) -----------------------
