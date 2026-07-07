@@ -1,24 +1,26 @@
-# SEO Platform — Media Spearhead
+# Internal Tools — Media Spearhead
 
-Plataforma para gestionar los clientes SEO de Media Spearhead: clientes por tier, tareas por ciclo quincenal, reportes con PIN-protected share links y notificaciones por email.
+Agency operations platform for Media Spearhead. Started as an SEO-only toolset; being progressively modularized into a broader internal-tools suite (SEO, Clients, Reports, Tasks, Integrations — with Sales, Communications, PPC, and Ops digests planned).
+
+Renamed from `seo-platform` on 2026-07-07. GitHub repo rename + custom domain change tracked as Phase 0 ops actions.
 
 ## Stack
 
 - **Monorepo:** Nx 22 (pnpm)
 - **Backend:** NestJS 11 (TypeScript)
 - **Frontend:** Angular 21 (standalone components, signals, Tailwind CSS)
-- **Base de datos:** MongoDB 7
+- **Database:** MongoDB 7
 - **Email:** nodemailer + SMTP
 - **PDF:** pdfmake
-- **Tipos compartidos:** `libs/shared` (importable como `@seo/shared`)
+- **Shared types:** `libs/shared` (importable as `@seo/shared` — the alias will migrate to `@internal-tools/shared` in the module-restructure phase)
 
 ```
-seo-platform/
+internal-tools/
 ├── apps/
 │   ├── api/         NestJS backend
 │   └── web/         Angular frontend
 ├── libs/
-│   └── shared/      Tipos compartidos
+│   └── shared/      Shared TS types
 ├── docker/          Dockerfiles + nginx
 ├── docker-compose.yml
 ├── Procfile         Heroku
@@ -26,11 +28,11 @@ seo-platform/
 └── .env.example
 ```
 
-## Quickstart (local con Docker)
+## Quickstart (local with Docker)
 
 ```bash
 cp .env.example .env
-# Edita .env y completa SMTP_USER, SMTP_PASS, etc.
+# Edit .env and fill SMTP_USER, SMTP_PASS, etc.
 docker compose up -d --build
 ```
 
@@ -41,17 +43,17 @@ docker compose up -d --build
 ## Scripts (pnpm)
 
 ```bash
-pnpm dev          # API + Web en paralelo (sin Docker)
-pnpm dev:api      # solo API
-pnpm dev:web      # solo Web
-pnpm db:up        # solo Mongo + mongo-express en Docker
-pnpm db:down      # apaga Mongo
+pnpm dev          # API + Web in parallel (no Docker)
+pnpm dev:api      # API only
+pnpm dev:web      # Web only
+pnpm db:up        # Mongo + mongo-express in Docker only
+pnpm db:down      # stop Mongo
 pnpm build        # build API + Web
-pnpm build:api    # solo API
-pnpm build:web    # solo Web
+pnpm build:api    # API only
+pnpm build:web    # Web only
 pnpm start        # node dist/apps/api/main.js (production)
-pnpm lint         # lint todos los proyectos
-pnpm typecheck    # type-check todos los proyectos
+pnpm lint         # lint every project
+pnpm typecheck    # type-check every project
 ```
 
 ## Deployment
@@ -59,83 +61,95 @@ pnpm typecheck    # type-check todos los proyectos
 ### Backend → Heroku
 
 ```bash
-# Una vez por proyecto
-heroku create seo-platform-api --buildpack heroku/nodejs
+# Once per project
+heroku create internal-tools-api --buildpack heroku/nodejs
 
-# Variables de entorno (mínimo)
+# Environment (minimum)
 heroku config:set \
   NODE_ENV=production \
-  MONGODB_URI="mongodb+srv://USER:PASS@CLUSTER/seo-platform" \
+  MONGODB_URI="mongodb+srv://USER:PASS@CLUSTER/internal-tools" \
   JWT_SECRET="$(openssl rand -base64 32)" \
-  PUBLIC_WEB_URL="https://your-app.vercel.app" \
-  CORS_ORIGINS="https://your-app.vercel.app,/.*\\.vercel\\.app$/" \
+  PUBLIC_WEB_URL="https://tools.mediaspearhead.com" \
+  CORS_ORIGINS="https://tools.mediaspearhead.com,https://seo-tracker.mediaspearhead.com" \
   SMTP_HOST=mail.mediaspearhead.com \
   SMTP_PORT=587 \
   SMTP_SECURE=false \
   SMTP_USER=seo@notifications.mediaspearhead.com \
   SMTP_PASS='YOUR_PASSWORD_HERE' \
-  SMTP_FROM_NAME="Media Spearhead - SEO Platform" \
+  SMTP_FROM_NAME="Media Spearhead — Internal Tools" \
   SMTP_FROM_EMAIL=seo@notifications.mediaspearhead.com
 
 # Deploy
 git push heroku main
 ```
 
-Heroku detecta `pnpm` por el campo `packageManager` en `package.json` y corre:
+Heroku detects `pnpm` via `packageManager` in `package.json` and runs:
 1. `pnpm install --frozen-lockfile`
-2. `pnpm heroku-postbuild` → ejecuta `pnpm build:api` → produce `dist/apps/api`
-3. `pnpm start` → `node dist/apps/api/main.js` (lee `process.env.PORT`)
+2. `pnpm heroku-postbuild` → runs `pnpm build:api` → produces `dist/apps/api`
+3. `pnpm start` → `node dist/apps/api/main.js` (reads `process.env.PORT`)
 
 ### Frontend → Vercel
 
-1. **Editar `apps/web/src/environments/environment.prod.ts`** y ajustar `apiBase` con la URL real de Heroku, por ej:
-   ```ts
-   apiBase: 'https://seo-platform-api.herokuapp.com/api'
-   ```
-2. Conectar el repo en https://vercel.com/new — Vercel lee `vercel.json`:
+1. **Edit `apps/web/src/environments/environment.prod.ts`** and set `apiBase` to the real Heroku URL.
+2. Connect the repo at https://vercel.com/new — Vercel reads `vercel.json`:
    - Install: `pnpm install --frozen-lockfile`
    - Build: `pnpm exec nx build web --configuration=production`
    - Output: `dist/apps/web/browser`
-3. Las rutas SPA (`/r/:token`, `/clients/:id`, etc.) se redirigen a `index.html` vía `rewrites` en `vercel.json`.
+3. SPA routes (`/r/:token`, `/clients/:id`, etc.) rewrite to `index.html` via `vercel.json`.
 
-### Base de datos → MongoDB Atlas
+### Database → MongoDB Atlas
 
-1. Crea cluster M0 gratuito en https://cloud.mongodb.com
-2. Whitelist `0.0.0.0/0` o las IPs de Heroku
-3. Crea un usuario de DB y copia la connection string a `MONGODB_URI`
+1. Create an M0 cluster at https://cloud.mongodb.com
+2. Whitelist `0.0.0.0/0` (or Heroku IPs)
+3. Create a DB user and copy the connection string to `MONGODB_URI`
 
-## Variables de entorno
+## Environment variables
 
-Ver `.env.example`. Las clave en producción:
+See `.env.example`. Production keys:
 
-| Var | Descripción |
+| Var | Description |
 |---|---|
-| `MONGODB_URI` | Connection string Atlas |
-| `JWT_SECRET` | Secreto firma JWT (auth + PDF unlock token) |
-| `PUBLIC_WEB_URL` | URL del frontend (usado en emails para construir share link) |
-| `CORS_ORIGINS` | Comma-sep. de orígenes permitidos; admite regex con `/.../`  |
-| `SMTP_*` | Credenciales del servidor SMTP |
+| `MONGODB_URI` | Atlas connection string |
+| `JWT_SECRET` | JWT signing secret (auth + PDF unlock token) |
+| `PUBLIC_WEB_URL` | Frontend URL (used to build share links in outbound email) |
+| `CORS_ORIGINS` | Comma-separated allowed origins; accepts regex via `/.../`  |
+| `SMTP_*` | SMTP server credentials |
 
-## Datos iniciales
+## Roles (current)
 
-Al arrancar el API por primera vez, `SeedService` inserta los 11 clientes con sus tiers y `AuthService` crea el usuario root: `joseph.o@mediaspearhead.com` / `spearhead2026` (cámbialo con `POST /api/users/:id/reset-password` después).
+- **root** — full control including user management.
+- **seo-manager** — sees/edits every client; can't manage users.
+- **seo-strategist** — sees/edits only clients where they are `ownerId`.
 
-## Roles
+Expansion to `root · owner · admin · manager · strategist · client` is planned as **Phase 1 · Slice 1.1** of the roadmap (see `internal-tools_modularization-roadmap.pdf`).
 
-- **root** — control total + gestión de usuarios (página `/users`)
-- **seo-manager** — ve/edita todos los clientes; no gestiona usuarios
-- **seo-strategist** — solo ve/edita los clientes donde es `ownerId`
+## Ongoing modularization
 
-## Comandos útiles
+The codebase is being reorganized into a module-per-domain layout. Progress:
+
+| Module | Status |
+|---|---|
+| `core/` — users, auth, roles, per-user OAuth, audit, app-settings | Phase 1 (in progress) |
+| `seo/` — keywords, positions, competitors, backlinks, content, cannibalization, indexing, GSC insights | Phase 2 |
+| `clients/` — client CRUD, packages, onboarding, contacts, credentials, service areas | Phase 2 |
+| `reports/` — report editor, PDF/Word/share | Phase 2 |
+| `tasks/` — task list, templates, subtasks | Phase 2 |
+| `integrations/` — OAuth flows + per-provider services | Phase 2 |
+| `comms/` — Gmail send + AI writers + Email Studio | Phase 3 |
+| `sales/` — Pipeline, Proposals, Follow-ups, Reactivation, Questionnaires | Phase 4 |
+| `ops/` — Site Health, Delivery Risk, Client Health, Hosting, Credentials Watchdog | Phase 5 |
+| Other (`ppc/`, `revenue/`, `pulse/`, `ai/`, `portal/`) | Phase 6+ |
+
+## Handy commands
 
 ```bash
-# Logs containerizados
+# Container logs
 docker compose logs -f api
 docker compose logs -f web
 
-# Reset DB (CUIDADO — borra todo y reseedea)
+# Reset DB (WARNING — wipes everything and re-seeds)
 docker compose down -v
 
 # Mongo shell
-docker compose exec mongo mongosh seo-platform
+docker compose exec mongo mongosh internal-tools
 ```
