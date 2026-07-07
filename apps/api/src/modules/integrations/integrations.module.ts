@@ -3,17 +3,31 @@ import { GoogleIntegrationsModule } from '../google-integrations/google-integrat
 import { ShopifyModule } from '../shopify/shopify.module';
 import { WordpressModule } from '../wordpress/wordpress.module';
 import { MailModule } from '../mail/mail.module';
+import { CommsModule } from '../comms/comms.module';
 
 /**
  * Integrations barrel — every third-party bridge in one place:
  * Google (GSC, GA4, GBP, Docs, Drive, Gmail scope), Shopify,
- * WordPress, and outbound mail (SMTP).
+ * WordPress, outbound mail (SMTP), and the Communications module
+ * that wraps outbound email + AI-assisted drafting.
  *
  * New integrations (Ahrefs, ClickUp, Clarity, Calendly, etc.)
- * land as siblings of these three, joining the same barrel.
+ * land as siblings, joining the same barrel.
  */
 @Module({
-  imports: [GoogleIntegrationsModule, ShopifyModule, WordpressModule, MailModule],
-  exports: [GoogleIntegrationsModule, ShopifyModule, WordpressModule, MailModule],
+  imports: [
+    GoogleIntegrationsModule,
+    ShopifyModule,
+    WordpressModule,
+    MailModule,
+    CommsModule,
+  ],
+  exports: [
+    GoogleIntegrationsModule,
+    ShopifyModule,
+    WordpressModule,
+    MailModule,
+    CommsModule,
+  ],
 })
 export class IntegrationsModule {}

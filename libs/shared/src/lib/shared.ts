@@ -529,6 +529,8 @@ export interface GoogleConnectionStatus {
   ga4: GoogleConnectionLink;
   merchantCenter?: GoogleConnectionLink;
   gbp?: GoogleConnectionLink;
+  calendar?: GoogleConnectionLink;
+  gmail?: GoogleConnectionLink;
 }
 
 export interface GbpAccount {
