@@ -194,6 +194,98 @@ export interface Package {
   updatedAt?: Date;
 }
 
+// --- Sales pipeline --------------------------------------------------------
+
+export type LeadStage =
+  | 'new'
+  | 'no_show'
+  | 'proposal_sent'
+  | 'closed_won'
+  | 'closed_lost';
+
+export const LEAD_STAGE_LABELS: Record<LeadStage, string> = {
+  new: 'New',
+  no_show: 'No show',
+  proposal_sent: 'Proposal sent',
+  closed_won: 'Closed · won',
+  closed_lost: 'Closed · lost',
+};
+
+export const LEAD_STAGE_ORDER: LeadStage[] = [
+  'new',
+  'no_show',
+  'proposal_sent',
+  'closed_won',
+  'closed_lost',
+];
+
+export type LeadSource =
+  | 'referral'
+  | 'website'
+  | 'cold-outreach'
+  | 'ads'
+  | 'social'
+  | 'event'
+  | 'other';
+
+export const LEAD_SOURCES: LeadSource[] = [
+  'referral',
+  'website',
+  'cold-outreach',
+  'ads',
+  'social',
+  'event',
+  'other',
+];
+
+export type LeadService = 'seo' | 'ppc' | 'website' | 'combo' | 'other';
+
+export interface LeadActivity {
+  at: Date | string;
+  kind: 'note' | 'email' | 'call' | 'stage-change';
+  authorUserId?: string;
+  authorName?: string;
+  text?: string;
+  fromStage?: LeadStage;
+  toStage?: LeadStage;
+}
+
+export interface Lead {
+  _id?: string;
+  businessName: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  source?: LeadSource;
+  services?: LeadService[];
+  /** Monthly recurring revenue if the deal closes (USD). */
+  monthlyDealValue?: number;
+  /** One-time setup/build fee if applicable (USD). */
+  oneTimeDealValue?: number;
+  stage: LeadStage;
+  /** Assigned strategist / manager who owns the lead. */
+  ownerId?: string | { _id: string; name: string; email: string };
+  notes?: string;
+  /** Free-form activity log — notes, emails, calls, stage changes. */
+  activity?: LeadActivity[];
+  closedAt?: Date | string;
+  closedReason?: string;
+  /** When the lead was moved to closed_won, we can link the created Client. */
+  clientId?: string;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+}
+
+export interface PipelineStats {
+  pipelineMrr: number;
+  activeMrr: number;
+  wonThisMonth: number;
+  wonThisMonthMrr: number;
+  openLeads: number;
+  perStage: Record<LeadStage, number>;
+}
+
 // --- Onboarding ------------------------------------------------------------
 
 export type OnboardingSection =

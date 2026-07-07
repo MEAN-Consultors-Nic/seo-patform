@@ -69,6 +69,13 @@ export const appRoutes: Route[] = [
           import('./features/reports/report-editor.component').then((m) => m.ReportEditorComponent),
       },
       {
+        path: 'pipeline',
+        loadComponent: () =>
+          import('./features/sales/pipeline.component').then(
+            (m) => m.SalesPipelineComponent,
+          ),
+      },
+      {
         path: 'bulk-send',
         loadComponent: () =>
           import('./features/comms/bulk-send.component').then(
