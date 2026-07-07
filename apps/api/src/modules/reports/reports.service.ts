@@ -1530,6 +1530,7 @@ export class ReportsService {
         }>,
         gainers: movements.gainers,
         losers: movements.losers,
+        fresh: movements.fresh,
         backlinks: backlinksSummary,
         layout,
         contentIdeas: contentIdeas.map((p) => ({

@@ -302,6 +302,15 @@ interface PublicPayload {
               @case ('search-rankings') {
                 <ng-container [ngTemplateOutlet]="rankingsTpl"></ng-container>
               }
+              @case ('top-performing-pages') {
+                <ng-container [ngTemplateOutlet]="topPagesTpl"></ng-container>
+              }
+              @case ('ranking-movement') {
+                <ng-container [ngTemplateOutlet]="rankingMovementTpl"></ng-container>
+              }
+              @case ('serp-preview') {
+                <ng-container [ngTemplateOutlet]="serpPreviewTpl"></ng-container>
+              }
               @case ('actions-taken') {
                 <ng-container [ngTemplateOutlet]="actionsTpl"></ng-container>
               }
@@ -713,6 +722,193 @@ interface PublicPayload {
               </div>
             </section>
           }
+        </ng-template>
+
+        <ng-template #topPagesTpl>
+          <!-- Top-performing pages — Search Console page-level snapshot.
+               Empty state matches the design: a single flat card because
+               page-level data isn't yet snapshotted onto reports; the
+               section still renders so the layout keeps its rhythm. -->
+          <section>
+            <div class="mb-5">
+              <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">{{ sectionNumber('top-performing-pages') }} · Top Performing Pages</span>
+              <h2 class="text-3xl font-bold text-ink-900 mt-1">Pages driving the month</h2>
+            </div>
+            @if (topPages().length > 0) {
+              <div class="bg-white rounded-xl border border-ink-200 shadow-card overflow-hidden">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="border-b border-ink-100 text-[10px] uppercase tracking-wider text-ink-500 bg-ink-50">
+                      <th class="text-left px-5 py-2.5 font-semibold">Page</th>
+                      <th class="text-right px-3 py-2.5 font-semibold">Clicks</th>
+                      <th class="text-right px-3 py-2.5 font-semibold">Impressions</th>
+                      <th class="text-right px-3 py-2.5 font-semibold">CTR</th>
+                      <th class="text-right px-5 py-2.5 font-semibold">Pos.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (p of topPages(); track $index) {
+                      <tr class="border-b border-ink-100 hover:bg-ink-50">
+                        <td class="px-5 py-3 text-xs text-ink-700 truncate max-w-xs">{{ p.key }}</td>
+                        <td class="px-3 py-3 text-right text-ink-900 font-medium">{{ p.clicks | number }}</td>
+                        <td class="px-3 py-3 text-right text-ink-500">{{ p.impressions | number }}</td>
+                        <td class="px-3 py-3 text-right text-ink-500">{{ p.ctr | number: '1.1-1' }}%</td>
+                        <td class="px-5 py-3 text-right text-ink-500">{{ p.position | number: '1.1-1' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else {
+              <div class="bg-white rounded-xl border border-ink-200 border-dashed py-10 px-6 text-center text-sm text-ink-500">
+                No page-level data available for this period.
+              </div>
+            }
+          </section>
+        </ng-template>
+
+        <ng-template #rankingMovementTpl>
+          <!-- Ranking movement — three KPI cards + two tables. Data is
+               derived from the same movements/keywords already in the
+               payload; no new backend plumbing needed. -->
+          <section>
+            <div class="mb-3">
+              <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">{{ sectionNumber('ranking-movement') }} · Top Performing Keywords</span>
+              <h2 class="text-3xl font-bold text-ink-900 mt-1">Ranking movement</h2>
+              <p class="text-sm text-ink-500 mt-1 max-w-3xl">
+                Keyword positioning this period — major climbers from prior rankings plus queries the site started ranking for.
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+              <div class="bg-white rounded-xl p-4 border border-ink-200 shadow-card flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-sky-50 text-sky-600 font-bold text-xl flex items-center justify-center">{{ majorWins().length }}</div>
+                <div>
+                  <div class="font-bold text-ink-900 text-sm">Major ranking wins</div>
+                  <div class="text-xs text-ink-500">moved up ≥2 positions</div>
+                </div>
+              </div>
+              <div class="bg-white rounded-xl p-4 border border-ink-200 shadow-card flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-positive-100 text-positive-500 font-bold text-xl flex items-center justify-center">{{ newRankings().length }}</div>
+                <div>
+                  <div class="font-bold text-ink-900 text-sm">New rankings</div>
+                  <div class="text-xs text-ink-500">newly tracked keywords</div>
+                </div>
+              </div>
+              <div class="bg-white rounded-xl p-4 border border-ink-200 shadow-card flex items-center gap-4">
+                <div class="w-12 h-12 rounded-lg bg-amber-50 text-amber-600 font-bold text-xl flex items-center justify-center">{{ top10Count() }}</div>
+                <div>
+                  <div class="font-bold text-ink-900 text-sm">Top-10 keywords</div>
+                  <div class="text-xs text-ink-500">positions #1–#10</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-white rounded-xl border border-ink-200 shadow-card overflow-hidden mb-4">
+              <div class="px-5 py-3 border-b border-ink-100">
+                <h3 class="font-bold text-ink-900 text-sm">Major ranking wins</h3>
+                <p class="text-xs text-ink-500">Existing keywords that climbed this period</p>
+              </div>
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="border-b border-ink-100 text-[10px] uppercase tracking-wider text-ink-500">
+                    <th class="text-left px-5 py-2.5 font-semibold">Query</th>
+                    <th class="text-right px-3 py-2.5 font-semibold">Movement</th>
+                    <th class="text-right px-5 py-2.5 font-semibold">Pos.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (g of majorWins(); track $index) {
+                    <tr class="border-b border-ink-100 hover:bg-ink-50">
+                      <td class="px-5 py-3 text-ink-900 truncate max-w-md">{{ g.keyword.text }}</td>
+                      <td class="px-3 py-3 text-right text-positive-500 font-bold">+{{ g.delta }}</td>
+                      <td class="px-5 py-3 text-right text-ink-500">{{ g.keyword.currentPosition ?? '—' }}</td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="3" class="text-center py-8 text-sm text-ink-500 italic">No data for this period.</td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+
+            <div class="bg-white rounded-xl border border-ink-200 shadow-card overflow-hidden">
+              <div class="px-5 py-3 border-b border-ink-100">
+                <h3 class="font-bold text-ink-900 text-sm">Newly ranking keywords</h3>
+                <p class="text-xs text-ink-500">Queries ranking this period for the first time</p>
+              </div>
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="border-b border-ink-100 text-[10px] uppercase tracking-wider text-ink-500">
+                    <th class="text-left px-5 py-2.5 font-semibold">Query</th>
+                    <th class="text-right px-5 py-2.5 font-semibold">Pos.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (n of newRankings(); track $index) {
+                    <tr class="border-b border-ink-100 hover:bg-ink-50">
+                      <td class="px-5 py-3 text-ink-900 truncate max-w-md">{{ n.keyword.text }}</td>
+                      <td class="px-5 py-3 text-right text-ink-500">{{ n.keyword.currentPosition ?? '—' }}</td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="2" class="text-center py-8 text-sm text-ink-500 italic">No data for this period.</td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </ng-template>
+
+        <ng-template #serpPreviewTpl>
+          <!-- SERP preview — static Google-style mock so the client can
+               see how their listing appears at a glance. Operator swaps
+               in a real screenshot before sending if desired. Top query
+               is auto-selected from the best-ranking tracked keyword. -->
+          <section>
+            <div class="mb-4">
+              <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">{{ sectionNumber('serp-preview') }} · SERP Preview</span>
+              <h2 class="text-3xl font-bold text-ink-900 mt-1">How you appear on Google</h2>
+              <p class="text-sm text-ink-500 mt-1">Live SERP for "{{ topQueryLabel() }}".</p>
+            </div>
+
+            <div class="bg-white rounded-xl border border-ink-200 shadow-card p-6">
+              <div class="flex items-center gap-4 mb-4">
+                <div class="text-2xl font-medium tracking-tight text-ink-500" style="font-family: 'Google Sans', Arial, sans-serif">
+                  <span style="color: #4285F4">G</span><span style="color: #EA4335">o</span><span style="color: #FBBC05">o</span><span style="color: #4285F4">g</span><span style="color: #34A853">l</span><span style="color: #EA4335">e</span>
+                </div>
+                <div class="flex-1 flex items-center gap-3 border border-ink-200 rounded-full px-4 py-2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA0A6" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <span class="text-sm text-ink-700">{{ topQueryLabel() }}</span>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-6 border-b border-ink-100 pb-2 mb-4 text-xs text-ink-500">
+                <span class="text-sky-600 border-b-2 border-sky-600 pb-1">All</span>
+                <span>Images</span><span>Maps</span><span>News</span><span>Videos</span><span>Shopping</span>
+                <span class="ml-auto text-[11px]">About 1,420,000 results</span>
+              </div>
+
+              <div class="relative">
+                <span class="absolute -top-3 left-4 bg-sky-600 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded">You</span>
+                <div class="border border-sky-500 bg-sky-50/40 rounded-lg p-4">
+                  <div class="flex items-center gap-2 mb-1">
+                    <div class="w-6 h-6 rounded-full bg-sky-600 text-white text-xs font-bold flex items-center justify-center">
+                      {{ serpDomainInitial() }}
+                    </div>
+                    <div class="text-xs text-ink-700">
+                      <div class="font-medium">{{ serpDomainLabel() }}</div>
+                      <div class="text-ink-500">{{ serpDomainLabel() }}</div>
+                    </div>
+                  </div>
+                  <div class="text-lg text-sky-700 font-normal cursor-pointer hover:underline">
+                    {{ d.client.name }} — organic listing
+                  </div>
+                  <p class="text-xs text-ink-700 leading-relaxed mt-1">
+                    We track this listing through Search Console. Replace with a live SERP screenshot before sending to show the client exactly how they appear today.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
         </ng-template>
 
         <ng-template #actionsTpl>
@@ -1752,6 +1948,62 @@ export class PublicReportComponent implements OnInit {
     const ranked = d.keywords.filter((k) => typeof k.currentPosition === 'number');
     if (!ranked.length) return null;
     return ranked.reduce((a, k) => a + (k.currentPosition || 0), 0) / ranked.length;
+  }
+
+  /**
+   * Top-performing pages accessor. Not yet plumbed onto the payload —
+   * returns an empty array so the section renders its empty state. When
+   * the report snapshotting is extended to persist GSC page-level data,
+   * this reads from d.topPages instead.
+   */
+  topPages(): Array<{ key: string; clicks: number; impressions: number; ctr: number; position: number }> {
+    const d = this.data() as (typeof this.data extends () => infer T ? T : never) & {
+      topPages?: Array<{ key: string; clicks: number; impressions: number; ctr: number; position: number }>;
+    };
+    return d?.topPages ?? [];
+  }
+
+  /** Existing gainers that moved up by 2+ positions this period. */
+  majorWins() {
+    const d = this.data();
+    if (!d) return [];
+    return d.movements.gainers.filter((g) => g.delta >= 2);
+  }
+
+  /** Queries appearing for the first time this period. */
+  newRankings() {
+    const d = this.data();
+    if (!d) return [];
+    return d.movements.fresh;
+  }
+
+  /** Count of currently-tracked keywords sitting in positions #1–#10. */
+  top10Count(): number {
+    return this.countTop(10);
+  }
+
+  /**
+   * Best-ranked tracked keyword — used as the SERP preview query. Falls
+   * back to a generic placeholder so the section still reads correctly
+   * before any keywords are tracked for the client.
+   */
+  topQueryLabel(): string {
+    const d = this.data();
+    if (!d || !d.keywords.length) return 'your top query';
+    const best = [...d.keywords]
+      .filter((k) => typeof k.currentPosition === 'number')
+      .sort((a, b) => (a.currentPosition ?? 999) - (b.currentPosition ?? 999))[0];
+    return best?.text || d.keywords[0]?.text || 'your top query';
+  }
+
+  serpDomainLabel(): string {
+    const url = this.data()?.client?.url || '';
+    return url.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0] || 'yourdomain.com';
+  }
+
+  serpDomainInitial(): string {
+    const name = this.data()?.client?.name || this.serpDomainLabel();
+    return (name.trim()[0] || '?').toUpperCase();
   }
 
   /**

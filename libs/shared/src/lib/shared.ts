@@ -652,6 +652,9 @@ export type ReportSectionKey =
   | 'key-metrics'
   | 'locations-performance'
   | 'search-rankings'
+  | 'top-performing-pages'
+  | 'ranking-movement'
+  | 'serp-preview'
   | 'actions-taken'
   | 'next-period-plan'
   | 'backlinks-profile'
@@ -668,6 +671,9 @@ export const DEFAULT_REPORT_LAYOUT: ReportSectionConfig[] = [
   { key: 'key-metrics', visible: true },
   { key: 'locations-performance', visible: true },
   { key: 'search-rankings', visible: true },
+  { key: 'top-performing-pages', visible: true },
+  { key: 'ranking-movement', visible: true },
+  { key: 'serp-preview', visible: true },
   { key: 'actions-taken', visible: true },
   { key: 'next-period-plan', visible: true },
   { key: 'backlinks-profile', visible: true },
@@ -694,6 +700,18 @@ export const REPORT_SECTION_META: Record<
   'search-rankings': {
     label: 'Search Rankings',
     description: 'Keywords, movements, gainers/losers.',
+  },
+  'top-performing-pages': {
+    label: 'Top Performing Pages',
+    description: 'Highest-traffic pages driving the period, from Search Console.',
+  },
+  'ranking-movement': {
+    label: 'Ranking Movement',
+    description: 'Major climbers, newly-ranking queries, and count of top-10 keywords.',
+  },
+  'serp-preview': {
+    label: 'SERP Preview',
+    description: 'Google-style mock of how the client appears for their top query.',
   },
   'actions-taken': {
     label: 'Actions Taken',

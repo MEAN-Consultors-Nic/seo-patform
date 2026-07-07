@@ -39,6 +39,9 @@ const DEFAULT_PDF_LAYOUT: ReportSectionKey[] = [
   'executive-summary',
   'key-metrics',
   'search-rankings',
+  'top-performing-pages',
+  'ranking-movement',
+  'serp-preview',
   'actions-taken',
   'next-period-plan',
   'backlinks-profile',
@@ -67,6 +70,10 @@ interface PdfContext {
   }>;
   gainers: Array<{ keyword: { text: string; currentPosition?: number }; delta: number }>;
   losers: Array<{ keyword: { text: string; currentPosition?: number }; delta: number }>;
+  /** Queries ranking for the first time this period — feeds Ranking Movement. */
+  fresh?: Array<{ keyword: { text: string; currentPosition?: number }; delta: number }>;
+  /** GSC page-level rows for Top Performing Pages. Empty until snapshotting lands. */
+  topPages?: Array<{ key: string; clicks: number; impressions: number; ctr: number; position: number }>;
   backlinks: {
     total: number;
     dofollow: number;
@@ -224,6 +231,7 @@ export class PdfService {
         report,
         ctx,
         coverImageDataUrl,
+        client,
       );
       if (block) content.push(...block);
     }
@@ -236,6 +244,7 @@ export class PdfService {
     report: Report,
     ctx: PdfContext,
     coverImageDataUrl: string | null,
+    client: Client,
   ): unknown[] | null {
     switch (key) {
       case 'executive-summary':
@@ -273,6 +282,27 @@ export class PdfService {
           ...(ctx.gainers.length || ctx.losers.length
             ? [this.movementsTable(ctx.gainers, ctx.losers)]
             : []),
+        ];
+      case 'top-performing-pages':
+        return [
+          this.sectionHeader(num(), 'Pages driving the month'),
+          this.topPagesBlock(ctx.topPages ?? []),
+        ];
+      case 'ranking-movement':
+        return [
+          this.sectionHeader(num(), 'Ranking movement'),
+          this.rankingMovementBlock(
+            (ctx.gainers ?? []).filter((g) => g.delta >= 2),
+            ctx.fresh ?? [],
+            ctx.keywords.filter(
+              (k) => typeof k.currentPosition === 'number' && (k.currentPosition as number) <= 10,
+            ).length,
+          ),
+        ];
+      case 'serp-preview':
+        return [
+          this.sectionHeader(num(), 'How you appear on Google'),
+          this.serpPreviewBlock(client, this.pickTopQuery(ctx.keywords)),
         ];
       case 'actions-taken': {
         const published = ctx.contentPublished ?? [];
@@ -1310,6 +1340,203 @@ export class PdfService {
       ],
       columnGap: 12,
       margin: [0, 0, 0, 12],
+    };
+  }
+
+  // --- Top-performing pages / Ranking movement / SERP preview --------------
+
+  private topPagesBlock(pages: NonNullable<PdfContext['topPages']>) {
+    if (!pages.length) {
+      return {
+        text: 'No page-level data available for this period.',
+        style: 'meta',
+        italics: true,
+        alignment: 'center' as const,
+        margin: [0, 12, 0, 12],
+      };
+    }
+    const body: unknown[] = [
+      [
+        { text: 'Page', style: 'th' },
+        { text: 'Clicks', style: 'th', alignment: 'right' as const },
+        { text: 'Impr.', style: 'th', alignment: 'right' as const },
+        { text: 'CTR', style: 'th', alignment: 'right' as const },
+        { text: 'Pos.', style: 'th', alignment: 'right' as const },
+      ],
+    ];
+    for (const p of pages) {
+      body.push([
+        { text: p.key, style: 'td', fontSize: 8 },
+        { text: this.formatNumber(p.clicks), style: 'td', alignment: 'right' as const },
+        { text: this.formatNumber(p.impressions), style: 'td', alignment: 'right' as const },
+        { text: `${p.ctr.toFixed(1)}%`, style: 'td', alignment: 'right' as const },
+        { text: p.position.toFixed(1), style: 'td', alignment: 'right' as const },
+      ]);
+    }
+    return {
+      table: { widths: ['*', 50, 55, 45, 40], body, headerRows: 1 },
+      layout: this.zebraTableLayout(),
+      margin: [0, 4, 0, 12],
+    };
+  }
+
+  private rankingMovementBlock(
+    majorWins: PdfContext['gainers'],
+    newRankings: NonNullable<PdfContext['fresh']>,
+    top10Count: number,
+  ) {
+    const kpiCard = (n: number, title: string, subtitle: string, tint: string) => ({
+      table: {
+        widths: [30, '*'],
+        body: [
+          [
+            {
+              text: String(n),
+              fontSize: 18,
+              bold: true,
+              color: tint,
+              alignment: 'center' as const,
+              margin: [0, 4, 0, 4] as [number, number, number, number],
+            },
+            {
+              stack: [
+                { text: title, bold: true, color: INK_900, fontSize: 9 },
+                { text: subtitle, color: INK_500, fontSize: 7 },
+              ],
+              margin: [4, 6, 0, 0] as [number, number, number, number],
+            },
+          ],
+        ],
+      },
+      layout: { hLineWidth: () => 0.5, vLineWidth: () => 0, hLineColor: () => INK_200 },
+      margin: [0, 0, 0, 0],
+    });
+
+    const tableFor = (
+      title: string,
+      subtitle: string,
+      rows: PdfContext['gainers'],
+      showDelta: boolean,
+    ) => {
+      const body: unknown[] = [
+        [
+          { text: 'Query', style: 'th' },
+          ...(showDelta ? [{ text: 'Movement', style: 'th', alignment: 'right' as const }] : []),
+          { text: 'Pos.', style: 'th', alignment: 'right' as const },
+        ],
+      ];
+      if (rows.length === 0) {
+        body.push([
+          {
+            text: 'No data for this period.',
+            colSpan: showDelta ? 3 : 2,
+            style: 'meta',
+            italics: true,
+            alignment: 'center' as const,
+          },
+          ...(showDelta ? [{}, {}] : [{}]),
+        ]);
+      } else {
+        for (const r of rows) {
+          const row: unknown[] = [{ text: r.keyword.text, style: 'td' }];
+          if (showDelta) row.push({ text: `+${r.delta}`, style: 'td', color: POSITIVE, bold: true, alignment: 'right' as const });
+          row.push({ text: String(r.keyword.currentPosition ?? '—'), style: 'td', alignment: 'right' as const });
+          body.push(row);
+        }
+      }
+      return {
+        stack: [
+          { text: title, bold: true, color: INK_900, fontSize: 10, margin: [0, 6, 0, 0] as [number, number, number, number] },
+          { text: subtitle, color: INK_500, fontSize: 8, margin: [0, 0, 0, 4] as [number, number, number, number] },
+          {
+            table: {
+              widths: showDelta ? ['*', 60, 40] : ['*', 40],
+              body,
+              headerRows: 1,
+            },
+            layout: this.zebraTableLayout(),
+          },
+        ],
+        margin: [0, 0, 0, 10] as [number, number, number, number],
+      };
+    };
+
+    return {
+      stack: [
+        {
+          columns: [
+            kpiCard(majorWins.length, 'Major ranking wins', 'moved up ≥2 positions', SKY),
+            kpiCard(newRankings.length, 'New rankings', 'newly tracked keywords', POSITIVE),
+            kpiCard(top10Count, 'Top-10 keywords', 'positions #1–#10', WARNING),
+          ],
+          columnGap: 8,
+          margin: [0, 4, 0, 10],
+        },
+        tableFor('Major ranking wins', 'Existing keywords that climbed this period', majorWins, true),
+        tableFor('Newly ranking keywords', 'Queries ranking this period for the first time', newRankings, false),
+      ],
+      margin: [0, 0, 0, 12],
+    };
+  }
+
+  private pickTopQuery(keywords: PdfContext['keywords']): string {
+    if (!keywords.length) return 'your top query';
+    const ranked = [...keywords]
+      .filter((k) => typeof k.currentPosition === 'number')
+      .sort((a, b) => (a.currentPosition ?? 999) - (b.currentPosition ?? 999));
+    return ranked[0]?.text || keywords[0]?.text || 'your top query';
+  }
+
+  private serpPreviewBlock(client: Client, query: string) {
+    const domain =
+      (client.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0] ||
+      'yourdomain.com';
+    return {
+      stack: [
+        {
+          text: `Live SERP for "${query}".`,
+          color: INK_500,
+          fontSize: 9,
+          italics: true,
+          margin: [0, 0, 0, 8] as [number, number, number, number],
+        },
+        {
+          table: {
+            widths: ['*'],
+            body: [
+              [
+                {
+                  stack: [
+                    { text: `Google  ·  ${query}`, color: INK_500, fontSize: 9, margin: [0, 0, 0, 6] as [number, number, number, number] },
+                    { text: 'All   Images   Maps   News   Videos   Shopping', color: INK_500, fontSize: 7, margin: [0, 0, 0, 8] as [number, number, number, number] },
+                    { text: `${domain}  ·  ${domain}`, color: INK_700, fontSize: 8 },
+                    {
+                      text: `${client.name} — organic listing`,
+                      color: SKY,
+                      fontSize: 12,
+                      bold: true,
+                      margin: [0, 2, 0, 2] as [number, number, number, number],
+                    },
+                    {
+                      text: 'We track this listing through Search Console. Replace with a live SERP screenshot before sending to show the client exactly how they appear today.',
+                      color: INK_700,
+                      fontSize: 8,
+                    },
+                  ],
+                  margin: [10, 10, 10, 10],
+                },
+              ],
+            ],
+          },
+          layout: {
+            hLineWidth: () => 0.5,
+            vLineWidth: () => 0.5,
+            hLineColor: () => INK_200,
+            vLineColor: () => INK_200,
+          },
+          margin: [0, 0, 0, 12] as [number, number, number, number],
+        },
+      ],
     };
   }
 

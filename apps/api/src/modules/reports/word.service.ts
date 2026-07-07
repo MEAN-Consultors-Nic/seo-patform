@@ -78,6 +78,9 @@ const SECTION_LABELS: Record<ReportSectionKey, string> = {
   'final-considerations': 'Final Considerations',
   // Sections present in the layout type but not rendered in Word v1:
   'locations-performance': 'Locations Performance',
+  'top-performing-pages': 'Top Performing Pages',
+  'ranking-movement': 'Ranking Movement',
+  'serp-preview': 'SERP Preview',
 };
 
 const BRAND = 'FF7A59';
