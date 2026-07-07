@@ -1,7 +1,7 @@
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
 import {
   Client,
@@ -12,11 +12,13 @@ import {
   HOURS_PER_TIER,
   Keyword,
   KeywordIntent,
+  Package,
   ReportKpis,
 } from '@seo/shared';
 import { ClientsService } from '../../core/clients.service';
 import { KeywordsService } from '../../core/keywords.service';
 import { CompetitorsService } from '../../core/competitors.service';
+import { PackagesService } from '../../core/packages.service';
 import { UsersService } from '../../core/users.service';
 import { AuthService } from '../../core/auth.service';
 import { User } from '@seo/shared';
@@ -30,7 +32,7 @@ interface WizardStep {
 @Component({
   selector: 'app-new-client-wizard',
   standalone: true,
-  imports: [CommonModule, FormsModule, DecimalPipe],
+  imports: [CommonModule, FormsModule, DecimalPipe, RouterLink],
   template: `
     <div class="min-h-screen bg-ink-50">
       <!-- Top bar -->
@@ -95,18 +97,22 @@ interface WizardStep {
                 <input class="input" [(ngModel)]="form.url" placeholder="https://example.com" />
               </div>
               <div>
-                <label class="label">Tier <span class="text-danger-500">*</span></label>
-                <div class="flex bg-white border border-ink-200 rounded-md p-0.5">
-                  @for (t of tierOptions; track t) {
-                    <button (click)="form.tier = t; updateHours()"
-                            [class]="'flex-1 px-3 py-2 text-sm font-bold rounded transition ' +
-                              (form.tier === t ? 'bg-ink-900 text-white' : 'text-ink-600 hover:text-ink-900')">
-                      Tier {{ t }}
-                    </button>
+                <label class="label">Package <span class="text-danger-500">*</span></label>
+                <select class="input" [ngModel]="form.packageId"
+                        (ngModelChange)="onPackagePick($event)">
+                  <option value="">— Pick a package —</option>
+                  @for (p of packages(); track p._id) {
+                    <option [value]="p._id">{{ p.name }}</option>
                   }
-                </div>
+                </select>
                 <p class="text-[10px] text-ink-500 mt-1">
-                  {{ form.tier ? hoursForTier(form.tier) + 'h per cycle' : 'Select a tier' }}
+                  <a routerLink="/settings/packages" class="text-brand-500 hover:underline">
+                    Manage packages
+                  </a>
+                  @if (selectedPackage(); as p) {
+                    · {{ p.deliverables.length }} deliverable{{ p.deliverables.length === 1 ? '' : 's' }}
+                    @if (p.hoursPerPeriod !== undefined) { · {{ p.hoursPerPeriod }}h/period }
+                  }
                 </p>
               </div>
               <div>
@@ -310,7 +316,7 @@ interface WizardStep {
                 <div class="text-[10px] uppercase tracking-wider text-ink-500 font-bold">Client</div>
                 <div class="font-bold text-ink-900 text-lg">{{ form.name || '(no name)' }}</div>
                 <div class="text-xs text-ink-500">
-                  Tier {{ form.tier }} · {{ form.industry || 'no industry' }} ·
+                  {{ selectedPackage()?.name || 'No package' }} · {{ form.industry || 'no industry' }} ·
                   <a [href]="form.url" target="_blank" class="text-sky-500 hover:underline">{{ form.url }}</a>
                 </div>
               </div>
@@ -385,6 +391,7 @@ export class NewClientWizardComponent {
   private keywordsSvc = inject(KeywordsService);
   private competitorsSvc = inject(CompetitorsService);
   private usersSvc = inject(UsersService);
+  private packagesSvc = inject(PackagesService);
   private router = inject(Router);
   protected auth = inject(AuthService);
 
@@ -395,6 +402,10 @@ export class NewClientWizardComponent {
         error: () => null,
       });
     }
+    this.packagesSvc.list().subscribe({
+      next: (list) => this.packages.set(list),
+      error: () => this.packages.set([]),
+    });
   }
 
   steps: WizardStep[] = [
@@ -418,12 +429,20 @@ export class NewClientWizardComponent {
   form = {
     name: '',
     url: '',
-    tier: '' as ClientTier | '',
+    packageId: '' as string,
+    tier: '' as ClientTier | '', // legacy fallback; new clients pick a package instead
     industry: '',
     logoUrl: '',
     hoursPerCycle: 0,
     ownerId: '' as string,
   };
+
+  packages = signal<Package[]>([]);
+  selectedPackage = computed<Package | null>(() => {
+    const id = this.form.packageId;
+    if (!id) return null;
+    return this.packages().find((p) => p._id === id) ?? null;
+  });
 
   assignableUsers = signal<User[]>([]);
 
@@ -478,15 +497,23 @@ export class NewClientWizardComponent {
     if (this.form.tier) this.form.hoursPerCycle = HOURS_PER_TIER[this.form.tier];
   }
 
+  onPackagePick(packageId: string) {
+    this.form.packageId = packageId;
+    const pkg = this.selectedPackage();
+    if (pkg?.hoursPerPeriod !== undefined) {
+      this.form.hoursPerCycle = pkg.hoursPerPeriod;
+    }
+  }
+
   canAdvance(): boolean {
     if (this.currentStepIdx() === 0) {
-      return !!(this.form.name.trim() && this.form.url.trim() && this.form.tier);
+      return !!(this.form.name.trim() && this.form.url.trim() && this.form.packageId);
     }
     return true;
   }
 
   canSubmit(): boolean {
-    return !!(this.form.name.trim() && this.form.url.trim() && this.form.tier);
+    return !!(this.form.name.trim() && this.form.url.trim() && this.form.packageId);
   }
 
   goToStep(i: number) {
@@ -579,7 +606,7 @@ export class NewClientWizardComponent {
     const payload: Partial<Client> = {
       name: this.form.name.trim(),
       url: this.form.url.trim(),
-      tier: this.form.tier as ClientTier,
+      packageId: this.form.packageId,
       industry: this.form.industry?.trim() || undefined,
       logoUrl: this.form.logoUrl?.trim() || undefined,
       ownerId: this.form.ownerId || undefined,

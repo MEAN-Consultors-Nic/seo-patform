@@ -2,9 +2,16 @@ import { CommonModule, DecimalPipe } from '@angular/common';
 import { Component, HostListener, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { ClientTier, ReportKpis } from '@seo/shared';
+import {
+  ClientTier,
+  PACKAGE_COLOR_PALETTE,
+  Package,
+  PackageColor,
+  ReportKpis,
+} from '@seo/shared';
 import { ClientsService, ClientWithStats } from '../../core/clients.service';
 import { AuthService } from '../../core/auth.service';
+import { PackagesService } from '../../core/packages.service';
 import { GoogleIntegrationsService } from '../../core/google-integrations.service';
 
 function todayIso(): string {
@@ -95,7 +102,13 @@ interface KpiField {
                   </div>
                 </div>
                 <div class="flex items-center gap-1.5 flex-shrink-0">
-                  <span [class]="'tier-' + c.tier">{{ c.tier }}</span>
+                  @if (packageForClient(c); as pkg) {
+                    <span [class]="packageBadgeClass(pkg.color) + ' text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded'">
+                      {{ pkg.name }}
+                    </span>
+                  } @else if (c.tier) {
+                    <span [class]="'tier-' + c.tier">{{ c.tier }}</span>
+                  }
                   <div class="relative">
                     <button type="button"
                             (click)="toggleMenu(c._id!, $event)"
@@ -427,8 +440,26 @@ export class ClientsListComponent implements OnInit {
     { value: 'C', label: 'C' },
   ];
 
+  private packagesSvc = inject(PackagesService);
+  packages = signal<Package[]>([]);
+
   ngOnInit() {
     this.load();
+    this.packagesSvc.list().subscribe({
+      next: (list) => this.packages.set(list),
+      error: () => this.packages.set([]),
+    });
+  }
+
+  packageForClient(c: ClientWithStats): Package | null {
+    if (c.package) return c.package;
+    if (!c.packageId) return null;
+    return this.packages().find((p) => p._id === c.packageId) ?? null;
+  }
+
+  packageBadgeClass(color: PackageColor | undefined): string {
+    const palette = PACKAGE_COLOR_PALETTE[color || 'sky'];
+    return `${palette.bg} ${palette.text}`;
   }
 
   setTier(t: ClientTier | '') {

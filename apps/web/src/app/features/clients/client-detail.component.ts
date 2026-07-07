@@ -2,8 +2,9 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { Client } from '@seo/shared';
+import { Client, PACKAGE_COLOR_PALETTE, Package, PackageColor } from '@seo/shared';
 import { ClientsService } from '../../core/clients.service';
+import { PackagesService } from '../../core/packages.service';
 import { ClientKeywordsTab } from './tabs/keywords-tab.component';
 import { ClientKpiHistoryTab } from './tabs/kpi-history-tab.component';
 import { ClientKnowledgeTab } from './tabs/knowledge-tab.component';
@@ -114,7 +115,13 @@ const GROUPS: GroupDef[] = [
             <div class="min-w-0">
               <h1 class="text-xl sm:text-2xl font-bold text-ink-900 truncate">{{ c.name }}</h1>
               <div class="flex items-center gap-2 mt-1 flex-wrap">
-                <span [class]="'tier-' + c.tier">{{ c.tier }}</span>
+                @if (packageForClient(c); as pkg) {
+                  <span [class]="packageBadgeClass(pkg.color) + ' text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded'">
+                    {{ pkg.name }}
+                  </span>
+                } @else if (c.tier) {
+                  <span [class]="'tier-' + c.tier">{{ c.tier }}</span>
+                }
                 <span class="text-xs text-ink-500">{{ c.hoursPerCycle }} h / cycle</span>
                 <span class="text-xs text-ink-300 hidden sm:inline">·</span>
                 <a [href]="c.url" target="_blank" class="text-xs text-sky-500 hover:underline truncate max-w-[200px] sm:max-w-none">{{ c.url }}</a>
@@ -310,11 +317,13 @@ const GROUPS: GroupDef[] = [
               </div>
               <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
-                  <label class="label">Tier</label>
-                  <select class="input" [(ngModel)]="form.tier">
-                    <option value="A">Tier A</option>
-                    <option value="B">Tier B</option>
-                    <option value="C">Tier C</option>
+                  <label class="label">Package</label>
+                  <select class="input" [ngModel]="form.packageId"
+                          (ngModelChange)="onPackageChange($event)">
+                    <option value="">— None —</option>
+                    @for (p of packages(); track p._id) {
+                      <option [value]="p._id">{{ p.name }}</option>
+                    }
                   </select>
                 </div>
                 <div>
@@ -416,7 +425,9 @@ const GROUPS: GroupDef[] = [
 export class ClientDetailComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private svc = inject(ClientsService);
+  private packagesSvc = inject(PackagesService);
 
+  packages = signal<Package[]>([]);
   client = signal<Client | null>(null);
   activeTab = signal<TabKey>('tasks');
   logoPreviewOk = signal<boolean | null>(null);
@@ -588,6 +599,35 @@ export class ClientDetailComponent implements OnInit {
 
   ngOnInit() {
     this.reload();
+    this.packagesSvc.list().subscribe({
+      next: (list) => this.packages.set(list),
+      error: () => this.packages.set([]),
+    });
+  }
+
+  onPackageChange(packageId: string) {
+    this.form.packageId = packageId;
+    const pkg = this.packages().find((p) => p._id === packageId);
+    if (pkg?.hoursPerPeriod !== undefined) {
+      this.form.hoursPerCycle = pkg.hoursPerPeriod;
+    }
+  }
+
+  /**
+   * Resolves the client's package from either the populated `package`
+   * field the API sends, or by looking up packageId in the loaded list.
+   * Returns null when the client has neither (pre-migration data).
+   */
+  packageForClient(c: Client): Package | null {
+    if (c.package) return c.package;
+    if (!c.packageId) return null;
+    return this.packages().find((p) => p._id === c.packageId) ?? null;
+  }
+
+  packageBadgeClass(color: PackageColor | undefined): string {
+    const c = color || 'sky';
+    const palette = PACKAGE_COLOR_PALETTE[c];
+    return `${palette.bg} ${palette.text}`;
   }
 
   /** "alias1, alias2, alias3" representation for the comma-separated input. */
@@ -609,6 +649,7 @@ export class ClientDetailComponent implements OnInit {
     // (e.g. through Integrations or Service Areas) are reflected.
     this.form.name = c.name;
     this.form.tier = c.tier;
+    this.form.packageId = c.packageId || c.package?._id || '';
     this.form.url = c.url;
     this.form.logoUrl = c.logoUrl || '';
     this.form.industry = c.industry || '';
@@ -637,6 +678,7 @@ export class ClientDetailComponent implements OnInit {
       this.client.set(c);
       this.form.name = c.name;
       this.form.tier = c.tier;
+      this.form.packageId = c.packageId || c.package?._id || '';
       this.form.url = c.url;
       this.form.logoUrl = c.logoUrl || '';
       this.form.industry = c.industry || '';
@@ -662,7 +704,7 @@ export class ClientDetailComponent implements OnInit {
     this.svc
       .update(c._id, {
         name,
-        tier: this.form.tier,
+        packageId: this.form.packageId || undefined,
         url: this.form.url?.trim(),
         logoUrl: trimmedLogo || undefined,
         industry: this.form.industry?.trim() || undefined,

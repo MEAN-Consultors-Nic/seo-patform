@@ -73,6 +73,13 @@ export const appRoutes: Route[] = [
           ),
       },
       {
+        path: 'settings/packages',
+        loadComponent: () =>
+          import('./features/settings/packages-settings.component').then(
+            (m) => m.PackagesSettingsComponent,
+          ),
+      },
+      {
         path: 'settings/supervisor',
         canActivate: [roleGuard('root', 'seo-manager')],
         loadComponent: () =>

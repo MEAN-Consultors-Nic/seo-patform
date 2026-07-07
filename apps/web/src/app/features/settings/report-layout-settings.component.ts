@@ -33,6 +33,9 @@ import { AppSettingsService } from '../../core/app-settings.service';
           <a routerLink="/settings/report-layout" routerLinkActive="tab-active" class="tab">
             Report layout
           </a>
+          <a routerLink="/settings/packages" routerLinkActive="tab-active" class="tab">
+            Packages
+          </a>
           <a routerLink="/settings/supervisor" routerLinkActive="tab-active" class="tab">
             Supervisor
           </a>
