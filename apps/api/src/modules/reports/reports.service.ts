@@ -891,6 +891,16 @@ export class ReportsService implements OnModuleInit {
       await this.applyKpisPreviousFallback(report, client),
     );
 
+    // Package + per-deliverable progress. Completed tasks in the report
+    // window count against any deliverable whose matchTaskCategory
+    // equals their category. Empty when the client has no package.
+    const packageWithProgress = this.buildPackageProgress(
+      client as unknown as { package?: unknown; packageId?: unknown },
+      tasks,
+      new Date(cycle.startDate),
+      new Date(cycle.endDate),
+    );
+
     return {
       report: reportOut,
       client: {
@@ -899,6 +909,8 @@ export class ReportsService implements OnModuleInit {
         url: client.url,
         logoUrl: client.logoUrl,
         industry: client.industry,
+        packageId: (client as unknown as { packageId?: { toString(): string } }).packageId?.toString(),
+        package: packageWithProgress?.package,
       },
       cycle: {
         label: cycle.label,
@@ -961,6 +973,85 @@ export class ReportsService implements OnModuleInit {
         publishedUrl: p.publishedUrl,
         publishedAt: p.publishedAt,
       })),
+      packageProgress: packageWithProgress?.progress,
+    };
+  }
+
+  /**
+   * Assembles a serializable snapshot of the client's assigned Package
+   * plus per-deliverable completion counts for the report window. The
+   * completion count is the number of completed tasks in the window
+   * whose category matches the deliverable's matchTaskCategory.
+   */
+  private buildPackageProgress(
+    client: { package?: unknown; packageId?: unknown },
+    tasks: Array<{ status: string; category: string; completedAt?: Date | string }>,
+    from: Date,
+    to: Date,
+  ):
+    | {
+        package: {
+          _id?: string;
+          name: string;
+          color: string;
+          description?: string;
+          deliverables: Array<{
+            key: string;
+            label: string;
+            quantity: number;
+            unit: string;
+            frequency: string;
+            matchTaskCategory?: string;
+            notes?: string;
+          }>;
+          hoursPerPeriod?: number;
+        };
+        progress: Array<{ key: string; completed: number }>;
+      }
+    | undefined {
+    const raw = (client.package ?? undefined) as
+      | undefined
+      | {
+          _id?: unknown;
+          name?: string;
+          color?: string;
+          description?: string;
+          hoursPerPeriod?: number;
+          deliverables?: Array<{
+            key: string;
+            label: string;
+            quantity: number;
+            unit: string;
+            frequency: string;
+            matchTaskCategory?: string;
+            notes?: string;
+          }>;
+        };
+    if (!raw || !raw.name) return undefined;
+    const deliverables = raw.deliverables ?? [];
+    const fromTs = from.getTime();
+    const toTs = to.getTime();
+    const progress = deliverables.map((d) => {
+      if (!d.matchTaskCategory) return { key: d.key, completed: 0 };
+      const count = tasks.filter((t) => {
+        if (t.status !== 'completed' || t.category !== d.matchTaskCategory) {
+          return false;
+        }
+        const at = t.completedAt ? new Date(t.completedAt).getTime() : NaN;
+        return !isNaN(at) && at >= fromTs && at <= toTs;
+      }).length;
+      return { key: d.key, completed: count };
+    });
+    return {
+      package: {
+        _id: raw._id ? String(raw._id) : undefined,
+        name: raw.name,
+        color: raw.color ?? 'sky',
+        description: raw.description,
+        deliverables,
+        hoursPerPeriod: raw.hoursPerPeriod,
+      },
+      progress,
     };
   }
 
@@ -1572,6 +1663,18 @@ export class ReportsService implements OnModuleInit {
     );
     const reportForPdf = await this.applyKpisPreviousFallback(report, client);
     const share = await this.buildShareInfo(report);
+    const windowFrom = new Date(cycle.startDate);
+    const windowTo = new Date(cycle.endDate);
+    const pkgProgress = this.buildPackageProgress(
+      client as unknown as { package?: unknown; packageId?: unknown },
+      tasks as unknown as Array<{
+        status: string;
+        category: string;
+        completedAt?: Date | string;
+      }>,
+      windowFrom,
+      windowTo,
+    );
     return this.pdf.generate(
       client as unknown as ClientType,
       cycle as unknown as CycleType,
@@ -1610,6 +1713,15 @@ export class ReportsService implements OnModuleInit {
           publishedUrl: p.publishedUrl,
           publishedAt: p.publishedAt,
         })),
+        packageInfo: pkgProgress
+          ? {
+              name: pkgProgress.package.name,
+              description: pkgProgress.package.description,
+              deliverables: pkgProgress.package.deliverables as never,
+            }
+          : undefined,
+        packageProgress: pkgProgress?.progress,
+        reportWindow: { from: windowFrom, to: windowTo },
         share,
       },
     );

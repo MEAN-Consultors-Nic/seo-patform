@@ -57,6 +57,29 @@ export const DELIVERABLE_FREQUENCY_LABELS: Record<DeliverableFrequency, string> 
 };
 
 /**
+ * Returns the effective target quantity for a deliverable given the
+ * report window's length in days. Weekly/monthly frequencies get
+ * scaled to the window (so a 30-day report on a "4 posts / week"
+ * deliverable expects ~17 posts). per_period returns quantity as-is.
+ */
+export function targetForWindow(
+  deliverable: Pick<Deliverable, 'quantity' | 'frequency'>,
+  windowDays: number,
+): number {
+  if (windowDays <= 0) return deliverable.quantity;
+  switch (deliverable.frequency) {
+    case 'per_period':
+      return deliverable.quantity;
+    case 'weekly':
+      return Math.round((deliverable.quantity * windowDays) / 7);
+    case 'biweekly':
+      return Math.round((deliverable.quantity * windowDays) / 14);
+    case 'monthly':
+      return Math.round((deliverable.quantity * windowDays) / 30);
+  }
+}
+
+/**
  * A single line item inside a Package. Structured so the report can
  * automatically show "X of Y completed this period" when the deliverable
  * declares which TaskCategory it maps to.
@@ -709,6 +732,12 @@ export interface PublicReportPayload {
       >;
     }
   >;
+  /**
+   * Per-deliverable completion counts for the report window. Computed
+   * server-side from tasks whose category matches each deliverable's
+   * matchTaskCategory. Absent when the client has no package.
+   */
+  packageProgress?: Array<{ key: string; completed: number }>;
 }
 
 export type ShopifyResource = 'product' | 'collection' | 'page' | 'article';
@@ -766,6 +795,7 @@ export type ReportSectionKey =
   | 'top-performing-pages'
   | 'ranking-movement'
   | 'serp-preview'
+  | 'package-deliverables'
   | 'actions-taken'
   | 'next-period-plan'
   | 'backlinks-profile'
@@ -795,6 +825,7 @@ export const DEFAULT_REPORT_LAYOUT: ReportSectionConfig[] = [
   { key: 'top-performing-pages', visible: true },
   { key: 'ranking-movement', visible: true },
   { key: 'serp-preview', visible: true },
+  { key: 'package-deliverables', visible: true },
   { key: 'actions-taken', visible: true },
   { key: 'next-period-plan', visible: true },
   { key: 'backlinks-profile', visible: true },
@@ -837,6 +868,10 @@ export const REPORT_SECTION_META: Record<
   'serp-preview': {
     label: 'SERP Preview',
     description: 'Google-style mock of how the client appears for their top query.',
+  },
+  'package-deliverables': {
+    label: 'Package Deliverables',
+    description: 'Renders the assigned Package deliverables with progress vs target for this reporting period.',
   },
   'actions-taken': {
     label: 'Actions Taken',

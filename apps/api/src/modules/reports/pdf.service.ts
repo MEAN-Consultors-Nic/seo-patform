@@ -6,12 +6,15 @@ import { enUS } from 'date-fns/locale';
 import {
   Client,
   Cycle,
+  DELIVERABLE_FREQUENCY_LABELS,
+  Deliverable,
   Report,
   ReportKpis,
   ReportSectionConfig,
   ReportSectionKey,
   UNNUMBERED_REPORT_SECTIONS,
   sanitizeText,
+  targetForWindow,
 } from '@seo/shared';
 
 // --- Brand palette ----------------------------------------------------------
@@ -44,6 +47,7 @@ const DEFAULT_PDF_LAYOUT: ReportSectionKey[] = [
   'top-performing-pages',
   'ranking-movement',
   'serp-preview',
+  'package-deliverables',
   'actions-taken',
   'next-period-plan',
   'backlinks-profile',
@@ -76,6 +80,15 @@ interface PdfContext {
   fresh?: Array<{ keyword: { text: string; currentPosition?: number }; delta: number }>;
   /** GSC page-level rows for Top Performing Pages. Empty until snapshotting lands. */
   topPages?: Array<{ key: string; clicks: number; impressions: number; ctr: number; position: number }>;
+  /** Client package + per-deliverable completed counts for the window. */
+  packageInfo?: {
+    name: string;
+    description?: string;
+    deliverables: Deliverable[];
+  };
+  packageProgress?: Array<{ key: string; completed: number }>;
+  /** Report window start/end (used to scale weekly/monthly deliverables). */
+  reportWindow?: { from: Date; to: Date };
   backlinks: {
     total: number;
     dofollow: number;
@@ -313,6 +326,12 @@ export class PdfService {
         return [
           this.sectionHeader(num(), 'How you appear on Google'),
           this.serpPreviewBlock(client, this.pickTopQuery(ctx.keywords)),
+        ];
+      case 'package-deliverables':
+        if (!ctx.packageInfo?.deliverables?.length) return null;
+        return [
+          this.sectionHeader(num(), `${ctx.packageInfo.name} — deliverables`),
+          this.packageDeliverablesBlock(ctx),
         ];
       case 'actions-taken': {
         const published = ctx.contentPublished ?? [];
@@ -1658,6 +1677,87 @@ export class PdfService {
         },
       ],
     };
+  }
+
+  // --- Package deliverables (with progress) --------------------------------
+
+  private packageDeliverablesBlock(ctx: PdfContext) {
+    const info = ctx.packageInfo!;
+    const progress = new Map<string, number>();
+    for (const p of ctx.packageProgress ?? []) progress.set(p.key, p.completed);
+    const windowDays = ctx.reportWindow
+      ? Math.max(
+          0,
+          Math.round(
+            (ctx.reportWindow.to.getTime() - ctx.reportWindow.from.getTime()) /
+              86400000,
+          ) + 1,
+        )
+      : 0;
+
+    const body: unknown[] = [
+      [
+        { text: 'Deliverable', style: 'th' },
+        { text: 'Target', style: 'th', alignment: 'right' as const },
+        { text: 'Completed', style: 'th', alignment: 'right' as const },
+        { text: 'Progress', style: 'th', alignment: 'right' as const },
+      ],
+    ];
+    for (const del of info.deliverables) {
+      const target = targetForWindow(del, windowDays);
+      const completed = progress.get(del.key) ?? 0;
+      const pct = target > 0 ? Math.round((completed / target) * 100) : 0;
+      const color = pct >= 100 ? POSITIVE : pct >= 50 ? SKY : WARNING;
+      body.push([
+        {
+          stack: [
+            { text: del.label, style: 'td', bold: true },
+            {
+              text: `${del.quantity} ${del.unit} · ${DELIVERABLE_FREQUENCY_LABELS[del.frequency]}`,
+              style: 'meta',
+              fontSize: 8,
+            },
+          ],
+        },
+        {
+          text: `${target} ${del.unit}`,
+          style: 'td',
+          alignment: 'right' as const,
+        },
+        {
+          text: String(completed),
+          style: 'td',
+          alignment: 'right' as const,
+        },
+        {
+          text: `${pct}%`,
+          style: 'td',
+          alignment: 'right' as const,
+          color,
+          bold: true,
+        },
+      ]);
+    }
+    const blocks: unknown[] = [];
+    if (info.description) {
+      blocks.push({
+        text: info.description,
+        color: INK_500,
+        fontSize: 9,
+        italics: true,
+        margin: [0, 0, 0, 6] as [number, number, number, number],
+      });
+    }
+    blocks.push({
+      table: {
+        widths: ['*', 60, 60, 50],
+        body,
+        headerRows: 1,
+      },
+      layout: this.zebraTableLayout(),
+      margin: [0, 0, 0, 12] as [number, number, number, number],
+    });
+    return { stack: blocks };
   }
 
   // --- Tasks -----------------------------------------------------------------
