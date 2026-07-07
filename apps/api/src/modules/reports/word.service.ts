@@ -81,6 +81,7 @@ const SECTION_LABELS: Record<ReportSectionKey, string> = {
   'top-performing-pages': 'Top Performing Pages',
   'ranking-movement': 'Ranking Movement',
   'serp-preview': 'SERP Preview',
+  'kpi-snapshot': 'KPI Snapshot',
 };
 
 const BRAND = 'FF7A59';

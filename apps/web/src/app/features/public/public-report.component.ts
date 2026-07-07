@@ -9,7 +9,11 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { NgApexchartsModule } from 'ng-apexcharts';
 import type { ApexOptions } from 'ng-apexcharts';
-import { DEFAULT_REPORT_LAYOUT, ReportSectionKey } from '@seo/shared';
+import {
+  DEFAULT_REPORT_LAYOUT,
+  ReportSectionKey,
+  UNNUMBERED_REPORT_SECTIONS,
+} from '@seo/shared';
 import { ReportsService } from '../../core/reports.service';
 import { SanitizerService } from '../../core/sanitizer.service';
 
@@ -290,6 +294,9 @@ interface PublicPayload {
           -->
           @for (key of orderedVisibleSections(); track key) {
             @switch (key) {
+              @case ('kpi-snapshot') {
+                <ng-container [ngTemplateOutlet]="kpiSnapshotTpl"></ng-container>
+              }
               @case ('executive-summary') {
                 <ng-container [ngTemplateOutlet]="execSummaryTpl"></ng-container>
               }
@@ -333,6 +340,46 @@ interface PublicPayload {
         <!-- ============================================================ -->
         <!--      Section templates — rendered above via ngTemplateOutlet  -->
         <!-- ============================================================ -->
+
+        <ng-template #kpiSnapshotTpl>
+          <!-- Hero KPI snapshot: 4 headline metrics with prior-period
+               deltas. Renders unnumbered, right under the cover image
+               so the reader sees at-a-glance performance before diving
+               into narrative sections. Cards silently drop out when a
+               metric has no value in this period. -->
+          @if (snapshotCards().length > 0) {
+            <section>
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                @for (c of snapshotCards(); track c.label) {
+                  <div class="bg-white rounded-xl p-4 border border-ink-200 shadow-card">
+                    <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-1">{{ c.label }}</div>
+                    <div class="text-2xl font-black text-ink-900 leading-tight">{{ c.currentDisplay }}</div>
+                    @if (c.deltaDisplay) {
+                      <div class="mt-1 flex items-center gap-1.5">
+                        <div class="text-[11px] font-semibold flex items-center gap-0.5"
+                             [class.text-positive-500]="c.good"
+                             [class.text-danger-500]="!c.good">
+                          @if (c.deltaSign > 0) {
+                            <svg width="8" height="8" viewBox="0 0 10 10"><polygon points="5,0 10,10 0,10" fill="currentColor"/></svg>
+                          } @else if (c.deltaSign < 0) {
+                            <svg width="8" height="8" viewBox="0 0 10 10"><polygon points="0,0 10,0 5,10" fill="currentColor"/></svg>
+                          }
+                          <span>{{ c.deltaDisplay }}</span>
+                        </div>
+                        <span class="text-[10px] text-ink-300">·</span>
+                        <div class="text-[10px] text-ink-500 truncate">
+                          prev <span class="font-semibold text-ink-700">{{ c.previousDisplay }}</span>
+                        </div>
+                      </div>
+                    } @else {
+                      <div class="text-[10px] text-ink-400 mt-1">no previous period</div>
+                    }
+                  </div>
+                }
+              </div>
+            </section>
+          }
+        </ng-template>
 
         <ng-template #execSummaryTpl>
           <!-- Executive Summary / Intro -->
@@ -1791,12 +1838,18 @@ export class PublicReportComponent implements OnInit {
     return this.resolvedLayout().some((s) => s.key === key && s.visible);
   }
 
-  /** Two-digit numeric prefix reflecting position among visible sections. */
+  /**
+   * Two-digit numeric prefix reflecting position among visible sections.
+   * Sections listed in UNNUMBERED_REPORT_SECTIONS (like the KPI snapshot
+   * hero) don't count — they render without a number so they don't shift
+   * the "01, 02…" sequence of the analytical sections that follow.
+   */
   sectionNumber(key: ReportSectionKey): string {
     const layout = this.resolvedLayout();
     let pos = 0;
     for (const s of layout) {
       if (!s.visible) continue;
+      if (UNNUMBERED_REPORT_SECTIONS.includes(s.key)) continue;
       pos++;
       if (s.key === key) return String(pos).padStart(2, '0');
     }
@@ -1980,6 +2033,101 @@ export class PublicReportComponent implements OnInit {
   /** Count of currently-tracked keywords sitting in positions #1–#10. */
   top10Count(): number {
     return this.countTop(10);
+  }
+
+  /**
+   * Hero snapshot cards: clicks, impressions, avg position, top-10
+   * keywords. Skips any card whose current metric is unset. Avg
+   * position + top-10 count use inverted or count-based comparison
+   * (lower position = better, more top-10 = better).
+   */
+  snapshotCards(): Array<{
+    label: string;
+    currentDisplay: string;
+    previousDisplay: string;
+    deltaDisplay: string | null;
+    deltaSign: number;
+    good: boolean;
+  }> {
+    const d = this.data();
+    if (!d) return [];
+    const kpis = d.report.kpis || {};
+    const prev = d.report.kpisPrevious || {};
+    const showComparisons = d.report.comparePeriods !== false;
+    const cards: Array<{
+      label: string;
+      currentDisplay: string;
+      previousDisplay: string;
+      deltaDisplay: string | null;
+      deltaSign: number;
+      good: boolean;
+    }> = [];
+
+    const fmtInt = (n: number) => new Intl.NumberFormat('en-US').format(Math.round(n));
+    const fmtPos = (n: number) => n.toFixed(1);
+    const pctDelta = (current: number, previous: number) => {
+      if (previous === 0) return null;
+      return ((current - previous) / Math.abs(previous)) * 100;
+    };
+
+    const pushMetric = (
+      label: string,
+      current: number | undefined,
+      previous: number | undefined,
+      opts: {
+        format: (n: number) => string;
+        lowerIsBetter?: boolean;
+      },
+    ) => {
+      if (typeof current !== 'number') return;
+      const currentDisplay = opts.format(current);
+      const hasPrev = typeof previous === 'number' && showComparisons;
+      if (!hasPrev) {
+        cards.push({
+          label,
+          currentDisplay,
+          previousDisplay: '',
+          deltaDisplay: null,
+          deltaSign: 0,
+          good: true,
+        });
+        return;
+      }
+      const pct = pctDelta(current, previous!);
+      const deltaSign = current > previous! ? 1 : current < previous! ? -1 : 0;
+      const good = opts.lowerIsBetter ? deltaSign <= 0 : deltaSign >= 0;
+      cards.push({
+        label,
+        currentDisplay,
+        previousDisplay: opts.format(previous!),
+        deltaDisplay:
+          pct === null ? '—' : `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`,
+        deltaSign,
+        good,
+      });
+    };
+
+    pushMetric('Clicks', kpis['clicks'], prev['clicks'], { format: fmtInt });
+    pushMetric('Impressions', kpis['impressions'], prev['impressions'], { format: fmtInt });
+    pushMetric('Avg position', kpis['avgPosition'], prev['avgPosition'], {
+      format: fmtPos,
+      lowerIsBetter: true,
+    });
+
+    // Top-10 count comes from tracked keywords, not GSC KPIs. Previous
+    // count derives from `previousPosition` when present so the delta
+    // reflects the same keywords over both periods.
+    const currentTop10 = d.keywords.filter(
+      (k) => typeof k.currentPosition === 'number' && (k.currentPosition as number) <= 10,
+    ).length;
+    const previousTop10 = d.keywords.filter(
+      (k) => typeof k.previousPosition === 'number' && (k.previousPosition as number) <= 10,
+    ).length;
+    pushMetric('Top-10 keywords', currentTop10, showComparisons ? previousTop10 : undefined, {
+      format: (n) => String(n),
+    });
+
+    return cards;
   }
 
   /**

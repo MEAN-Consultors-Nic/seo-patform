@@ -10,6 +10,7 @@ import {
   ReportKpis,
   ReportSectionConfig,
   ReportSectionKey,
+  UNNUMBERED_REPORT_SECTIONS,
   sanitizeText,
 } from '@seo/shared';
 
@@ -36,6 +37,7 @@ const SKY = '#0EA5E9';
  * historical hard-coded order of the PDF so legacy reports look identical.
  */
 const DEFAULT_PDF_LAYOUT: ReportSectionKey[] = [
+  'kpi-snapshot',
   'executive-summary',
   'key-metrics',
   'search-rankings',
@@ -225,9 +227,15 @@ export class PdfService {
 
     for (const section of layout) {
       if (!section.visible) continue;
+      // Unnumbered sections (like the hero KPI snapshot) render but
+      // don't advance the counter so the analytical sections keep
+      // their expected "01, 02…" sequence.
+      const nextNum = UNNUMBERED_REPORT_SECTIONS.includes(section.key)
+        ? () => ''
+        : num;
       const block = this.renderSection(
         section.key,
-        num,
+        nextNum,
         report,
         ctx,
         coverImageDataUrl,
@@ -247,6 +255,8 @@ export class PdfService {
     client: Client,
   ): unknown[] | null {
     switch (key) {
+      case 'kpi-snapshot':
+        return [this.kpiSnapshotBlock(report, ctx.keywords)];
       case 'executive-summary':
         return [
           // Cover image sits at the top of the Executive Summary page.
@@ -1340,6 +1350,116 @@ export class PdfService {
       ],
       columnGap: 12,
       margin: [0, 0, 0, 12],
+    };
+  }
+
+  // --- KPI snapshot (unnumbered hero row) ----------------------------------
+
+  private kpiSnapshotBlock(report: Report, keywords: PdfContext['keywords']) {
+    const kpis = report.kpis || ({} as ReportKpis);
+    const prev = report.kpisPrevious || ({} as ReportKpis);
+    const show = report.comparePeriods !== false;
+    const fmtInt = (n: number) =>
+      new Intl.NumberFormat('en-US').format(Math.round(n));
+    const fmtPos = (n: number) => n.toFixed(1);
+
+    type Card = {
+      label: string;
+      current: string;
+      previous: string;
+      delta: string;
+      good: boolean;
+      hasDelta: boolean;
+    };
+    const cards: Card[] = [];
+    const push = (
+      label: string,
+      current: number | undefined,
+      previous: number | undefined,
+      opts: { format: (n: number) => string; lowerIsBetter?: boolean },
+    ) => {
+      if (typeof current !== 'number') return;
+      const hasPrev = typeof previous === 'number' && show;
+      if (!hasPrev) {
+        cards.push({
+          label,
+          current: opts.format(current),
+          previous: '',
+          delta: '',
+          good: true,
+          hasDelta: false,
+        });
+        return;
+      }
+      const p = previous!;
+      const pct = p === 0 ? null : ((current - p) / Math.abs(p)) * 100;
+      const sign = current > p ? 1 : current < p ? -1 : 0;
+      const good = opts.lowerIsBetter ? sign <= 0 : sign >= 0;
+      const arrow = sign > 0 ? '▲' : sign < 0 ? '▼' : '·';
+      cards.push({
+        label,
+        current: opts.format(current),
+        previous: opts.format(p),
+        delta:
+          pct === null ? `${arrow} —` : `${arrow} ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`,
+        good,
+        hasDelta: true,
+      });
+    };
+
+    push('Clicks', kpis.clicks, prev.clicks, { format: fmtInt });
+    push('Impressions', kpis.impressions, prev.impressions, { format: fmtInt });
+    push('Avg position', kpis.avgPosition, prev.avgPosition, {
+      format: fmtPos,
+      lowerIsBetter: true,
+    });
+    const currentTop10 = keywords.filter(
+      (k) => typeof k.currentPosition === 'number' && (k.currentPosition as number) <= 10,
+    ).length;
+    const previousTop10 = keywords.filter(
+      (k) => typeof k.previousPosition === 'number' && (k.previousPosition as number) <= 10,
+    ).length;
+    push('Top-10 keywords', currentTop10, show ? previousTop10 : undefined, {
+      format: (n) => String(n),
+    });
+
+    if (cards.length === 0) return { text: '', margin: [0, 0, 0, 0] as [number, number, number, number] };
+
+    const columns = cards.map((c) => ({
+      table: {
+        widths: ['*'],
+        body: [
+          [
+            {
+              stack: [
+                { text: c.label.toUpperCase(), color: INK_500, fontSize: 7, bold: true, characterSpacing: 1 },
+                { text: c.current, color: INK_900, fontSize: 18, bold: true, margin: [0, 2, 0, 2] as [number, number, number, number] },
+                c.hasDelta
+                  ? {
+                      text: `${c.delta}  ·  prev ${c.previous}`,
+                      color: c.good ? POSITIVE : DANGER,
+                      fontSize: 7,
+                      bold: true,
+                    }
+                  : { text: 'no previous period', color: INK_500, fontSize: 7, italics: true },
+              ],
+              margin: [8, 8, 8, 8] as [number, number, number, number],
+            },
+          ],
+        ],
+      },
+      layout: {
+        hLineWidth: () => 0.5,
+        vLineWidth: () => 0.5,
+        hLineColor: () => INK_200,
+        vLineColor: () => INK_200,
+      },
+    }));
+
+    return {
+      columns,
+      columnGap: 6,
+      margin: [0, 0, 0, 14] as [number, number, number, number],
     };
   }
 

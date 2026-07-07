@@ -648,6 +648,7 @@ export const LOCATIONS_SORT_OPTIONS: Array<{
 ];
 
 export type ReportSectionKey =
+  | 'kpi-snapshot'
   | 'executive-summary'
   | 'key-metrics'
   | 'locations-performance'
@@ -661,12 +662,22 @@ export type ReportSectionKey =
   | 'client-blockers'
   | 'final-considerations';
 
+/**
+ * Sections that render as visual snapshots rather than numbered sections.
+ * Excluded from the "01, 02, 03…" counter so adding them at the top of
+ * the layout doesn't renumber the actual analytical sections that follow.
+ */
+export const UNNUMBERED_REPORT_SECTIONS: readonly ReportSectionKey[] = [
+  'kpi-snapshot',
+];
+
 export interface ReportSectionConfig {
   key: ReportSectionKey;
   visible: boolean;
 }
 
 export const DEFAULT_REPORT_LAYOUT: ReportSectionConfig[] = [
+  { key: 'kpi-snapshot', visible: true },
   { key: 'executive-summary', visible: true },
   { key: 'key-metrics', visible: true },
   { key: 'locations-performance', visible: true },
@@ -685,6 +696,10 @@ export const REPORT_SECTION_META: Record<
   ReportSectionKey,
   { label: string; description: string }
 > = {
+  'kpi-snapshot': {
+    label: 'KPI Snapshot',
+    description: 'Hero row of top KPIs (clicks, impressions, avg position, top-10 keywords) with prior-period deltas — rendered directly under the cover image, no section number.',
+  },
   'executive-summary': {
     label: 'Executive Summary',
     description: 'Bullet-point recap of the period for the client.',
