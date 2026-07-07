@@ -43,6 +43,14 @@ export class TasksController {
     return this.tasks.summaryByClient(cycleId, user);
   }
 
+  @Get('client-doc-tabs/:clientId')
+  clientDocTabs(
+    @Param('clientId') clientId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasks.listClientDocTabs(clientId, user);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.tasks.findOne(id, user);
@@ -110,10 +118,15 @@ export class TasksController {
   @Post(':id/send-to-doc')
   sendToDoc(
     @Param('id') id: string,
-    @Body() body: { skipImages?: boolean },
+    @Body() body: { skipImages?: boolean; docTabName?: string },
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.tasks.sendToDoc(id, !!body?.skipImages, user);
+    return this.tasks.sendToDoc(
+      id,
+      !!body?.skipImages,
+      user,
+      body?.docTabName,
+    );
   }
 
   @Post(':id/subtasks')

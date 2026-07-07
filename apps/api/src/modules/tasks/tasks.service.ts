@@ -169,9 +169,12 @@ export class TasksService {
     // the task document. Pluck it out before building the Mongo patch.
     const skipImages = !!(dto as UpdateTaskDto & { skipImages?: boolean })
       .skipImages;
+    const docTabName = (dto as UpdateTaskDto & { docTabName?: string })
+      .docTabName;
     const clean = this.sanitizeTaskFields(dto);
     const patch: Record<string, unknown> = { ...clean };
     delete (patch as { skipImages?: unknown }).skipImages;
+    delete (patch as { docTabName?: unknown }).docTabName;
     if (dto.clientId) patch.clientId = new Types.ObjectId(dto.clientId);
     if (dto.cycleId) patch.cycleId = new Types.ObjectId(dto.cycleId);
     if (dto.status === 'completed') {
@@ -213,6 +216,7 @@ export class TasksService {
         updated,
         user.userId,
         skipImages,
+        docTabName,
       );
     }
 
@@ -244,6 +248,7 @@ export class TasksService {
     },
     userId: string,
     skipImages = false,
+    docTabName?: string,
   ): Promise<{ ok: boolean; message?: string }> {
     try {
       const client = await this.clients.findOne(String(task.clientId));
@@ -251,7 +256,11 @@ export class TasksService {
         .googleDocId;
       if (!docId) return { ok: true };
       const when = task.completedAt ?? new Date();
-      const tabId = await this.docs.findMonthlyTab(userId, docId, when);
+      // When the completion modal supplied an explicit target tab we
+      // use it verbatim; otherwise fall back to the auto month lookup.
+      const tabId = docTabName
+        ? await this.docs.findTabByName(userId, docId, docTabName)
+        : await this.docs.findMonthlyTab(userId, docId, when);
       const imageAttachments = skipImages
         ? []
         : (task.attachments ?? [])
@@ -290,6 +299,7 @@ export class TasksService {
     id: string,
     skipImages: boolean,
     user: AuthenticatedUser,
+    docTabName?: string,
   ): Promise<{ ok: boolean; message?: string }> {
     await this.ensureAccessToTask(id, user);
     const task = await this.model.findById(id).lean().exec();
@@ -299,7 +309,12 @@ export class TasksService {
         'Only completed tasks can be sent to the Google Doc.',
       );
     }
-    return this.mirrorCompletionToGoogleDoc(task, user.userId, skipImages);
+    return this.mirrorCompletionToGoogleDoc(
+      task,
+      user.userId,
+      skipImages,
+      docTabName,
+    );
   }
 
   async remove(id: string, user?: AuthenticatedUser) {
@@ -307,6 +322,34 @@ export class TasksService {
     const deleted = await this.model.findByIdAndDelete(id).lean().exec();
     if (!deleted) throw new NotFoundException(`Task ${id} not found`);
     return { deleted: true };
+  }
+
+  /**
+   * Returns the client's linked Google Doc tabs so the completion
+   * modal can populate its 'target tab' dropdown. Returns an empty
+   * array when the client has no doc linked, or when the tab-listing
+   * call fails (e.g. missing scope) — a UI empty state is more useful
+   * than a hard error since the user can still complete without a
+   * target tab.
+   */
+  async listClientDocTabs(
+    clientId: string,
+    user: AuthenticatedUser,
+  ): Promise<{
+    docId?: string;
+    tabs: Array<{ tabId: string; title: string }>;
+    error?: string;
+  }> {
+    await this.clients.assertAccess(clientId, user);
+    const client = await this.clients.findOne(clientId);
+    const docId = (client as unknown as { googleDocId?: string }).googleDocId;
+    if (!docId) return { tabs: [] };
+    try {
+      const tabs = await this.docs.listTabs(user.userId, docId);
+      return { docId, tabs };
+    } catch (err) {
+      return { docId, tabs: [], error: (err as Error).message };
+    }
   }
 
   /**

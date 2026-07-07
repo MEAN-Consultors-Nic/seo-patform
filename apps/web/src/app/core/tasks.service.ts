@@ -56,11 +56,19 @@ export class TasksService {
     });
   }
 
-  sendToDoc(taskId: string, skipImages: boolean) {
+  sendToDoc(taskId: string, skipImages: boolean, docTabName?: string) {
     return this.http.post<{ ok: boolean; message?: string }>(
       `${this.base}/tasks/${taskId}/send-to-doc`,
-      { skipImages },
+      { skipImages, docTabName },
     );
+  }
+
+  listClientDocTabs(clientId: string) {
+    return this.http.get<{
+      docId?: string;
+      tabs: Array<{ tabId: string; title: string }>;
+      error?: string;
+    }>(`${this.base}/tasks/client-doc-tabs/${clientId}`);
   }
 
   addSubtask(taskId: string, title: string, done = false) {

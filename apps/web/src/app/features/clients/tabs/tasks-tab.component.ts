@@ -510,53 +510,103 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
       </div>
     }
 
-    <!-- Completion confirm modal — only opens when the task being
-         completed has image attachments and we need the user to decide
-         whether they go into the Google Doc. -->
+    <!-- Completion modal: picks completedAt + Google Doc target tab +
+         optional include-images toggle, then fires the status change.
+         Also reused by 'Send to Doc' for re-emitting a completed task
+         into a specific tab. -->
     @if (completionPrompt(); as p) {
       <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
            (click)="dismissCompletionPrompt()">
-        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6"
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6"
              (click)="$event.stopPropagation()">
-          <div class="flex items-start justify-between mb-3">
+          <div class="flex items-start justify-between mb-4">
             <div>
-              <h2 class="text-lg font-bold text-ink-900">Include images in the Google Doc?</h2>
-              <p class="text-xs text-ink-500 mt-0.5">
+              <h2 class="text-lg font-bold text-ink-900">
                 @if (completionPromptMode() === 'sendToDoc') {
-                  Sending <strong class="text-ink-900">{{ p.title }}</strong> to the Google Doc.
+                  Send to Google Doc
                 } @else {
-                  You're completing <strong class="text-ink-900">{{ p.title }}</strong>.
+                  Complete task
                 }
-                Pick whether the attached images get inserted under the task entry.
+              </h2>
+              <p class="text-xs text-ink-500 mt-0.5">
+                <strong class="text-ink-900">{{ p.title }}</strong>
               </p>
             </div>
             <button type="button" (click)="dismissCompletionPrompt()"
                     class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
           </div>
 
-          <div class="bg-ink-50 border border-ink-200 rounded-md p-3 mb-4">
-            <div class="text-[10px] uppercase tracking-wider font-bold text-ink-500 mb-2">
-              Attached images ({{ imageAttachmentsOf(p).length }})
+          <div class="space-y-3">
+            <div>
+              <label class="label">Completed on</label>
+              <input type="date" class="input"
+                     [ngModel]="completionDateInput()"
+                     (ngModelChange)="completionDateInput.set($event)" />
             </div>
-            <div class="flex flex-wrap gap-2">
-              @for (a of imageAttachmentsOf(p); track a.publicId) {
-                <img [src]="a.thumbnailUrl || a.url" [alt]="a.originalFilename || ''"
-                     class="w-16 h-16 object-cover rounded-md border border-ink-200" />
+
+            <div>
+              <label class="label">Google Doc tab</label>
+              @if (loadingDocTabs()) {
+                <div class="text-[11px] text-ink-500 flex items-center gap-2 mt-1">
+                  <span class="spinner"></span> Loading tab list from the doc…
+                </div>
+              } @else if (docTabsError(); as e) {
+                <div class="text-[11px] text-danger-500 mt-1">⚠ {{ e }}</div>
+                <p class="text-[11px] text-ink-500 mt-1 leading-snug">
+                  Auto-lookup will run against the completion month.
+                </p>
+              } @else if (docTabs().length === 0) {
+                <div class="text-[11px] text-ink-500 mt-1">
+                  No Google Doc linked to this client — the task will complete without a doc sync.
+                </div>
+              } @else {
+                <select class="input"
+                        [ngModel]="completionTabName()"
+                        (ngModelChange)="completionTabName.set($event)">
+                  <option [ngValue]="''">— Auto (by completion month) —</option>
+                  @for (t of docTabs(); track t.tabId) {
+                    <option [value]="t.title">{{ t.title }}</option>
+                  }
+                </select>
+                <p class="text-[11px] text-ink-500 mt-1 leading-snug">
+                  Pick the exact tab or leave on Auto for the month-based lookup ('March 2026' etc).
+                </p>
               }
             </div>
-            <p class="text-[11px] text-ink-500 mt-2 leading-snug">
-              Only the first two images would be inserted; raw files (PDFs, etc.) are always skipped.
-            </p>
+
+            @if (imageAttachmentsOf(p).length > 0) {
+              <div>
+                <label class="label">Attached images ({{ imageAttachmentsOf(p).length }})</label>
+                <div class="bg-ink-50 border border-ink-200 rounded-md p-2">
+                  <div class="flex flex-wrap gap-2 mb-2">
+                    @for (a of imageAttachmentsOf(p); track a.publicId) {
+                      <img [src]="a.thumbnailUrl || a.url" [alt]="a.originalFilename || ''"
+                           class="w-12 h-12 object-cover rounded-md border border-ink-200" />
+                    }
+                  </div>
+                  <label class="text-xs text-ink-700 inline-flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" class="rounded border-ink-300"
+                           [ngModel]="completionIncludeImages()"
+                           (ngModelChange)="completionIncludeImages.set($event)" />
+                    Include images in the doc (first 2 max)
+                  </label>
+                </div>
+              </div>
+            }
           </div>
 
-          <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 mt-6 pt-4 border-t border-ink-100">
             <button class="btn-secondary text-xs sm:text-sm"
-                    (click)="confirmComplete(true)">
-              Skip images
+                    (click)="dismissCompletionPrompt()">
+              Cancel
             </button>
             <button class="btn-primary text-xs sm:text-sm"
-                    (click)="confirmComplete(false)">
-              Include images
+                    (click)="confirmCompletion()">
+              @if (completionPromptMode() === 'sendToDoc') {
+                Send to Doc
+              } @else {
+                Complete task
+              }
             </button>
           </div>
         </div>
@@ -992,18 +1042,26 @@ export class ClientTasksTab implements OnChanges {
   /** Brief success toast text shown after a task is synced to Google Doc. */
   docSyncToast = signal<string | null>(null);
   /**
-   * The task pending the 'include images in Google Doc?' confirmation.
-   * Non-null while the modal is open. Cleared by either Skip or Include
-   * action, plus the explicit Cancel.
+   * The task pending completion confirmation. Non-null while the
+   * completion modal is open.
    */
   completionPrompt = signal<Task | null>(null);
   /**
-   * Differentiates the completionPrompt modal between the two flows
-   * that use it: a fresh completion (status change → 'completed') or
-   * a manual 'Send to Doc' re-send for an already-completed task. The
-   * modal copy and the confirm handler branch on this.
+   * Differentiates the completion modal between the two flows that
+   * use it: a fresh completion (status change → 'completed') or a
+   * manual 'Send to Doc' re-send for an already-completed task.
    */
   completionPromptMode = signal<'complete' | 'sendToDoc'>('complete');
+  /** YYYY-MM-DD date string bound to the modal's completedAt picker. */
+  completionDateInput = signal<string>('');
+  /** User-picked doc tab title, or empty string for auto month lookup. */
+  completionTabName = signal<string>('');
+  /** Include images toggle inside the modal. Default true. */
+  completionIncludeImages = signal<boolean>(true);
+  /** Doc tabs fetched on modal open — feeds the target-tab dropdown. */
+  docTabs = signal<Array<{ tabId: string; title: string }>>([]);
+  loadingDocTabs = signal<boolean>(false);
+  docTabsError = signal<string | null>(null);
   /** ID of the task whose Send-to-Doc request is in flight. */
   sendingToDocId = signal<string | null>(null);
   /** ID of the task whose add-subtask request is in flight. */
@@ -1333,34 +1391,63 @@ export class ClientTasksTab implements OnChanges {
         );
         return;
       }
-      // If the task has image attachments, gate completion behind a
-      // confirm dialog where the user picks whether those images get
-      // mirrored into the Google Doc. Tasks with no images skip the
-      // dialog and complete immediately — no reason to interrupt.
-      if (this.imageAttachmentsOf(t).length > 0) {
-        this.completionPromptMode.set('complete');
-        this.completionPrompt.set(t);
-        return;
-      }
+      this.openCompletionModal(t, 'complete');
+      return;
     }
-    this.applyStatusChange(t, status, false);
+    this.applyStatusChange(t, status);
   }
 
   /**
-   * Re-runs the doc-sync side effect for an already-completed task. If
-   * the task has images, route through the same 'include images?'
-   * confirm modal so the user always has a chance to opt out — same
-   * UX as the initial completion path.
+   * Re-runs the doc-sync side effect for an already-completed task.
+   * Reuses the same modal as the initial completion so the user can
+   * override the target tab, edit the completedAt date, and decide on
+   * images before the sync fires again.
    */
   sendToDoc(t: Task) {
     this.menuOpenId.set(null);
     if (!t._id || t.status !== 'completed') return;
-    if (this.imageAttachmentsOf(t).length > 0) {
-      this.completionPromptMode.set('sendToDoc');
-      this.completionPrompt.set(t);
-      return;
-    }
-    this.performSendToDoc(t, false);
+    this.openCompletionModal(t, 'sendToDoc');
+  }
+
+  /**
+   * Opens the shared completion modal in either mode. Seeds the date
+   * picker to today (or the existing completedAt when re-syncing),
+   * clears the tab override, defaults images to included, and kicks
+   * off the doc-tabs fetch so the dropdown populates while the user
+   * looks at the modal.
+   */
+  private openCompletionModal(t: Task, mode: 'complete' | 'sendToDoc') {
+    if (!t._id) return;
+    const iso = t.completedAt
+      ? new Date(t.completedAt).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
+    this.completionDateInput.set(iso);
+    this.completionTabName.set('');
+    this.completionIncludeImages.set(true);
+    this.completionPromptMode.set(mode);
+    this.completionPrompt.set(t);
+    this.loadDocTabsForClient(t.clientId);
+  }
+
+  private loadDocTabsForClient(clientId: string | undefined) {
+    this.docTabs.set([]);
+    this.docTabsError.set(null);
+    if (!clientId) return;
+    this.loadingDocTabs.set(true);
+    this.tasksSvc.listClientDocTabs(clientId).subscribe({
+      next: (res) => {
+        this.loadingDocTabs.set(false);
+        this.docTabs.set(res.tabs || []);
+        if (res.error) this.docTabsError.set(res.error);
+      },
+      error: (err) => {
+        this.loadingDocTabs.set(false);
+        const m = err?.error?.message;
+        this.docTabsError.set(
+          Array.isArray(m) ? m.join(', ') : m || 'Could not load doc tabs.',
+        );
+      },
+    });
   }
 
   /**
@@ -1420,10 +1507,10 @@ export class ClientTasksTab implements OnChanges {
     });
   }
 
-  private performSendToDoc(t: Task, skipImages: boolean) {
+  private performSendToDoc(t: Task, skipImages: boolean, docTabName?: string) {
     if (!t._id) return;
     this.sendingToDocId.set(t._id);
-    this.tasksSvc.sendToDoc(t._id, skipImages).subscribe({
+    this.tasksSvc.sendToDoc(t._id, skipImages, docTabName).subscribe({
       next: (sync) => {
         this.sendingToDocId.set(null);
         if (sync.ok) {
@@ -1452,26 +1539,55 @@ export class ClientTasksTab implements OnChanges {
     return (t.attachments || []).filter((a) => a.resourceType !== 'raw');
   }
 
-  confirmComplete(skipImages: boolean) {
+  confirmCompletion() {
     const t = this.completionPrompt();
     if (!t || !t._id) return;
     const mode = this.completionPromptMode();
+    const iso = this.completionDateInput();
+    if (!iso) return;
+    const completedAt = new Date(`${iso}T12:00:00.000Z`);
+    const tabName = this.completionTabName().trim() || undefined;
+    // Only tasks with image attachments can meaningfully skip images;
+    // otherwise the flag is a no-op. Preserve the pre-existing "skip"
+    // semantics: the modal toggle is 'include', so skip = !include.
+    const hasImages = this.imageAttachmentsOf(t).length > 0;
+    const skipImages = hasImages ? !this.completionIncludeImages() : false;
     this.completionPrompt.set(null);
     if (mode === 'sendToDoc') {
-      this.performSendToDoc(t, skipImages);
-    } else {
-      this.applyStatusChange(t, 'completed', skipImages);
+      this.performSendToDoc(t, skipImages, tabName);
+      return;
     }
+    this.applyStatusChange(t, 'completed', {
+      skipImages,
+      completedAt,
+      docTabName: tabName,
+    });
   }
 
   dismissCompletionPrompt() {
     this.completionPrompt.set(null);
+    this.completionDateInput.set('');
+    this.completionTabName.set('');
+    this.completionIncludeImages.set(true);
+    this.docTabs.set([]);
+    this.docTabsError.set(null);
+    this.loadingDocTabs.set(false);
   }
 
-  private applyStatusChange(t: Task, status: TaskStatus, skipImages: boolean) {
+  private applyStatusChange(
+    t: Task,
+    status: TaskStatus,
+    extras: { skipImages?: boolean; completedAt?: Date; docTabName?: string } = {},
+  ) {
     if (!t._id) return;
-    const patch: Partial<Task> & { skipImages?: boolean } = { status };
-    if (status === 'completed') patch.skipImages = skipImages;
+    const patch: Partial<Task> & { skipImages?: boolean; docTabName?: string } = {
+      status,
+    };
+    if (status === 'completed') {
+      patch.skipImages = !!extras.skipImages;
+      if (extras.completedAt) patch.completedAt = extras.completedAt;
+      if (extras.docTabName) patch.docTabName = extras.docTabName;
+    }
     this.tasksSvc.update(t._id, patch).subscribe({
       next: (res) => {
         this.loadTasks();

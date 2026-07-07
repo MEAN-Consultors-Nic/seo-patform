@@ -43,6 +43,89 @@ export class GoogleDocsService {
    * doesn't support creating tabs, so the user has to add the month's
    * tab to the doc manually before the next sync.
    */
+  /**
+   * Returns the flat list of tab titles + ids for the doc, including
+   * nested child tabs (walked one level deep — mirrors findMonthlyTab).
+   * Used by the frontend to build the 'target tab' picker on the task
+   * completion modal.
+   */
+  async listTabs(
+    userId: string,
+    documentId: string,
+  ): Promise<Array<{ tabId: string; title: string }>> {
+    const auth = await this.oauth.getAuthorizedClient(userId);
+    const docs = google.docs({ version: 'v1', auth });
+    const docsAny = docs as unknown as {
+      documents: {
+        get: (params: {
+          documentId: string;
+          includeTabsContent?: boolean;
+        }) => Promise<{
+          data: {
+            tabs?: Array<{
+              tabProperties?: { tabId?: string; title?: string };
+              childTabs?: Array<{
+                tabProperties?: { tabId?: string; title?: string };
+              }>;
+            }>;
+          };
+        }>;
+      };
+    };
+    const doc = await docsAny.documents.get({
+      documentId,
+      includeTabsContent: true,
+    });
+    const tabs = doc.data.tabs ?? [];
+    const flat: Array<{ tabId: string; title: string }> = [];
+    const walk = (
+      t: {
+        tabProperties?: { tabId?: string; title?: string };
+        childTabs?: unknown[];
+      },
+    ) => {
+      if (t.tabProperties?.tabId && t.tabProperties?.title) {
+        flat.push({
+          tabId: t.tabProperties.tabId,
+          title: t.tabProperties.title,
+        });
+      }
+      for (const c of (t.childTabs ?? []) as Array<{
+        tabProperties?: { tabId?: string; title?: string };
+        childTabs?: unknown[];
+      }>) {
+        walk(c);
+      }
+    };
+    for (const t of tabs) walk(t);
+    return flat;
+  }
+
+  /**
+   * Same as findMonthlyTab but the target tab is picked by exact
+   * user-provided name instead of derived from a date. When the user
+   * picks a tab from the completion modal's dropdown we call this
+   * directly and skip the monthly auto-lookup.
+   */
+  async findTabByName(
+    userId: string,
+    documentId: string,
+    title: string,
+  ): Promise<string> {
+    const tabs = await this.listTabs(userId, documentId);
+    const match = tabs.find((t) => t.title === title);
+    if (!match) {
+      const have = tabs
+        .map((t) => t.title)
+        .slice(0, 8)
+        .join(', ');
+      throw new Error(
+        `The doc has no tab named "${title}". Existing tabs: ${have || 'none'}`,
+      );
+    }
+    return match.tabId;
+  }
+
   async findMonthlyTab(
     userId: string,
     documentId: string,
