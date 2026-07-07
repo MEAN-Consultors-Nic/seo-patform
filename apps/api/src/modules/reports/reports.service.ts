@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -38,6 +39,8 @@ const SESSION_TTL = '24h';
 
 @Injectable()
 export class ReportsService {
+  private readonly logger = new Logger(ReportsService.name);
+
   constructor(
     @InjectModel(Report.name) private readonly model: Model<ReportDocument>,
     private readonly clients: ClientsService,
@@ -231,7 +234,17 @@ export class ReportsService {
     to: string,
     user: { userId: string; role: 'root' | 'seo-manager' | 'seo-strategist' },
   ) {
-    await this.clients.assertAccess(clientId, user as never);
+    this.logger.log(
+      `createCustomReport start clientId=${clientId} from=${from} to=${to} userId=${user?.userId}`,
+    );
+    try {
+      await this.clients.assertAccess(clientId, user as never);
+    } catch (e) {
+      this.logger.warn(
+        `createCustomReport assertAccess failed for client=${clientId} user=${user?.userId}: ${(e as Error).message}`,
+      );
+      throw e;
+    }
     const fromDate = new Date(from);
     const toDate = new Date(to);
     if (!(fromDate instanceof Date) || isNaN(fromDate.getTime())) {
@@ -248,8 +261,13 @@ export class ReportsService {
     // check for findOrCreate lookup is deterministic.
     toDate.setUTCHours(23, 59, 59, 999);
 
-    // Try to reuse an existing report with the same range first.
-    const clientOid = new Types.ObjectId(clientId);
+    let clientOid: Types.ObjectId;
+    try {
+      clientOid = new Types.ObjectId(clientId);
+    } catch (e) {
+      this.logger.warn(`createCustomReport invalid clientId=${clientId}`);
+      throw new BadRequestException('Invalid clientId.');
+    }
     const existing = await this.model
       .findOne({
         clientId: clientOid,
@@ -258,7 +276,12 @@ export class ReportsService {
       })
       .lean()
       .exec();
-    if (existing) return existing;
+    if (existing) {
+      this.logger.log(
+        `createCustomReport reused existing report ${(existing as { _id?: unknown })._id}`,
+      );
+      return existing;
+    }
 
     const doc = await this.model.create({
       clientId: clientOid,
@@ -271,6 +294,7 @@ export class ReportsService {
       finalConsiderations: '',
       generatedAt: new Date(),
     });
+    this.logger.log(`createCustomReport created report ${doc._id}`);
     return doc.toObject();
   }
 

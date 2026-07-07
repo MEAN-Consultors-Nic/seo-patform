@@ -1,6 +1,7 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app/app.module';
+import { AllExceptionsFilter } from './app/all-exceptions.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -25,6 +26,7 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
+  app.useGlobalFilters(new AllExceptionsFilter());
   const port = process.env.API_PORT || process.env.PORT || 3000;
   await app.listen(port);
   Logger.log(`🚀 API running on http://localhost:${port}/${globalPrefix}`);
