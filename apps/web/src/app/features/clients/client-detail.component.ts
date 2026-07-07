@@ -239,7 +239,7 @@ const GROUPS: GroupDef[] = [
             <app-client-knowledge-tab [client]="c" (changed)="reload()" />
           }
           @case ('tasks') {
-            <app-client-tasks-tab [clientId]="c._id!" [assignedHours]="c.hoursPerCycle" />
+            <app-client-tasks-tab [clientId]="c._id!" />
           }
           @case ('content') {
             <app-client-content-tab [clientId]="c._id!" />

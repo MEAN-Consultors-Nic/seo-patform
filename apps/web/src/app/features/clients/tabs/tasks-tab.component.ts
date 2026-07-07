@@ -11,7 +11,6 @@ import {
 import { FormsModule } from '@angular/forms';
 import { RichTextEditorComponent } from '../../../shared/rich-text-editor.component';
 import {
-  Cycle,
   Subtask,
   Task,
   TaskAttachment,
@@ -19,7 +18,6 @@ import {
   TaskStatus,
 } from '@seo/shared';
 import { ClientsService } from '../../../core/clients.service';
-import { CyclesService } from '../../../core/cycles.service';
 import { TasksService } from '../../../core/tasks.service';
 import { SanitizerService } from '../../../core/sanitizer.service';
 import { AttachmentsStripComponent } from '../../../shared/attachments/attachments-strip.component';
@@ -87,55 +85,32 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
   ],
   template: `
     <div class="space-y-4">
-      <!-- Cycle header -->
-      @if (cycle(); as c) {
-        <div class="card flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
-          <div class="min-w-0">
-            <div class="text-xs font-semibold text-ink-500 uppercase tracking-wider mb-1">
-              {{ isCurrentCycle() ? 'Current cycle' : 'Viewing cycle' }}
-            </div>
-            <div class="flex items-baseline gap-2 flex-wrap">
-              <select
-                class="input input-sm font-bold text-base text-ink-900 max-w-xs"
-                [ngModel]="cycle()?._id"
-                (ngModelChange)="onCycleChange($event)"
-                [disabled]="!cycles().length">
-                @for (opt of cycles(); track opt._id) {
-                  <option [value]="opt._id">
-                    {{ opt.label }} ({{ opt.startDate | date: 'MMM d' }} – {{ opt.endDate | date: 'MMM d, y' }})
-                  </option>
-                }
-              </select>
-              <span class="badge-neutral capitalize">{{ c.status }}</span>
-              @if (!isCurrentCycle()) {
-                <button type="button"
-                        class="text-xs text-brand-600 hover:underline"
-                        (click)="jumpToCurrentCycle()">
-                  ← back to current
-                </button>
-              }
-            </div>
+      <!-- Client tasks header. No more cycle scoping — the tab shows
+           every task for the client and the user filters or sorts as
+           needed. Hours invested is cumulative across all tasks. -->
+      <div class="card flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
+        <div class="min-w-0">
+          <div class="text-xs font-semibold text-ink-500 uppercase tracking-wider mb-1">
+            All tasks
           </div>
-          <div class="flex flex-wrap items-center gap-3 sm:gap-4 text-sm">
-            <div class="md:text-right">
-              <div class="text-xs text-ink-500">Hours invested</div>
-              <div class="font-bold" [ngClass]="hoursTextColor()">
-                {{ actualHours() | number: '1.1-1' }} / {{ assignedHours }} h
-                <span class="text-xs font-normal">({{ pct() | number: '1.0-0' }}%)</span>
-              </div>
-            </div>
-            <div class="flex-1 md:flex-none w-full md:w-32 h-2 bg-ink-100 rounded-full overflow-hidden">
-              <div class="h-full transition-all" [ngClass]="hoursBarColor()" [style.width.%]="Math.min(pct(), 100)"></div>
-            </div>
-            <button class="btn-primary text-xs whitespace-nowrap ml-auto md:ml-0"
-                    type="button"
-                    (click)="openCreateModal()"
-                    [disabled]="!cycle()?._id">
-              + New task
-            </button>
+          <div class="text-base font-bold text-ink-900">
+            {{ tasks().length }} task{{ tasks().length === 1 ? '' : 's' }}
           </div>
         </div>
-      }
+        <div class="flex flex-wrap items-center gap-3 sm:gap-4 text-sm">
+          <div class="md:text-right">
+            <div class="text-xs text-ink-500">Total hours invested</div>
+            <div class="font-bold text-ink-900">
+              {{ actualHours() | number: '1.1-1' }} h
+            </div>
+          </div>
+          <button class="btn-primary text-xs whitespace-nowrap ml-auto md:ml-0"
+                  type="button"
+                  (click)="openCreateModal()">
+            + New task
+          </button>
+        </div>
+      </div>
 
       @if (docSyncToast(); as msg) {
         <div class="card border-l-4 border-positive-500 bg-positive-100/40 text-sm py-2 px-3">
@@ -189,9 +164,7 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
       <!-- Kanban board -->
       @if (tasks().length === 0) {
         <div class="card text-center py-12 text-ink-400 italic">
-          No tasks in {{ isCurrentCycle() ? 'this cycle' : 'cycle ' + (cycle()?.label || '') }} yet. Add one above
-          @if (isCurrentCycle()) { or use "Generate cycle tasks" in the Dashboard }
-          — or switch to a different cycle using the selector above.
+          No tasks for this client yet. Click "+ New task" to add one.
         </div>
       } @else if (viewMode() === 'list') {
         <!-- List view: one full-width row per task with title +
@@ -520,9 +493,7 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
 
           <div class="flex items-center justify-between mt-6 pt-4 border-t border-ink-100">
             <div class="text-[11px] text-ink-400">
-              @if (creatingTask()) {
-                Will be added to current cycle
-              } @else if (editingTask()?.createdAt) {
+              @if (editingTask()?.createdAt) {
                 Created {{ editingTask()?.createdAt | date: 'mediumDate' }}
               }
             </div>
@@ -641,63 +612,6 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                     (click)="confirmMoveTask()"
                     [disabled]="moveSaving() || !moveTargetClientId()">
               {{ moveSaving() ? 'Moving…' : 'Move task' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    }
-
-    <!-- Move task to another cycle modal. Any cycle (past, current,
-         future) is a valid target — moving to a past cycle is useful
-         for reassigning work that was accidentally logged against the
-         wrong period; moving forward is useful for deferring work. -->
-    @if (movingCycleTask(); as mv) {
-      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
-           (click)="dismissMoveCycleModal()">
-        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6"
-             (click)="$event.stopPropagation()">
-          <div class="flex items-start justify-between mb-3">
-            <div>
-              <h2 class="text-lg font-bold text-ink-900">Move task to another cycle</h2>
-              <p class="text-xs text-ink-500 mt-0.5">
-                Moves <strong class="text-ink-900">{{ mv.title }}</strong> out of the current viewing cycle and into the destination. Time logged, attachments, subtasks, and comments all travel with the task.
-              </p>
-            </div>
-            <button type="button" (click)="dismissMoveCycleModal()"
-                    class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
-          </div>
-
-          <div>
-            <label class="label">Destination cycle</label>
-            <select class="input"
-                    [ngModel]="moveTargetCycleId()"
-                    (ngModelChange)="moveTargetCycleId.set($event)">
-              <option value="">— Pick a cycle —</option>
-              @for (c of cycleOptionsForMove(); track c._id) {
-                <option [value]="c._id">
-                  {{ c.label }} ({{ c.status }})
-                </option>
-              }
-            </select>
-            @if (cycleOptionsForMove().length === 0) {
-              <p class="text-[11px] text-ink-500 mt-1.5">No other cycles available.</p>
-            }
-          </div>
-
-          @if (moveCycleError()) {
-            <div class="text-xs text-danger-500 mt-2">{{ moveCycleError() }}</div>
-          }
-
-          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-ink-100">
-            <button class="btn-secondary text-xs sm:text-sm"
-                    (click)="dismissMoveCycleModal()"
-                    [disabled]="moveCycleSaving()">
-              Cancel
-            </button>
-            <button class="btn-primary text-xs sm:text-sm"
-                    (click)="confirmMoveCycle()"
-                    [disabled]="moveCycleSaving() || !moveTargetCycleId()">
-              {{ moveCycleSaving() ? 'Moving…' : 'Move task' }}
             </button>
           </div>
         </div>
@@ -1021,26 +935,6 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                 Change completed date…
               </button>
             }
-            @if (!isCurrentCycle() && (t.status === 'pending' || t.status === 'in_progress')) {
-              <button type="button"
-                      (click)="moveToCurrentCycle(t)"
-                      [disabled]="movingToCycleId() === t._id"
-                      class="w-full text-left px-3 py-2 hover:bg-ink-50 disabled:opacity-50 text-ink-700 inline-flex items-center gap-2">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <path d="M8 2v12M4 6l4-4 4 4" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-                {{ movingToCycleId() === t._id ? 'Moving…' : 'Move to current cycle' }}
-              </button>
-            }
-            <button type="button"
-                    (click)="openMoveCycleModal(t)"
-                    class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 inline-flex items-center gap-2">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M2 8a6 6 0 0 1 12 0M14 8a6 6 0 0 1-12 0" />
-                <path d="M11 5v3h3M5 11V8H2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-              Move to another cycle…
-            </button>
             <div class="border-t border-ink-100 my-1"></div>
             <button type="button"
                     (click)="remove(t)"
@@ -1058,19 +952,10 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
 })
 export class ClientTasksTab implements OnChanges {
   @Input({ required: true }) clientId!: string;
-  @Input({ required: true }) assignedHours!: number;
 
-  private cyclesSvc = inject(CyclesService);
   private tasksSvc = inject(TasksService);
   private sanitizer = inject(SanitizerService);
 
-  cycle = signal<Cycle | null>(null);
-  cycles = signal<Cycle[]>([]);
-  /** Id of the cycle marked as "current" — used to label the selector. */
-  currentCycleId = signal<string | null>(null);
-  isCurrentCycle = computed(
-    () => this.cycle()?._id != null && this.cycle()?._id === this.currentCycleId(),
-  );
   tasks = signal<Task[]>([]);
   statusFilter = signal<StatusFilter>('all');
   searchQuery = signal('');
@@ -1121,8 +1006,6 @@ export class ClientTasksTab implements OnChanges {
   completionPromptMode = signal<'complete' | 'sendToDoc'>('complete');
   /** ID of the task whose Send-to-Doc request is in flight. */
   sendingToDocId = signal<string | null>(null);
-  /** ID of the task being bumped forward to the current cycle. */
-  movingToCycleId = signal<string | null>(null);
   /** ID of the task whose add-subtask request is in flight. */
   addingSubtaskId = signal<string | null>(null);
   /** Input model for the inline add-subtask field in the detail modal. */
@@ -1141,25 +1024,11 @@ export class ClientTasksTab implements OnChanges {
   moveError = signal<string | null>(null);
   private clientsSvc = inject(ClientsService);
 
-  // Move-to-another-cycle modal state. Cycle list is already loaded
-  // in this.cycles() (used by the top selector) so no extra fetch is
-  // needed when the modal opens.
-  movingCycleTask = signal<Task | null>(null);
-  moveTargetCycleId = signal<string>('');
-  moveCycleSaving = signal(false);
-  moveCycleError = signal<string | null>(null);
-
   // Change-completed-date modal state.
   completedDateTask = signal<Task | null>(null);
   completedDateInput = signal<string>('');
   completedDateSaving = signal(false);
   completedDateError = signal<string | null>(null);
-
-  /** Cycles offered as move targets — every cycle EXCEPT the one currently being viewed. */
-  cycleOptionsForMove = computed(() => {
-    const currentViewId = this.cycle()?._id;
-    return this.cycles().filter((c) => c._id !== currentViewId);
-  });
   editForm: {
     title: string;
     description?: string;
@@ -1211,10 +1080,6 @@ export class ClientTasksTab implements OnChanges {
 
   actualHours = computed(() =>
     this.tasks().reduce((acc, t) => acc + (t.actualHours || 0), 0),
-  );
-
-  pct = computed(() =>
-    this.assignedHours > 0 ? (this.actualHours() / this.assignedHours) * 100 : 0,
   );
 
   filteredTasks = computed(() => {
@@ -1295,58 +1160,17 @@ export class ClientTasksTab implements OnChanges {
   ]);
 
   ngOnChanges() {
-    // Load the full list so the user can switch between cycles (the common
-    // case: edit a closed cycle's tasks to finalize the report after the
-    // new cycle has already started). Default the dropdown to the current
-    // cycle so this remains a no-op for the usual workflow.
-    this.cyclesSvc.list().subscribe({
-      next: (all) =>
-        this.cycles.set(
-          all
-            .slice()
-            .sort(
-              (a, b) =>
-                new Date(b.startDate).getTime() -
-                new Date(a.startDate).getTime(),
-            ),
-        ),
-      error: () => null,
-    });
-    this.cyclesSvc.current().subscribe({
-      next: (c) => {
-        this.currentCycleId.set(c?._id ?? null);
-        if (!this.cycle()) {
-          this.cycle.set(c);
-          this.loadTasks();
-        }
-      },
-      error: () => null,
-    });
-  }
-
-  onCycleChange(cycleId: string) {
-    const c = this.cycles().find((x) => x._id === cycleId);
-    if (!c) return;
-    this.cycle.set(c);
-    this.tasks.set([]);
     this.loadTasks();
   }
 
-  jumpToCurrentCycle() {
-    const id = this.currentCycleId();
-    if (id) this.onCycleChange(id);
-  }
-
   loadTasks() {
-    const c = this.cycle();
-    if (!c?._id) return;
+    if (!this.clientId) return;
     this.tasksSvc
-      .list({ clientId: this.clientId, cycleId: c._id })
+      .list({ clientId: this.clientId })
       .subscribe((t) => this.tasks.set(t));
   }
 
   openCreateModal() {
-    if (!this.cycle()?._id) return;
     this.editForm = {
       title: '',
       description: '',
@@ -1444,8 +1268,6 @@ export class ClientTasksTab implements OnChanges {
   }
 
   private createTask() {
-    const cycle = this.cycle();
-    if (!cycle?._id) return;
     const title = (this.editForm.title || '').trim();
     if (!title) {
       this.editError.set('Title is required.');
@@ -1469,7 +1291,6 @@ export class ClientTasksTab implements OnChanges {
       subtasks: this.cleanSubtasks(),
       status: this.editForm.status,
       clientId: this.clientId,
-      cycleId: cycle._id,
     };
     this.tasksSvc.create(payload).subscribe({
       next: () => {
@@ -1540,84 +1361,6 @@ export class ClientTasksTab implements OnChanges {
       return;
     }
     this.performSendToDoc(t, false);
-  }
-
-  /**
-   * Bumps a pending / in-progress task from an older (usually closed)
-   * cycle forward to the currently active cycle so it enters the
-   * regular workflow instead of sitting stranded in a past period.
-   * Removes it from the local list because it's no longer scoped to
-   * whichever cycle the tab is viewing.
-   */
-  moveToCurrentCycle(t: Task) {
-    this.menuOpenId.set(null);
-    if (!t._id) return;
-    if (t.status !== 'pending' && t.status !== 'in_progress') return;
-    const targetCycleId = this.currentCycleId();
-    if (!targetCycleId) {
-      alert('No active cycle right now — cannot bump this task forward.');
-      return;
-    }
-    if (t.cycleId === targetCycleId) return; // Already there — noop.
-    this.movingToCycleId.set(t._id);
-    this.tasksSvc.update(t._id, { cycleId: targetCycleId }).subscribe({
-      next: () => {
-        this.movingToCycleId.set(null);
-        this.tasks.update((list) => list.filter((x) => x._id !== t._id));
-      },
-      error: (err) => {
-        this.movingToCycleId.set(null);
-        const m = err?.error?.message;
-        alert(
-          `Could not move the task: ${Array.isArray(m) ? m.join(', ') : m || 'Unknown error'}`,
-        );
-      },
-    });
-  }
-
-  /**
-   * Opens the 'Move to another cycle' modal. Any cycle in the client's
-   * timeline is a valid target — the dropdown reuses the cycles list
-   * already loaded for the top-level selector.
-   */
-  openMoveCycleModal(t: Task) {
-    this.menuOpenId.set(null);
-    if (!t._id) return;
-    this.moveTargetCycleId.set('');
-    this.moveCycleError.set(null);
-    this.movingCycleTask.set(t);
-  }
-
-  dismissMoveCycleModal() {
-    if (this.moveCycleSaving()) return;
-    this.movingCycleTask.set(null);
-    this.moveTargetCycleId.set('');
-    this.moveCycleError.set(null);
-  }
-
-  confirmMoveCycle() {
-    const t = this.movingCycleTask();
-    const targetId = this.moveTargetCycleId();
-    if (!t?._id || !targetId) return;
-    this.moveCycleSaving.set(true);
-    this.moveCycleError.set(null);
-    this.tasksSvc.update(t._id, { cycleId: targetId }).subscribe({
-      next: () => {
-        this.moveCycleSaving.set(false);
-        this.movingCycleTask.set(null);
-        this.moveTargetCycleId.set('');
-        // The moved task is no longer scoped to the viewing cycle,
-        // so filter it out of the local list immediately.
-        this.tasks.update((list) => list.filter((x) => x._id !== t._id));
-      },
-      error: (err) => {
-        this.moveCycleSaving.set(false);
-        const m = err?.error?.message;
-        this.moveCycleError.set(
-          Array.isArray(m) ? m.join(', ') : m || 'Could not move the task.',
-        );
-      },
-    });
   }
 
   /**
@@ -1912,11 +1655,8 @@ export class ClientTasksTab implements OnChanges {
 
   duplicate(t: Task) {
     this.menuOpenId.set(null);
-    const cycle = this.cycle();
-    if (!cycle?._id) return;
     const draft: Partial<Task> = {
       clientId: this.clientId,
-      cycleId: cycle._id,
       title: `${t.title} (copy)`,
       description: t.description,
       category: t.category,
@@ -2033,19 +1773,4 @@ export class ClientTasksTab implements OnChanges {
     return 'bg-ink-100 text-ink-500';
   }
 
-  hoursTextColor() {
-    const p = this.pct();
-    if (p > 100) return 'text-danger-500';
-    if (p >= 80) return 'text-warning-500';
-    if (p >= 50) return 'text-positive-500';
-    return 'text-ink-700';
-  }
-
-  hoursBarColor() {
-    const p = this.pct();
-    if (p > 100) return 'bg-danger-500';
-    if (p >= 80) return 'bg-warning-500';
-    if (p >= 50) return 'bg-positive-500';
-    return 'bg-ink-300';
-  }
 }
