@@ -14,6 +14,7 @@ import {
   GoogleAuthToken,
   GoogleAuthTokenDocument,
 } from './google-auth-token.schema';
+import { ActivityLogService } from '../activity-log/activity-log.service';
 
 const GSC_SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly';
 const GA4_SCOPE = 'https://www.googleapis.com/auth/analytics.readonly';
@@ -51,6 +52,7 @@ export class GoogleOAuthService {
     private readonly model: Model<GoogleAuthTokenDocument>,
     private readonly config: ConfigService,
     private readonly jwt: JwtService,
+    private readonly audit: ActivityLogService,
   ) {}
 
   isConfigured(): boolean {
@@ -158,6 +160,14 @@ export class GoogleOAuthService {
       )
       .exec();
 
+    await this.audit.log({
+      userId: payload.userId,
+      action: 'oauth.google.connected',
+      targetType: 'GoogleAuthToken',
+      targetId: payload.userId,
+      details: { googleEmail },
+    });
+
     const returnTo = payload.returnTo || '/settings/integrations';
     return { redirectUrl: `${this.webBase()}${returnTo}?google_connected=1` };
   }
@@ -219,6 +229,12 @@ export class GoogleOAuthService {
 
   async disconnect(userId: string) {
     await this.model.deleteOne({ userId: new Types.ObjectId(userId) }).exec();
+    await this.audit.log({
+      userId,
+      action: 'oauth.google.disconnected',
+      targetType: 'GoogleAuthToken',
+      targetId: userId,
+    });
     return { disconnected: true };
   }
 

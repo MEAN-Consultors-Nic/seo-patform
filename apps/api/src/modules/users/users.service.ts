@@ -13,6 +13,7 @@ import { LEGACY_ROLE_MAP, UserRole } from '@seo/shared';
 import { User, UserDocument } from '../auth/user.schema';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { ActivityLogService } from '../activity-log/activity-log.service';
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -20,6 +21,7 @@ export class UsersService implements OnModuleInit {
 
   constructor(
     @InjectModel(User.name) private readonly model: Model<UserDocument>,
+    private readonly audit: ActivityLogService,
   ) {}
 
   /**
@@ -117,6 +119,12 @@ export class UsersService implements OnModuleInit {
       active: dto.active ?? true,
       passwordHash,
     });
+    await this.audit.log({
+      action: 'user.created',
+      targetType: 'User',
+      targetId: String(user._id),
+      details: { email: user.email, role: user.role },
+    });
     return this.toSafe(user);
   }
 
@@ -133,15 +141,36 @@ export class UsersService implements OnModuleInit {
         );
       }
     }
-    if (dto.name !== undefined) user.name = dto.name;
-    if (dto.role !== undefined) user.role = dto.role;
-    if (dto.managerId !== undefined) {
-      user.managerId = dto.managerId
-        ? new Types.ObjectId(dto.managerId)
-        : undefined;
+    const changed: Record<string, unknown> = {};
+    if (dto.name !== undefined && dto.name !== user.name) {
+      changed.name = { from: user.name, to: dto.name };
+      user.name = dto.name;
     }
-    if (dto.active !== undefined) user.active = dto.active;
+    if (dto.role !== undefined && dto.role !== user.role) {
+      changed.role = { from: user.role, to: dto.role };
+      user.role = dto.role;
+    }
+    if (dto.managerId !== undefined) {
+      const prev = user.managerId?.toString();
+      const next = dto.managerId || undefined;
+      if (prev !== next) {
+        changed.managerId = { from: prev, to: next };
+        user.managerId = next ? new Types.ObjectId(next) : undefined;
+      }
+    }
+    if (dto.active !== undefined && dto.active !== user.active) {
+      changed.active = { from: user.active, to: dto.active };
+      user.active = dto.active;
+    }
     await user.save();
+    if (Object.keys(changed).length) {
+      await this.audit.log({
+        action: 'user.updated',
+        targetType: 'User',
+        targetId: id,
+        details: changed,
+      });
+    }
     return this.toSafe(user);
   }
 
@@ -150,6 +179,12 @@ export class UsersService implements OnModuleInit {
     if (!user) throw new NotFoundException(`User ${id} not found`);
     user.passwordHash = await bcrypt.hash(password, 10);
     await user.save();
+    await this.audit.log({
+      action: 'user.password-reset',
+      targetType: 'User',
+      targetId: id,
+      details: { email: user.email },
+    });
     return { ok: true };
   }
 
@@ -165,6 +200,12 @@ export class UsersService implements OnModuleInit {
       }
     }
     await user.deleteOne();
+    await this.audit.log({
+      action: 'user.deleted',
+      targetType: 'User',
+      targetId: id,
+      details: { email: user.email, role: user.role },
+    });
     return { deleted: true };
   }
 }

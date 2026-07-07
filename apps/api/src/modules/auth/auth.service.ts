@@ -9,6 +9,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { User, UserDocument } from './user.schema';
+import { ActivityLogService } from '../activity-log/activity-log.service';
 
 const SEED_EMAIL = 'joseph.o@mediaspearhead.com';
 const SEED_PASSWORD = 'spearhead2026';
@@ -20,6 +21,7 @@ export class AuthService implements OnApplicationBootstrap {
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     private readonly jwt: JwtService,
+    private readonly audit: ActivityLogService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -45,15 +47,38 @@ export class AuthService implements OnApplicationBootstrap {
     const user = await this.userModel
       .findOne({ email: email.toLowerCase(), active: true })
       .exec();
-    if (!user) throw new UnauthorizedException('Invalid credentials');
+    if (!user) {
+      // Log the miss with just the email + no userId so brute-force
+      // attempts against unknown accounts still leave a trail.
+      await this.audit.log({
+        action: 'auth.login.failed',
+        userEmail: email.toLowerCase(),
+        details: { reason: 'unknown-email-or-inactive' },
+      });
+      throw new UnauthorizedException('Invalid credentials');
+    }
     const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) throw new UnauthorizedException('Invalid credentials');
+    if (!ok) {
+      await this.audit.log({
+        userId: String(user._id),
+        userEmail: user.email,
+        action: 'auth.login.failed',
+        details: { reason: 'wrong-password' },
+      });
+      throw new UnauthorizedException('Invalid credentials');
+    }
     return this.toSafeUser(user);
   }
 
   async login(email: string, password: string) {
     const user = await this.validate(email, password);
     const payload = { sub: user._id, email: user.email, role: user.role };
+    await this.audit.log({
+      userId: String(user._id),
+      userEmail: String(user.email),
+      action: 'auth.login.success',
+      details: { role: user.role },
+    });
     return {
       accessToken: this.jwt.sign(payload),
       user,

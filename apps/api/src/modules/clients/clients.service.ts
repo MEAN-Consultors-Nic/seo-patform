@@ -17,6 +17,7 @@ import {
   isAdmin,
   isManagerOrAbove,
 } from '../auth/roles.guard';
+import { ActivityLogService } from '../activity-log/activity-log.service';
 
 @Injectable()
 export class ClientsService {
@@ -27,6 +28,7 @@ export class ClientsService {
     @InjectModel(Cycle.name) private readonly cycleModel: Model<CycleDocument>,
     @InjectModel(Backlink.name) private readonly backlinkModel: Model<BacklinkDocument>,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    private readonly audit: ActivityLogService,
   ) {}
 
   /**
@@ -163,7 +165,20 @@ export class ClientsService {
       packageId: dto.packageId ? new Types.ObjectId(dto.packageId) : undefined,
       hoursPerCycle: dto.hoursPerCycle ?? hoursFallback,
     });
-    return doc.save();
+    const saved = await doc.save();
+    await this.audit.log({
+      userId: user?.userId,
+      userEmail: user?.email,
+      action: 'client.created',
+      targetType: 'Client',
+      targetId: String(saved._id),
+      details: {
+        name: saved.name,
+        url: saved.url,
+        ownerId: ownerId?.toString(),
+      },
+    });
+    return saved;
   }
 
   async update(id: string, dto: UpdateClientDto, user?: AuthenticatedUser) {
@@ -179,6 +194,14 @@ export class ClientsService {
       .lean()
       .exec();
     if (!updated) throw new NotFoundException(`Client ${id} not found`);
+    await this.audit.log({
+      userId: user?.userId,
+      userEmail: user?.email,
+      action: 'client.updated',
+      targetType: 'Client',
+      targetId: id,
+      details: { fields: Object.keys(patch) },
+    });
     return updated;
   }
 
@@ -190,6 +213,14 @@ export class ClientsService {
     }
     const deleted = await this.model.findByIdAndDelete(id).lean().exec();
     if (!deleted) throw new NotFoundException(`Client ${id} not found`);
+    await this.audit.log({
+      userId: user?.userId,
+      userEmail: user?.email,
+      action: 'client.deleted',
+      targetType: 'Client',
+      targetId: id,
+      details: { name: deleted.name },
+    });
     return { deleted: true };
   }
 

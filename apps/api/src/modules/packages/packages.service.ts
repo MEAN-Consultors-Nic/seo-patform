@@ -11,6 +11,7 @@ import { Package, PackageDocument } from './package.schema';
 import { CreatePackageDto } from './dto/create-package.dto';
 import { UpdatePackageDto } from './dto/update-package.dto';
 import { ClientTier, HOURS_PER_TIER, PackageColor } from '@seo/shared';
+import { ActivityLogService } from '../activity-log/activity-log.service';
 
 /**
  * Package management + one-shot migration from the legacy ClientTier
@@ -36,6 +37,7 @@ export class PackagesService implements OnModuleInit {
       applicableTiers?: ClientTier[];
       applicablePackageIds?: Types.ObjectId[];
     }>,
+    private readonly audit: ActivityLogService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -208,7 +210,14 @@ export class PackagesService implements OnModuleInit {
         deliverables: deliverables as unknown as Package['deliverables'],
       };
       const doc = await this.model.create(payload as Package);
-      return (doc as unknown as PackageDocument).toObject() as never;
+      const obj = (doc as unknown as PackageDocument).toObject();
+      await this.audit.log({
+        action: 'package.created',
+        targetType: 'Package',
+        targetId: String((obj as { _id?: unknown })._id ?? ''),
+        details: { name: obj.name, deliverables: obj.deliverables.length },
+      });
+      return obj as never;
     } catch (e) {
       const err = e as {
         code?: number;
@@ -252,6 +261,12 @@ export class PackagesService implements OnModuleInit {
         .lean()
         .exec();
       if (!doc) throw new NotFoundException(`Package ${id} not found`);
+      await this.audit.log({
+        action: 'package.updated',
+        targetType: 'Package',
+        targetId: id,
+        details: { fields: Object.keys(payload) },
+      });
       return doc as never;
     } catch (e) {
       const err = e as {
@@ -292,6 +307,12 @@ export class PackagesService implements OnModuleInit {
     }
     const res = await this.model.findByIdAndDelete(id).exec();
     if (!res) throw new NotFoundException(`Package ${id} not found`);
+    await this.audit.log({
+      action: 'package.deleted',
+      targetType: 'Package',
+      targetId: id,
+      details: { name: res.name },
+    });
     return { deleted: true };
   }
 

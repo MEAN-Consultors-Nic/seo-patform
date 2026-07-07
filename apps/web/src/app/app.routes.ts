@@ -87,6 +87,14 @@ export const appRoutes: Route[] = [
           ),
       },
       {
+        path: 'settings/activity-log',
+        canActivate: [roleGuard('root', 'owner', 'admin')],
+        loadComponent: () =>
+          import('./features/settings/activity-log-settings.component').then(
+            (m) => m.ActivityLogSettingsComponent,
+          ),
+      },
+      {
         path: 'settings/supervisor',
         canActivate: [roleGuard('root', 'owner', 'admin')],
         loadComponent: () =>
