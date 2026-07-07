@@ -233,6 +233,7 @@ export class ShellComponent {
   private navItems: NavItem[] = [
     { route: '/dashboard', label: 'Dashboard', exact: true },
     { route: '/pipeline', label: 'Pipeline' },
+    { route: '/proposals', label: 'Proposals' },
     { route: '/clients', label: 'Clients' },
     { route: '/reports', label: 'Reports' },
     { route: '/bulk-send', label: 'Bulk send' },

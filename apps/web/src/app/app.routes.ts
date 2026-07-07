@@ -13,6 +13,13 @@ export const appRoutes: Route[] = [
       import('./features/public/public-report.component').then((m) => m.PublicReportComponent),
   },
   {
+    path: 'p/:token',
+    loadComponent: () =>
+      import('./features/public/public-proposal.component').then(
+        (m) => m.PublicProposalComponent,
+      ),
+  },
+  {
     path: 'supervisor',
     loadChildren: () =>
       import('./features/supervisor/supervisor.routes').then(
@@ -73,6 +80,13 @@ export const appRoutes: Route[] = [
         loadComponent: () =>
           import('./features/sales/pipeline.component').then(
             (m) => m.SalesPipelineComponent,
+          ),
+      },
+      {
+        path: 'proposals',
+        loadComponent: () =>
+          import('./features/sales/proposals.component').then(
+            (m) => m.SalesProposalsComponent,
           ),
       },
       {

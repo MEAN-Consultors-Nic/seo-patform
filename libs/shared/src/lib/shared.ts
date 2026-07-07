@@ -286,6 +286,80 @@ export interface PipelineStats {
   perStage: Record<LeadStage, number>;
 }
 
+// --- Proposals -------------------------------------------------------------
+
+export type ProposalStatus =
+  | 'draft'
+  | 'sent'
+  | 'viewed'
+  | 'signed'
+  | 'declined'
+  | 'expired';
+
+export const PROPOSAL_STATUS_LABELS: Record<ProposalStatus, string> = {
+  draft: 'Draft',
+  sent: 'Sent',
+  viewed: 'Viewed',
+  signed: 'Signed',
+  declined: 'Declined',
+  expired: 'Expired',
+};
+
+export type ProposalCadence = 'one-time' | 'monthly' | 'annual';
+
+export interface ProposalItem {
+  name: string;
+  description?: string;
+  cadence: ProposalCadence;
+  quantity: number;
+  unitPrice: number;
+  paymentLinkUrl?: string;
+}
+
+export interface Proposal {
+  _id?: string;
+  title: string;
+  leadId?: string;
+  clientId?: string;
+  businessName: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  items: ProposalItem[];
+  intro?: string;
+  terms?: string;
+  notes?: string;
+  senderUserId?: string;
+  status: ProposalStatus;
+  shareToken?: string;
+  sharePin?: string;
+  sentAt?: Date | string;
+  viewedAt?: Date | string;
+  signedAt?: Date | string;
+  declinedAt?: Date | string;
+  expiresAt?: Date | string;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+}
+
+export interface ProposalTotals {
+  oneTime: number;
+  monthly: number;
+  annual: number;
+}
+
+export function computeProposalTotals(items: ProposalItem[]): ProposalTotals {
+  const t: ProposalTotals = { oneTime: 0, monthly: 0, annual: 0 };
+  for (const it of items) {
+    const sub = it.quantity * it.unitPrice;
+    if (it.cadence === 'one-time') t.oneTime += sub;
+    else if (it.cadence === 'monthly') t.monthly += sub;
+    else if (it.cadence === 'annual') t.annual += sub;
+  }
+  return t;
+}
+
 // --- Onboarding ------------------------------------------------------------
 
 export type OnboardingSection =
