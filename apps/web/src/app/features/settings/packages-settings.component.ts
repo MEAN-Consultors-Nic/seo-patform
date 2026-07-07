@@ -367,30 +367,68 @@ export class PackagesSettingsComponent implements OnInit {
       this.saveError.set('Package name is required.');
       return;
     }
-    // Ensure every deliverable has a key (auto-slug from label if the
-    // user forgot to touch it).
-    const deliverables = e.deliverables.map((d) => ({
-      key: d.key || this.slugify(d.label),
-      label: d.label,
-      quantity: d.quantity,
-      unit: d.unit,
-      frequency: d.frequency,
-      matchTaskCategory: d.matchTaskCategory,
-      notes: d.notes,
-    }));
-    const missingKey = deliverables.findIndex((d) => !d.key || !d.label);
-    if (missingKey >= 0) {
-      this.saveError.set(
-        `Deliverable #${missingKey + 1} is missing a label. Fill it in or remove it.`,
-      );
-      return;
+    // Coerce + validate each deliverable row. Empty strings and
+    // NaN-quantity values are surfaced as an inline error instead of
+    // being sent to the backend where they'd fail class-validator.
+    const deliverables: Array<{
+      key: string;
+      label: string;
+      quantity: number;
+      unit: string;
+      frequency: EditableDeliverable['frequency'];
+      matchTaskCategory?: string;
+      notes?: string;
+    }> = [];
+    for (let i = 0; i < e.deliverables.length; i++) {
+      const d = e.deliverables[i];
+      const label = (d.label || '').trim();
+      const unit = (d.unit || '').trim();
+      const key = (d.key || this.slugify(label));
+      const qty =
+        typeof d.quantity === 'number' && !isNaN(d.quantity)
+          ? d.quantity
+          : Number(d.quantity);
+      if (!label) {
+        this.saveError.set(`Deliverable #${i + 1} is missing a label.`);
+        return;
+      }
+      if (!key) {
+        this.saveError.set(`Deliverable #${i + 1} is missing a key.`);
+        return;
+      }
+      if (!unit) {
+        this.saveError.set(`Deliverable #${i + 1} is missing a unit.`);
+        return;
+      }
+      if (isNaN(qty) || qty < 0) {
+        this.saveError.set(
+          `Deliverable #${i + 1} needs a non-negative quantity.`,
+        );
+        return;
+      }
+      deliverables.push({
+        key,
+        label,
+        quantity: qty,
+        unit,
+        frequency: d.frequency,
+        matchTaskCategory: d.matchTaskCategory || undefined,
+        notes: (d.notes || '').trim() || undefined,
+      });
     }
+    const rawHours =
+      typeof e.hoursPerPeriod === 'number' && !isNaN(e.hoursPerPeriod)
+        ? e.hoursPerPeriod
+        : e.hoursPerPeriod === undefined || e.hoursPerPeriod === null
+          ? undefined
+          : Number(e.hoursPerPeriod);
     const payload: Partial<Package> = {
       name: e.name.trim(),
-      description: e.description || undefined,
+      description: (e.description || '').trim() || undefined,
       color: e.color,
-      hoursPerPeriod: e.hoursPerPeriod ?? undefined,
-      deliverables,
+      hoursPerPeriod:
+        typeof rawHours === 'number' && !isNaN(rawHours) ? rawHours : undefined,
+      deliverables: deliverables as unknown as Package['deliverables'],
     };
     this.saving.set(true);
     this.saveError.set(null);

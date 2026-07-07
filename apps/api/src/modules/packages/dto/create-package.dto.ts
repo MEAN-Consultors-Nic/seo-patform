@@ -1,8 +1,6 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
-  ArrayMinSize,
   IsArray,
-  IsEnum,
   IsIn,
   IsNumber,
   IsOptional,
@@ -39,13 +37,21 @@ const TASK_CATEGORIES = [
   'reporting',
 ];
 
+// Coerce empty strings to undefined so class-validator's @IsOptional
+// treats blank form fields as "not provided" instead of failing @IsIn.
+const emptyToUndefined = ({ value }: { value: unknown }) =>
+  value === '' || value === null ? undefined : value;
+
 export class DeliverableDto {
   @IsString() key!: string;
   @IsString() label!: string;
-  @IsNumber() @Min(0) quantity!: number;
+  @Type(() => Number) @IsNumber() @Min(0) quantity!: number;
   @IsString() unit!: string;
   @IsIn(FREQUENCIES) frequency!: DeliverableFrequency;
-  @IsOptional() @IsIn(TASK_CATEGORIES) matchTaskCategory?: string;
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsIn(TASK_CATEGORIES)
+  matchTaskCategory?: string;
   @IsOptional() @IsString() notes?: string;
 }
 
@@ -53,9 +59,15 @@ export class CreatePackageDto {
   @IsString() name!: string;
   @IsOptional() @IsString() description?: string;
   @IsIn(PACKAGE_COLORS) color!: PackageColor;
-  @IsOptional() @IsNumber() @Min(0) hoursPerPeriod?: number;
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  hoursPerPeriod?: number;
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => DeliverableDto)
-  deliverables!: DeliverableDto[];
+  deliverables?: DeliverableDto[];
 }

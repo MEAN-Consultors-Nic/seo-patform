@@ -197,15 +197,41 @@ export class PackagesService implements OnModuleInit {
   }
 
   async create(dto: CreatePackageDto): Promise<PackageDocument> {
-    this.assertUniqueDeliverableKeys(dto.deliverables);
+    const deliverables = dto.deliverables ?? [];
+    this.assertUniqueDeliverableKeys(deliverables);
     try {
-      const doc = await this.model.create(dto as unknown as Package);
+      const payload: Partial<Package> = {
+        name: dto.name.trim(),
+        description: dto.description,
+        color: dto.color,
+        hoursPerPeriod: dto.hoursPerPeriod,
+        deliverables: deliverables as unknown as Package['deliverables'],
+      };
+      const doc = await this.model.create(payload as Package);
       return (doc as unknown as PackageDocument).toObject() as never;
     } catch (e) {
-      const err = e as { code?: number; message?: string };
+      const err = e as {
+        code?: number;
+        message?: string;
+        name?: string;
+        errors?: Record<string, { message: string }>;
+      };
       if (err.code === 11000) {
-        throw new BadRequestException(`A package named "${dto.name}" already exists.`);
+        throw new BadRequestException(
+          `A package named "${dto.name}" already exists.`,
+        );
       }
+      if (err.name === 'ValidationError' && err.errors) {
+        const details = Object.entries(err.errors)
+          .map(([field, e]) => `${field}: ${e.message}`)
+          .join('; ');
+        this.logger.warn(`Package create validation failed: ${details}`);
+        throw new BadRequestException(`Package validation failed: ${details}`);
+      }
+      this.logger.error(
+        `Package create failed: ${err.message}`,
+        (e as Error).stack,
+      );
       throw e;
     }
   }
@@ -213,17 +239,41 @@ export class PackagesService implements OnModuleInit {
   async update(id: string, dto: UpdatePackageDto): Promise<PackageDocument> {
     if (dto.deliverables) this.assertUniqueDeliverableKeys(dto.deliverables);
     try {
+      const payload: Partial<Package> = {};
+      if (dto.name !== undefined) payload.name = dto.name.trim();
+      if (dto.description !== undefined) payload.description = dto.description;
+      if (dto.color !== undefined) payload.color = dto.color;
+      if (dto.hoursPerPeriod !== undefined)
+        payload.hoursPerPeriod = dto.hoursPerPeriod;
+      if (dto.deliverables !== undefined)
+        payload.deliverables = dto.deliverables as unknown as Package['deliverables'];
       const doc = await this.model
-        .findByIdAndUpdate(id, { $set: dto }, { new: true })
+        .findByIdAndUpdate(id, { $set: payload }, { new: true, runValidators: true })
         .lean()
         .exec();
       if (!doc) throw new NotFoundException(`Package ${id} not found`);
       return doc as never;
     } catch (e) {
-      const err = e as { code?: number };
+      const err = e as {
+        code?: number;
+        message?: string;
+        name?: string;
+        errors?: Record<string, { message: string }>;
+      };
       if (err.code === 11000) {
         throw new BadRequestException(`Another package already uses that name.`);
       }
+      if (err.name === 'ValidationError' && err.errors) {
+        const details = Object.entries(err.errors)
+          .map(([field, e]) => `${field}: ${e.message}`)
+          .join('; ');
+        this.logger.warn(`Package update validation failed: ${details}`);
+        throw new BadRequestException(`Package validation failed: ${details}`);
+      }
+      this.logger.error(
+        `Package update failed: ${err.message}`,
+        (e as Error).stack,
+      );
       throw e;
     }
   }
