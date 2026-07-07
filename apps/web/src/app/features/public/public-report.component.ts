@@ -242,9 +242,9 @@ interface PublicPayload {
             <!-- Top bar -->
             <div class="flex items-center justify-between mb-12">
               <div class="flex items-center gap-3">
-                <div class="w-9 h-9 rounded-md bg-brand-500 flex items-center justify-center font-bold">S</div>
+                <div class="w-9 h-9 rounded-md bg-brand-500 flex items-center justify-center font-bold">IT</div>
                 <div>
-                  <div class="text-sm font-bold">SEO Platform</div>
+                  <div class="text-sm font-bold">Internal Tools</div>
                   <div class="text-[10px] uppercase tracking-wider text-white/60">Media Spearhead</div>
                 </div>
               </div>

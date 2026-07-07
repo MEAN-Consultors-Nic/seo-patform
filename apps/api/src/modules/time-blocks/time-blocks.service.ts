@@ -853,7 +853,7 @@ export class TimeBlocksService {
         try {
           const created = await this.calendarSvc.createEvent(userId, {
             summary: s.clientName,
-            description: 'Scheduled by SEO Platform weekly plan.',
+            description: 'Scheduled by Internal Tools weekly plan.',
             startDateTime: startIso,
             endDateTime: endIso,
             timeZone,

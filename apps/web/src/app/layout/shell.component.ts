@@ -53,10 +53,10 @@ interface NavItem {
           <div class="flex items-center gap-6 min-w-0">
             <a routerLink="/dashboard" class="flex items-center gap-2.5 flex-shrink-0">
               <div class="w-8 h-8 rounded-md bg-brand-500 text-white flex items-center justify-center font-bold text-sm">
-                S
+                IT
               </div>
               <div class="hidden sm:block leading-none">
-                <div class="text-sm font-bold text-ink-900">SEO Platform</div>
+                <div class="text-sm font-bold text-ink-900">Internal Tools</div>
                 <div class="text-[9px] text-ink-500 mt-0.5 uppercase tracking-wider">Media Spearhead</div>
               </div>
             </a>

@@ -13,9 +13,9 @@ import { AuthService } from '../../core/auth.service';
       <div class="w-full max-w-md">
         <div class="text-center mb-8">
           <div class="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-brand-500 text-white text-xl font-bold mb-3">
-            S
+            IT
           </div>
-          <h1 class="text-2xl font-bold text-ink-900">SEO Platform</h1>
+          <h1 class="text-2xl font-bold text-ink-900">Internal Tools</h1>
           <p class="text-sm text-ink-500 mt-1">Media Spearhead</p>
         </div>
 
