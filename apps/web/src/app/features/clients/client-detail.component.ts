@@ -24,6 +24,7 @@ import { ClientEcommerceTab } from './tabs/ecommerce-tab.component';
 import { ClientShopifyTab } from './tabs/shopify-tab.component';
 import { ClientWordpressTab } from './tabs/wordpress-tab.component';
 import { ClientOnboardingTabComponent } from './tabs/onboarding-tab.component';
+import { ClientEmailsTabComponent } from './tabs/emails-tab.component';
 import { DomainInfoButtonComponent } from './domain-info-button.component';
 import { SchemaModelerButtonComponent } from './schema-modeler-button.component';
 
@@ -34,6 +35,7 @@ type TabKey =
   | 'onboarding'
   | 'tasks'
   | 'content'
+  | 'emails'
   | 'keywords'
   | 'positions'
   | 'competitors'
@@ -95,6 +97,7 @@ const GROUPS: GroupDef[] = [
     ClientShopifyTab,
     ClientWordpressTab,
     ClientOnboardingTabComponent,
+    ClientEmailsTabComponent,
     DomainInfoButtonComponent,
     SchemaModelerButtonComponent,
   ],
@@ -256,6 +259,9 @@ const GROUPS: GroupDef[] = [
           }
           @case ('content') {
             <app-client-content-tab [clientId]="c._id!" />
+          }
+          @case ('emails') {
+            <app-client-emails-tab [clientId]="c._id!" [client]="c" />
           }
           @case ('keywords') {
             <app-client-keywords-tab [clientId]="c._id!" />
@@ -448,6 +454,7 @@ export class ClientDetailComponent implements OnInit {
       { key: 'onboarding', label: 'Onboarding', group: 'work' },
       { key: 'tasks', label: 'Tasks', group: 'work' },
       { key: 'content', label: 'Content', group: 'work' },
+      { key: 'emails', label: 'Emails', group: 'work' },
 
       { key: 'keywords', label: 'Keywords', group: 'performance' },
       { key: 'positions', label: 'Position Tracker', group: 'performance' },
