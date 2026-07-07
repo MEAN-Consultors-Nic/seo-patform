@@ -234,6 +234,7 @@ export class ShellComponent {
     { route: '/dashboard', label: 'Dashboard', exact: true },
     { route: '/clients', label: 'Clients' },
     { route: '/reports', label: 'Reports' },
+    { route: '/bulk-send', label: 'Bulk send' },
     { route: '/settings/working-hours', label: 'Settings' },
     {
       route: '/users',

@@ -69,6 +69,13 @@ export const appRoutes: Route[] = [
           import('./features/reports/report-editor.component').then((m) => m.ReportEditorComponent),
       },
       {
+        path: 'bulk-send',
+        loadComponent: () =>
+          import('./features/comms/bulk-send.component').then(
+            (m) => m.BulkSendComponent,
+          ),
+      },
+      {
         path: 'settings/working-hours',
         loadComponent: () =>
           import('./features/settings/working-hours-settings.component').then(

@@ -82,6 +82,50 @@ export class CommsService {
   }
 
   /**
+   * Bulk-send roster (Slice 3.4). Returns the strategist's clients
+   * with the last-sent-email timestamp joined in — sorted so clients
+   * without any email (or with the oldest send) surface first. Powers
+   * the "who needs an email today?" screen.
+   */
+  async bulkRoster(user: AuthenticatedUser, clientIds: Types.ObjectId[] | null) {
+    const match: Record<string, unknown> = { ok: true };
+    if (clientIds !== null) {
+      match.clientId = { $in: clientIds };
+    }
+    const grouped = await this.archive.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: '$clientId',
+          lastSentAt: { $max: '$createdAt' },
+          lastSubject: { $last: '$subject' },
+          lastKind: { $last: '$kind' },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+    const byClient = new Map<
+      string,
+      {
+        lastSentAt?: Date;
+        lastSubject?: string;
+        lastKind?: string;
+        count: number;
+      }
+    >();
+    for (const g of grouped) {
+      if (!g._id) continue;
+      byClient.set(String(g._id), {
+        lastSentAt: g.lastSentAt,
+        lastSubject: g.lastSubject,
+        lastKind: g.lastKind,
+        count: g.count,
+      });
+    }
+    return { byClient: Object.fromEntries(byClient) };
+  }
+
+  /**
    * Archive listing. Filters by client, kind, or sender. Sorted by
    * most-recent first. Default limit 50, capped at 200 per request.
    */

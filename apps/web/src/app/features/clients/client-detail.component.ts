@@ -617,6 +617,13 @@ export class ClientDetailComponent implements OnInit {
       next: (list) => this.packages.set(list),
       error: () => this.packages.set([]),
     });
+    // Deep-link support: ?tab=emails from the Bulk Send page lands
+    // the user on the Emails tab directly. Only honors a known tab
+    // key so a stale link can't send us to an undefined case.
+    const requested = this.route.snapshot.queryParamMap.get('tab');
+    if (requested && this.allTabs().some((t) => t.key === requested)) {
+      this.activeTab.set(requested as TabKey);
+    }
   }
 
   onPackageChange(packageId: string) {

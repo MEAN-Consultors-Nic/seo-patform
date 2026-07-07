@@ -1,16 +1,19 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Types } from 'mongoose';
 import { CommsService } from './comms.service';
 import { AiWriterService } from './ai-writer.service';
 import { SendEmailDto } from './dto/send-email.dto';
 import { DraftSeoEmailDto } from './dto/draft-seo-email.dto';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthenticatedUser } from '../auth/roles.guard';
+import { ClientsService } from '../clients/clients.service';
 
 @Controller('comms')
 export class CommsController {
   constructor(
     private readonly comms: CommsService,
     private readonly ai: AiWriterService,
+    private readonly clients: ClientsService,
   ) {}
 
   @Post('emails/send')
@@ -44,6 +47,29 @@ export class CommsController {
   @Get('ai/status')
   aiStatus() {
     return { configured: this.ai.isConfigured() };
+  }
+
+  /**
+   * Bulk-send roster: the caller's accessible clients with their
+   * last-sent-email joined in. Sorted client-side so the caller
+   * decides the presentation order.
+   */
+  @Get('bulk-roster')
+  async bulkRoster(@CurrentUser() user: AuthenticatedUser) {
+    const clients = await this.clients.findAll({ active: true }, user);
+    const accessibleIds = clients.map(
+      (c) => new Types.ObjectId(String(c._id)),
+    );
+    const { byClient } = await this.comms.bulkRoster(user, accessibleIds);
+    return {
+      clients: clients.map((c) => ({
+        _id: c._id,
+        name: c.name,
+        url: c.url,
+        logoUrl: c.logoUrl,
+        lastEmail: byClient[String(c._id)] ?? null,
+      })),
+    };
   }
 
   @Post('emails/draft-seo-report')

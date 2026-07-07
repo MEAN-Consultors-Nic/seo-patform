@@ -6,6 +6,7 @@ import { CommsController } from './comms.controller';
 import { GmailService } from './gmail.service';
 import { AiWriterService } from './ai-writer.service';
 import { GoogleIntegrationsModule } from '../google-integrations/google-integrations.module';
+import { ClientsModule } from '../clients/clients.module';
 
 /**
  * Communications module (Phase 3 of the modularization roadmap).
@@ -19,6 +20,7 @@ import { GoogleIntegrationsModule } from '../google-integrations/google-integrat
       { name: SentEmail.name, schema: SentEmailSchema },
     ]),
     GoogleIntegrationsModule,
+    ClientsModule,
   ],
   controllers: [CommsController],
   providers: [GmailService, CommsService, AiWriterService],
