@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -38,8 +39,56 @@ const PDF_UNLOCK_TTL = '5m';
 const SESSION_TTL = '24h';
 
 @Injectable()
-export class ReportsService {
+export class ReportsService implements OnModuleInit {
   private readonly logger = new Logger(ReportsService.name);
+
+  /**
+   * Older deployments have a full (non-partial) unique index on
+   * (clientId, cycleId) that treats cycleId:null as unique — which
+   * blocks the second custom-range report per client with E11000.
+   * The schema now defines the index as partial (cycleId $exists),
+   * but Mongoose doesn't drop/recreate an existing index when the
+   * options change. This method inspects the live indexes and
+   * rebuilds if the partial filter is missing.
+   */
+  async onModuleInit(): Promise<void> {
+    try {
+      const collection = this.model.collection;
+      const indexes = (await collection.indexes()) as Array<{
+        name: string;
+        key: Record<string, number>;
+        unique?: boolean;
+        partialFilterExpression?: Record<string, unknown>;
+      }>;
+      const stale = indexes.find(
+        (i) =>
+          i.key &&
+          i.key.clientId === 1 &&
+          i.key.cycleId === 1 &&
+          i.unique === true &&
+          !i.partialFilterExpression,
+      );
+      if (stale) {
+        this.logger.warn(
+          `Dropping stale unique index '${stale.name}' on reports (missing partialFilterExpression).`,
+        );
+        await collection.dropIndex(stale.name);
+        await collection.createIndex(
+          { clientId: 1, cycleId: 1 },
+          {
+            unique: true,
+            partialFilterExpression: { cycleId: { $exists: true } },
+          },
+        );
+        this.logger.log('Recreated (clientId, cycleId) index as partial.');
+      }
+    } catch (e) {
+      this.logger.error(
+        `Reports index reconciliation failed: ${(e as Error).message}`,
+        (e as Error).stack,
+      );
+    }
+  }
 
   constructor(
     @InjectModel(Report.name) private readonly model: Model<ReportDocument>,
