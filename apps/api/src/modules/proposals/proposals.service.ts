@@ -2,9 +2,11 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model, Types } from 'mongoose';
 import { randomBytes, randomInt } from 'crypto';
 import { computeProposalTotals } from '@seo/shared';
@@ -21,6 +23,8 @@ import { CommsService } from '../comms/comms.service';
 
 @Injectable()
 export class ProposalsService {
+  private readonly logger = new Logger(ProposalsService.name);
+
   constructor(
     @InjectModel(Proposal.name)
     private readonly model: Model<ProposalDocument>,
@@ -143,13 +147,36 @@ export class ProposalsService {
     // Provision share token + PIN if the proposal hasn't been sent
     // before. Re-sending keeps the same link so the client's bookmark
     // stays valid.
-    if (!doc.shareToken) {
+    const firstSend = !doc.shareToken;
+    if (firstSend) {
       doc.shareToken = randomBytes(16).toString('base64url');
       doc.sharePin = String(randomInt(0, 1_000_000)).padStart(6, '0');
     }
     doc.status = 'sent';
     doc.sentAt = new Date();
     doc.expiresAt = new Date(Date.now() + 30 * 86400 * 1000);
+    // Auto follow-up schedule: 24h / 48h / 7d. Only created on the
+    // first send; re-sending doesn't stack a second cadence on top.
+    if (firstSend) {
+      const now = Date.now();
+      doc.followups = [
+        {
+          tier: '24h',
+          scheduledAt: new Date(now + 24 * 3600 * 1000),
+          status: 'pending',
+        } as never,
+        {
+          tier: '48h',
+          scheduledAt: new Date(now + 48 * 3600 * 1000),
+          status: 'pending',
+        } as never,
+        {
+          tier: '7d',
+          scheduledAt: new Date(now + 7 * 24 * 3600 * 1000),
+          status: 'pending',
+        } as never,
+      ];
+    }
     await doc.save();
 
     const webBase =
@@ -225,6 +252,10 @@ export class ProposalsService {
     if (doc.status === 'signed') return doc.toObject();
     doc.status = 'signed';
     doc.signedAt = new Date();
+    // Cancel any pending follow-ups — the deal is closed.
+    for (const f of doc.followups ?? []) {
+      if (f.status === 'pending') f.status = 'cancelled';
+    }
     await doc.save();
     return doc.toObject();
   }
@@ -247,5 +278,130 @@ export class ProposalsService {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  // --- Auto follow-up cron -----------------------------------------------
+
+  /**
+   * Every 30 minutes: find any proposal whose status is still sent/
+   * viewed with a follow-up scheduled at or before now. Fire the
+   * email, mark that follow-up sent (or failed), and move on.
+   */
+  @Cron(CronExpression.EVERY_30_MINUTES)
+  async processDueFollowups(): Promise<void> {
+    try {
+      const now = new Date();
+      const candidates = await this.model
+        .find({
+          status: { $in: ['sent', 'viewed'] },
+          'followups.status': 'pending',
+          'followups.scheduledAt': { $lte: now },
+        })
+        .populate('senderUserId', 'email')
+        .exec();
+      if (candidates.length === 0) return;
+      this.logger.log(
+        `Processing ${candidates.length} proposal(s) with due follow-ups.`,
+      );
+      for (const doc of candidates) {
+        for (const f of doc.followups) {
+          if (f.status !== 'pending') continue;
+          if (f.scheduledAt.getTime() > now.getTime()) continue;
+          await this.fireFollowup(doc, f);
+        }
+        await doc.save();
+      }
+    } catch (e) {
+      this.logger.error(
+        `Follow-up cron sweep failed: ${(e as Error).message}`,
+        (e as Error).stack,
+      );
+    }
+  }
+
+  private async fireFollowup(
+    doc: ProposalDocument,
+    f: {
+      tier: '24h' | '48h' | '7d';
+      status: string;
+      sentAt?: Date;
+      errorMessage?: string;
+    },
+  ): Promise<void> {
+    if (!doc.email) {
+      f.status = 'failed';
+      f.errorMessage = 'No recipient email on proposal.';
+      return;
+    }
+    const sender = doc.senderUserId as unknown as {
+      _id?: Types.ObjectId;
+      email?: string;
+    } | null;
+    const senderUserId = sender?._id?.toString();
+    if (!senderUserId) {
+      f.status = 'failed';
+      f.errorMessage = 'Proposal has no sender assigned.';
+      return;
+    }
+    const webBase =
+      (process.env.PUBLIC_WEB_URL || 'http://localhost:4200').replace(/\/$/, '');
+    const link = `${webBase}/p/${doc.shareToken}`;
+    const body = this.buildFollowupBody(doc, f.tier, link);
+    const subject = `Following up · ${doc.title}`;
+    const { result } = await this.comms.send(
+      { userId: senderUserId, email: sender?.email || '', role: 'strategist' },
+      {
+        clientId: doc.clientId?.toString(),
+        kind: 'proposal-followup',
+        to: [doc.email],
+        subject,
+        htmlBody: body.html,
+        textBody: body.text,
+      },
+    );
+    if (result.ok) {
+      f.status = 'sent';
+      f.sentAt = new Date();
+      await this.audit.log({
+        userId: senderUserId,
+        action: 'proposal.followup-sent',
+        targetType: 'Proposal',
+        targetId: String(doc._id),
+        details: { tier: f.tier, to: doc.email },
+      });
+    } else {
+      f.status = 'failed';
+      f.errorMessage = result.error;
+      await this.audit.log({
+        userId: senderUserId,
+        action: 'proposal.followup-failed',
+        targetType: 'Proposal',
+        targetId: String(doc._id),
+        details: { tier: f.tier, error: result.error },
+      });
+    }
+  }
+
+  private buildFollowupBody(
+    doc: ProposalDocument,
+    tier: '24h' | '48h' | '7d',
+    link: string,
+  ): { html: string; text: string } {
+    const greeting = `Hi ${doc.contactName || 'there'},`;
+    const tierBody: Record<string, string> = {
+      '24h': `Wanted to make sure yesterday's proposal for ${doc.businessName} didn't get lost in your inbox. If you have any questions or want to jump on a quick call, just reply here.`,
+      '48h': `Following up again on the proposal for ${doc.businessName}. Happy to walk you through the plan on a short call if that's easier than reading through the doc.`,
+      '7d': `Checking in one more time on the proposal for ${doc.businessName}. If timing isn't right, no worries — let me know and I'll close the loop. Otherwise, here's the link one more time.`,
+    };
+    const closing = 'Media Spearhead';
+    const html = `<div style="font-family:Helvetica,Arial,sans-serif;line-height:1.5;color:#0F172A">
+      <p>${greeting}</p>
+      <p>${this.escapeHtml(tierBody[tier])}</p>
+      <p><a href="${link}" style="background:#FF7A59;color:white;padding:10px 18px;text-decoration:none;border-radius:6px;font-weight:600;">View proposal</a></p>
+      <hr>
+      <p style="color:#94A3B8;font-size:11px">— ${closing}</p>
+    </div>`;
+    const text = `${greeting}\n\n${tierBody[tier]}\n\nView proposal: ${link}\n\n— ${closing}`;
+    return { html, text };
   }
 }
