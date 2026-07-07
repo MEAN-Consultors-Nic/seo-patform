@@ -41,6 +41,10 @@ export class AppSettings {
   /** Flag that gates the entire /supervisor portal. False / missing = disabled. */
   @Prop({ default: false })
   supervisorEnabled?: boolean;
+
+  /** Days from client creation before the onboarding warning kicks in. */
+  @Prop({ type: Number })
+  onboardingWindowDays?: number;
 }
 
 export const AppSettingsSchema = SchemaFactory.createForClass(AppSettings);

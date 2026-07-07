@@ -261,6 +261,16 @@ export class Client {
 
   @Prop({ type: [ServiceAreaSchemaDef], default: [] })
   serviceAreas?: ServiceArea[];
+
+  // --- Business profile (surfaced under the client Onboarding tab) ---
+  @Prop() phone?: string;
+  @Prop() address?: string;
+  @Prop() businessDescription?: string;
+  @Prop({ type: [String], default: undefined }) categories?: string[];
+  @Prop({ type: [String], default: undefined }) services?: string[];
+  @Prop({ type: [String], default: undefined }) socialLinks?: string[];
+  @Prop() reviewsUrl?: string;
+  @Prop() photosUrl?: string;
 }
 
 export const ClientSchema = SchemaFactory.createForClass(Client);

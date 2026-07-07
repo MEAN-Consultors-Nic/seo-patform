@@ -124,6 +124,114 @@ export interface Package {
   updatedAt?: Date;
 }
 
+// --- Onboarding ------------------------------------------------------------
+
+export type OnboardingSection =
+  | 'accounts-access'
+  | 'local-listings'
+  | 'social'
+  | 'research-strategy'
+  | 'technical'
+  | 'content'
+  | 'other';
+
+export const ONBOARDING_SECTION_LABELS: Record<OnboardingSection, string> = {
+  'accounts-access': 'Accounts & Access',
+  'local-listings': 'Local & Listings',
+  'social': 'Social',
+  'research-strategy': 'Research & Strategy',
+  'technical': 'Technical',
+  'content': 'Content',
+  'other': 'Other',
+};
+
+export type OnboardingItemPriority = 'critical' | 'important' | 'nice-to-have';
+
+/**
+ * Automatic check hints. When an item has one of these set, the server
+ * evaluates the corresponding client state and pre-fills the item's
+ * "done" flag without the operator having to tick it manually. Item
+ * state persisted by the user still takes precedence over the auto
+ * check (so the operator can force-mark done or N/A regardless).
+ */
+export type OnboardingAutoCheck =
+  | 'gsc-configured'
+  | 'ga4-configured'
+  | 'gbp-configured'
+  | 'shopify-connected'
+  | 'wordpress-connected'
+  | 'google-doc-linked'
+  | 'website-set'
+  | 'logo-set';
+
+/**
+ * Template row that defines one onboarding checkpoint. Org-wide CRUD
+ * from Settings → Onboarding. `key` is a stable identifier that gets
+ * saved on each client's progress list so renaming labels doesn't lose
+ * previously-checked state.
+ */
+export interface OnboardingItem {
+  _id?: string;
+  key: string;
+  label: string;
+  section: OnboardingSection;
+  priority: OnboardingItemPriority;
+  autoCheck?: OnboardingAutoCheck;
+  helpText?: string;
+  /** Sort order within a section (lower first). */
+  order: number;
+  active: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type OnboardingItemState = 'pending' | 'done' | 'na';
+
+/**
+ * Per-client state for a single onboarding item. Only items the user
+ * has touched need to appear — anything not present is treated as
+ * `pending` unless the item has an autoCheck that resolves to done.
+ */
+export interface OnboardingProgressItem {
+  key: string;
+  state: OnboardingItemState;
+  completedAt?: Date;
+  completedBy?: string;
+  notes?: string;
+}
+
+export interface OnboardingProgress {
+  _id?: string;
+  clientId: string;
+  items: OnboardingProgressItem[];
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+/**
+ * Combined snapshot the client detail page consumes: item definitions,
+ * their computed state (persisted + auto-check merged), the summary
+ * counts, and the flag that says whether the onboarding window has
+ * closed with critical items still unset.
+ */
+export interface OnboardingSnapshot {
+  items: Array<
+    OnboardingItem & {
+      state: OnboardingItemState;
+      autoResolved?: boolean;
+      completedAt?: Date;
+    }
+  >;
+  totalRequired: number;
+  doneCount: number;
+  pendingCount: number;
+  naCount: number;
+  criticalPendingKeys: string[];
+  windowDays: number;
+  daysSinceCreated: number;
+  pastWindow: boolean;
+}
+
 export type PackageColor =
   | 'ink'
   | 'sky'
@@ -318,6 +426,15 @@ export interface Client {
   wordpressAppPassword?: string;
   wordpressSeoPlugin?: WordpressSeoPlugin;
   serviceAreas?: ServiceArea[];
+  // --- Business profile (surfaced in the client onboarding tab) ---
+  phone?: string;
+  address?: string;
+  businessDescription?: string;
+  categories?: string[];
+  services?: string[];
+  socialLinks?: string[];
+  reviewsUrl?: string;
+  photosUrl?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -897,7 +1014,14 @@ export const REPORT_SECTION_META: Record<
 
 export interface AppSettings {
   reportLayout?: ReportSectionConfig[];
+  /**
+   * Days from client creation before the onboarding warning kicks in.
+   * Default 14. Applied globally — every client shares the same window.
+   */
+  onboardingWindowDays?: number;
 }
+
+export const DEFAULT_ONBOARDING_WINDOW_DAYS = 14;
 
 export type WebsitePlatform = 'shopify' | 'wordpress' | 'custom';
 

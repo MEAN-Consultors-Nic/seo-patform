@@ -157,4 +157,13 @@ export class CreateClientDto {
   @ValidateNested({ each: true })
   @Type(() => ServiceAreaDto)
   serviceAreas?: ServiceAreaDto[];
+  // Business profile — new fields consumed by the Onboarding tab.
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsString() businessDescription?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) categories?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) services?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) socialLinks?: string[];
+  @IsOptional() @IsString() reviewsUrl?: string;
+  @IsOptional() @IsString() photosUrl?: string;
 }

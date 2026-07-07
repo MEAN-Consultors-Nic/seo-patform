@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
+  DEFAULT_ONBOARDING_WINDOW_DAYS,
   DEFAULT_REPORT_LAYOUT,
   ReportSectionConfig,
   ReportSectionKey,
@@ -53,6 +54,32 @@ export class AppSettingsService {
       .lean()
       .exec();
     return cleaned;
+  }
+
+  // --- Onboarding ------------------------------------------------------------
+
+  async getOnboardingWindowDays(): Promise<number> {
+    const doc = await this.model.findOne().lean().exec();
+    const raw = (doc as { onboardingWindowDays?: number } | null)
+      ?.onboardingWindowDays;
+    return typeof raw === 'number' && raw > 0
+      ? raw
+      : DEFAULT_ONBOARDING_WINDOW_DAYS;
+  }
+
+  async setOnboardingWindowDays(days: number): Promise<number> {
+    if (typeof days !== 'number' || days <= 0 || !Number.isFinite(days)) {
+      throw new BadRequestException('onboardingWindowDays must be a positive number');
+    }
+    await this.model
+      .findOneAndUpdate(
+        {},
+        { $set: { onboardingWindowDays: Math.round(days) } },
+        { upsert: true, new: true },
+      )
+      .lean()
+      .exec();
+    return Math.round(days);
   }
 
   // Supervisor management lives in SupervisorService now (multi-PIN
