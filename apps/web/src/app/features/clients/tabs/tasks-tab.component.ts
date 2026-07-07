@@ -1076,7 +1076,7 @@ export class ClientTasksTab implements OnChanges {
    * tab itself doesn't pay the cost on every render.
    */
   movingTask = signal<Task | null>(null);
-  candidateClients = signal<Array<{ _id: string; name: string; tier: string }>>([]);
+  candidateClients = signal<Array<{ _id: string; name: string; tier?: string }>>([]);
   moveTargetClientId = signal<string>('');
   moveSaving = signal(false);
   moveError = signal<string | null>(null);

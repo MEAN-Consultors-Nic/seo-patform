@@ -21,12 +21,106 @@ export interface AuthResponse {
   user: User;
 }
 
+/**
+ * @deprecated Kept for legacy migration only. New code should use Package.
+ * Existing clients get migrated to auto-created "Tier A/B/C" packages on
+ * first boot; task templates get their applicableTiers replaced with
+ * applicablePackageIds.
+ */
 export type ClientTier = 'A' | 'B' | 'C';
 
+/**
+ * @deprecated Fallback used only when a client has no package assigned.
+ * Package-driven hours are stored on the Package doc itself.
+ */
 export const HOURS_PER_TIER: Record<ClientTier, number> = {
   A: 9,
   B: 5.5,
   C: 3.5,
+};
+
+/**
+ * Cadence at which a deliverable's quantity applies. Powers progress
+ * calculations (deliverable-completed ÷ target-in-window) in the report.
+ */
+export type DeliverableFrequency =
+  | 'per_period'
+  | 'weekly'
+  | 'biweekly'
+  | 'monthly';
+
+export const DELIVERABLE_FREQUENCY_LABELS: Record<DeliverableFrequency, string> = {
+  per_period: 'per report period',
+  weekly: 'per week',
+  biweekly: 'every 2 weeks',
+  monthly: 'per month',
+};
+
+/**
+ * A single line item inside a Package. Structured so the report can
+ * automatically show "X of Y completed this period" when the deliverable
+ * declares which TaskCategory it maps to.
+ */
+export interface Deliverable {
+  /** Stable identifier within the package. Used by report progress. */
+  key: string;
+  /** Human-readable label shown in the report and the package editor. */
+  label: string;
+  /** Target quantity per period (see frequency). */
+  quantity: number;
+  /** Unit noun for display, e.g., "posts", "pages", "citations". */
+  unit: string;
+  /** How often the target quantity applies. */
+  frequency: DeliverableFrequency;
+  /**
+   * Optional link to a task category — when set, completed tasks in this
+   * category within the reporting window count toward the deliverable.
+   */
+  matchTaskCategory?: TaskCategory;
+  notes?: string;
+}
+
+/**
+ * A grouping of deliverables and metadata that replaces the old ClientTier
+ * enum. Packages are org-wide and CRUD-managed via Settings → Packages.
+ */
+export interface Package {
+  _id?: string;
+  name: string;
+  description?: string;
+  /**
+   * Tailwind palette family used for the package badge in lists and
+   * cards. Stored as a semantic name so the UI can look it up in
+   * PACKAGE_COLOR_PALETTE without shipping arbitrary CSS.
+   */
+  color: PackageColor;
+  deliverables: Deliverable[];
+  /** Estimated hours per report period for scheduling defaults. */
+  hoursPerPeriod?: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type PackageColor =
+  | 'ink'
+  | 'sky'
+  | 'brand'
+  | 'positive'
+  | 'amber'
+  | 'purple'
+  | 'rose';
+
+export const PACKAGE_COLOR_PALETTE: Record<
+  PackageColor,
+  { bg: string; text: string; label: string }
+> = {
+  ink: { bg: 'bg-ink-900', text: 'text-white', label: 'Ink (dark)' },
+  sky: { bg: 'bg-sky-500', text: 'text-white', label: 'Sky (blue)' },
+  brand: { bg: 'bg-brand-500', text: 'text-white', label: 'Brand (coral)' },
+  positive: { bg: 'bg-positive-500', text: 'text-white', label: 'Positive (green)' },
+  amber: { bg: 'bg-amber-500', text: 'text-white', label: 'Amber' },
+  purple: { bg: 'bg-purple-500', text: 'text-white', label: 'Purple' },
+  rose: { bg: 'bg-rose-500', text: 'text-white', label: 'Rose' },
 };
 
 export type TaskCategory =
@@ -152,7 +246,16 @@ export interface ServiceAreaSnapshot {
 export interface Client {
   _id?: string;
   name: string;
-  tier: ClientTier;
+  /**
+   * @deprecated Use `packageId` (+ populated `package`) instead. Preserved
+   * during the tier → package migration so legacy references keep working
+   * until every consumer moves over.
+   */
+  tier?: ClientTier;
+  /** ObjectId reference to Package. Assigned during migration + creation. */
+  packageId?: string;
+  /** Populated Package doc when the API expands the reference. */
+  package?: Package;
   url: string;
   logoUrl?: string;
   industry?: string;
@@ -547,7 +650,14 @@ export interface TimeBlock {
   durationMinutes: number;
   clientId?:
     | string
-    | { _id: string; name: string; tier: ClientTier; logoUrl?: string };
+    | {
+        _id: string;
+        name: string;
+        tier?: ClientTier;
+        packageId?: string;
+        package?: Package;
+        logoUrl?: string;
+      };
   taskId?: string | { _id: string; title: string; category: TaskCategory; status: TaskStatus };
   status: TimeBlockStatus;
   /** Reporting blocks (cycle-end "send client reports" slot) have no client. */
@@ -562,7 +672,7 @@ export interface TimeBlock {
 
 export interface PublicReportPayload {
   report: Report;
-  client: Pick<Client, 'name' | 'tier' | 'url' | 'logoUrl' | 'industry'>;
+  client: Pick<Client, 'name' | 'tier' | 'url' | 'logoUrl' | 'industry' | 'packageId' | 'package'>;
   cycle: Pick<Cycle, 'label' | 'startDate' | 'endDate'>;
   tasks: Array<{
     title: string;

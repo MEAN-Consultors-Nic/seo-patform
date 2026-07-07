@@ -103,7 +103,9 @@ class BaselineKpisDto {
 
 export class CreateClientDto {
   @IsString() name!: string;
-  @IsEnum(['A', 'B', 'C']) tier!: ClientTier;
+  /** @deprecated Use packageId. Kept optional for legacy callers. */
+  @IsOptional() @IsEnum(['A', 'B', 'C']) tier?: ClientTier;
+  @IsOptional() @IsMongoId() packageId?: string;
   @IsString() url!: string;
   @IsOptional() @IsString() logoUrl?: string;
   @IsOptional() @IsString() industry?: string;

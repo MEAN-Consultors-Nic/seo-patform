@@ -19,6 +19,7 @@ import { CompetitorsModule } from '../modules/competitors/competitors.module';
 import { ContentModule } from '../modules/content/content.module';
 import { BacklinksModule } from '../modules/backlinks/backlinks.module';
 import { TaskTemplatesModule } from '../modules/task-templates/task-templates.module';
+import { PackagesModule } from '../modules/packages/packages.module';
 import { WorkingHoursModule } from '../modules/working-hours/working-hours.module';
 import { TimeBlocksModule } from '../modules/time-blocks/time-blocks.module';
 import { GoogleIntegrationsModule } from '../modules/google-integrations/google-integrations.module';
@@ -52,6 +53,7 @@ import { SeedModule } from '../seed/seed.module';
     ContentModule,
     BacklinksModule,
     TaskTemplatesModule,
+    PackagesModule,
     WorkingHoursModule,
     TimeBlocksModule,
     GoogleIntegrationsModule,

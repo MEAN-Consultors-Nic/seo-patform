@@ -14,7 +14,7 @@ import { TimeBlocksService } from '../../core/time-blocks.service';
 interface PendingByClient {
   clientId: string;
   name: string;
-  tier: 'A' | 'B' | 'C';
+  tier?: 'A' | 'B' | 'C';
   logoUrl?: string;
   pending: number;
   inProgress: number;
@@ -26,7 +26,7 @@ interface RecentActivity {
   title: string;
   clientId: string;
   clientName: string;
-  tier: 'A' | 'B' | 'C';
+  tier?: 'A' | 'B' | 'C';
   category: string;
   when: string;
 }

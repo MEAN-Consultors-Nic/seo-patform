@@ -34,17 +34,19 @@ export class ClientsService {
   ) {}
 
   async findAll(
-    filters: { tier?: string; active?: boolean } = {},
+    filters: { tier?: string; packageId?: string; active?: boolean } = {},
     user?: AuthenticatedUser,
   ) {
     const q: Record<string, unknown> = {};
-    if (filters.tier) q.tier = filters.tier;
+    if (filters.packageId) q.packageId = new Types.ObjectId(filters.packageId);
+    else if (filters.tier) q.tier = filters.tier;
     if (typeof filters.active === 'boolean') q.active = filters.active;
     if (user) Object.assign(q, ownerScopeFilter(user));
     return this.model
       .find(q)
       .populate('ownerId', 'name email')
-      .sort({ tier: 1, name: 1 })
+      .populate('packageId', 'name color description deliverables hoursPerPeriod')
+      .sort({ name: 1 })
       .lean()
       .exec();
   }
@@ -53,6 +55,7 @@ export class ClientsService {
     const client = await this.model
       .findById(id)
       .populate('ownerId', 'name email')
+      .populate('packageId', 'name color description deliverables hoursPerPeriod')
       .lean()
       .exec();
     if (!client) throw new NotFoundException(`Client ${id} not found`);
@@ -98,10 +101,16 @@ export class ClientsService {
         : user
           ? new Types.ObjectId(user.userId)
           : undefined;
+    // hoursPerCycle fallback: explicit → legacy tier lookup → 0. When
+    // the frontend picks a Package it seeds hoursPerCycle from
+    // package.hoursPerPeriod before submitting, so this branch is only
+    // hit by legacy callers.
+    const hoursFallback = dto.tier ? HOURS_PER_TIER[dto.tier] : 0;
     const doc = new this.model({
       ...dto,
       ownerId,
-      hoursPerCycle: dto.hoursPerCycle ?? HOURS_PER_TIER[dto.tier],
+      packageId: dto.packageId ? new Types.ObjectId(dto.packageId) : undefined,
+      hoursPerCycle: dto.hoursPerCycle ?? hoursFallback,
     });
     return doc.save();
   }
@@ -115,6 +124,7 @@ export class ClientsService {
     const updated = await this.model
       .findByIdAndUpdate(id, patch, { new: true })
       .populate('ownerId', 'name email')
+      .populate('packageId', 'name color description deliverables hoursPerPeriod')
       .lean()
       .exec();
     if (!updated) throw new NotFoundException(`Client ${id} not found`);
@@ -167,6 +177,7 @@ export class ClientsService {
     const clients = await this.model
       .find(q)
       .populate('ownerId', 'name email')
+      .populate('packageId', 'name color description deliverables hoursPerPeriod')
       .sort({ tier: 1, name: 1 })
       .lean()
       .exec();

@@ -54,9 +54,15 @@ export class TaskTemplatesService implements OnApplicationBootstrap {
     this.logger.log('Task templates seeded ✔');
   }
 
-  list(filters: { tier?: ClientTier; active?: boolean } = {}) {
+  list(
+    filters: { tier?: ClientTier; packageId?: string; active?: boolean } = {},
+  ) {
     const q: Record<string, unknown> = {};
-    if (filters.tier) q.applicableTiers = filters.tier;
+    if (filters.packageId) {
+      q.applicablePackageIds = new Types.ObjectId(filters.packageId);
+    } else if (filters.tier) {
+      q.applicableTiers = filters.tier;
+    }
     if (typeof filters.active === 'boolean') q.active = filters.active;
     return this.model.find(q).sort({ category: 1, title: 1 }).lean().exec();
   }
@@ -90,10 +96,16 @@ export class TaskTemplatesService implements OnApplicationBootstrap {
     let skipped = 0;
 
     for (const client of clients) {
-      const tierTemplates = templates.filter((t) =>
-        t.applicableTiers.includes(client.tier),
-      );
-      for (const tmpl of tierTemplates) {
+      const clientPkgId = client.packageId?.toString();
+      const applicable = templates.filter((t) => {
+        const pkgIds = (t.applicablePackageIds ?? []).map((id) => id.toString());
+        if (pkgIds.length > 0 && clientPkgId) {
+          return pkgIds.includes(clientPkgId);
+        }
+        // Fallback for pre-migration templates that still carry tier.
+        return (t.applicableTiers ?? []).includes(client.tier as ClientTier);
+      });
+      for (const tmpl of applicable) {
         const exists = await this.taskModel.exists({
           clientId: client._id,
           cycleId: new Types.ObjectId(cycleId),

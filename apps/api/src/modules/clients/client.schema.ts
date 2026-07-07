@@ -118,8 +118,20 @@ export class Client {
   @Prop({ required: true, unique: true })
   name!: string;
 
-  @Prop({ required: true, type: String, enum: ['A', 'B', 'C'] })
-  tier!: ClientTier;
+  /**
+   * @deprecated Superseded by packageId. Kept optional so historical
+   * documents keep validating; migration runs on boot to fill packageId.
+   */
+  @Prop({ required: false, type: String, enum: ['A', 'B', 'C'] })
+  tier?: ClientTier;
+
+  /**
+   * Assigned Package for this client. Nullable during the migration
+   * window; new clients created after the migration always have this
+   * set via the create DTO.
+   */
+  @Prop({ type: Types.ObjectId, ref: 'Package', index: true })
+  packageId?: Types.ObjectId;
 
   @Prop({ required: true })
   url!: string;
@@ -255,7 +267,10 @@ export const ClientSchema = SchemaFactory.createForClass(Client);
 
 ClientSchema.pre('save', function () {
   const doc = this as unknown as Client;
+  // Fallback ordering: existing hoursPerCycle → legacy tier lookup → 0.
+  // Once packages are seeded the frontend seeds this from the picked
+  // package's hoursPerPeriod so this branch only fires for legacy data.
   if (!doc.hoursPerCycle) {
-    doc.hoursPerCycle = HOURS_PER_TIER[doc.tier];
+    doc.hoursPerCycle = doc.tier ? HOURS_PER_TIER[doc.tier] : 0;
   }
 });

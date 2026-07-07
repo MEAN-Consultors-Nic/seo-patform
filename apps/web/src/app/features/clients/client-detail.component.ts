@@ -557,7 +557,8 @@ export class ClientDetailComponent implements OnInit {
 
   form: {
     name: string;
-    tier: 'A' | 'B' | 'C';
+    tier?: 'A' | 'B' | 'C';
+    packageId?: string;
     url: string;
     logoUrl: string;
     industry: string;

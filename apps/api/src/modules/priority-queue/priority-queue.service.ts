@@ -115,7 +115,7 @@ export class PriorityQueueService {
     client: {
       _id: Types.ObjectId;
       name: string;
-      tier: string;
+      tier?: string;
       logoUrl?: string;
       hoursPerCycle: number;
       gscSiteUrl?: string;
