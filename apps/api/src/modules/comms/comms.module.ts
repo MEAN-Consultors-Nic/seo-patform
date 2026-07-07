@@ -4,6 +4,7 @@ import { SentEmail, SentEmailSchema } from './sent-email.schema';
 import { CommsService } from './comms.service';
 import { CommsController } from './comms.controller';
 import { GmailService } from './gmail.service';
+import { AiWriterService } from './ai-writer.service';
 import { GoogleIntegrationsModule } from '../google-integrations/google-integrations.module';
 
 /**
@@ -20,7 +21,7 @@ import { GoogleIntegrationsModule } from '../google-integrations/google-integrat
     GoogleIntegrationsModule,
   ],
   controllers: [CommsController],
-  providers: [GmailService, CommsService],
-  exports: [GmailService, CommsService],
+  providers: [GmailService, CommsService, AiWriterService],
+  exports: [GmailService, CommsService, AiWriterService],
 })
 export class CommsModule {}
