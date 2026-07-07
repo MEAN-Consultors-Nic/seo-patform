@@ -72,6 +72,21 @@ export class AuthService implements OnApplicationBootstrap {
 
   async login(email: string, password: string) {
     const user = await this.validate(email, password);
+    // Refuse internal-app login for portal-only accounts. The client
+    // portal (Phase 6+) will issue its own scoped tokens through a
+    // separate route; letting a client-role user log in here would
+    // give them an internal JWT they shouldn't have.
+    if (user.role === 'client') {
+      await this.audit.log({
+        userId: String(user._id),
+        userEmail: String(user.email),
+        action: 'auth.login.blocked',
+        details: { reason: 'client-role-cannot-use-internal-app' },
+      });
+      throw new UnauthorizedException(
+        'This account is a client portal account and cannot sign in here.',
+      );
+    }
     const payload = { sub: user._id, email: user.email, role: user.role };
     await this.audit.log({
       userId: String(user._id),

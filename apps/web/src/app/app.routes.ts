@@ -20,6 +20,23 @@ export const appRoutes: Route[] = [
       ),
   },
   {
+    // Client-portal route namespace (Core Slice 1.5). Reserved so the
+    // portal UI can land later without URL migrations. Renders a
+    // "coming soon" placeholder until Phase 6+ ships the real portal.
+    path: 'portal',
+    loadComponent: () =>
+      import('./features/portal/portal-placeholder.component').then(
+        (m) => m.PortalPlaceholderComponent,
+      ),
+  },
+  {
+    path: 'portal/:token',
+    loadComponent: () =>
+      import('./features/portal/portal-placeholder.component').then(
+        (m) => m.PortalPlaceholderComponent,
+      ),
+  },
+  {
     path: '',
     canActivate: [authGuard],
     loadComponent: () =>

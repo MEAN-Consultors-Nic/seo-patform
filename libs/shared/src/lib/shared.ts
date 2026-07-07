@@ -505,6 +505,13 @@ export interface Client {
   socialLinks?: string[];
   reviewsUrl?: string;
   photosUrl?: string;
+  /**
+   * External client-portal accounts linked to this Client. Portal UI is
+   * deferred to Phase 6+; the field is reserved on the schema so the
+   * onboarding flow that creates portal accounts has a place to attach
+   * them without a follow-up migration.
+   */
+  linkedUsers?: string[];
   createdAt?: Date;
   updatedAt?: Date;
 }

@@ -271,6 +271,14 @@ export class Client {
   @Prop({ type: [String], default: undefined }) socialLinks?: string[];
   @Prop() reviewsUrl?: string;
   @Prop() photosUrl?: string;
+
+  /**
+   * External client-portal users linked to this Client (Core Slice 1.5).
+   * Populated by whichever workflow onboards a client-portal account
+   * later; empty by default. The portal UI itself lands in Phase 6+.
+   */
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
+  linkedUsers?: Types.ObjectId[];
 }
 
 export const ClientSchema = SchemaFactory.createForClass(Client);
