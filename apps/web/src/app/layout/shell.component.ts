@@ -216,7 +216,6 @@ export class ShellComponent {
 
   private navItems: NavItem[] = [
     { route: '/dashboard', label: 'Dashboard', exact: true },
-    { route: '/schedule', label: 'My Schedule' },
     { route: '/clients', label: 'Clients' },
     { route: '/reports', label: 'Reports' },
     { route: '/settings/working-hours', label: 'Settings' },

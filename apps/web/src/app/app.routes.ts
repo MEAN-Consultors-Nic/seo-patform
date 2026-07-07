@@ -52,11 +52,6 @@ export const appRoutes: Route[] = [
           import('./features/reports/report-editor.component').then((m) => m.ReportEditorComponent),
       },
       {
-        path: 'schedule',
-        loadComponent: () =>
-          import('./features/schedule/schedule.component').then((m) => m.ScheduleComponent),
-      },
-      {
         path: 'settings/working-hours',
         loadComponent: () =>
           import('./features/settings/working-hours-settings.component').then(

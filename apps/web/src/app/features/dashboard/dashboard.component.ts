@@ -159,9 +159,6 @@ interface RecentActivity {
             <h3 class="text-sm font-semibold text-ink-900">Today's plan</h3>
             <p class="text-[11px] text-ink-500">{{ todayDateLabel() }}</p>
           </div>
-          <a routerLink="/schedule" class="text-xs text-brand-500 hover:text-brand-600 font-semibold">
-            Full schedule →
-          </a>
         </div>
 
         @if (loadingToday()) {
@@ -169,12 +166,9 @@ interface RecentActivity {
         } @else if (todayBlocks().length === 0) {
           <div class="text-center py-8">
             <div class="text-3xl mb-2">📅</div>
-            <div class="text-sm text-ink-500 mb-3">
+            <div class="text-sm text-ink-500">
               No blocks scheduled for today.
             </div>
-            <a routerLink="/schedule" class="btn-primary inline-flex items-center gap-1">
-              → Go to schedule
-            </a>
           </div>
         } @else {
           <div class="space-y-2">
