@@ -1,9 +1,17 @@
-import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
-import { UserRole } from '@seo/shared';
+import {
+  IsBoolean,
+  IsEnum,
+  IsMongoId,
+  IsOptional,
+  IsString,
+} from 'class-validator';
+import { UserRole, USER_ROLES } from '@seo/shared';
 
 export class UpdateUserDto {
   @IsOptional() @IsString() name?: string;
-  @IsOptional() @IsEnum(['root', 'seo-manager', 'seo-strategist']) role?: UserRole;
+  @IsOptional() @IsEnum(USER_ROLES) role?: UserRole;
+  /** Empty string clears the manager assignment; ObjectId sets it. */
+  @IsOptional() @IsMongoId() managerId?: string;
   @IsOptional() @IsBoolean() active?: boolean;
 }
 

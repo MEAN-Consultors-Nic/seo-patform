@@ -2,7 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { startOfDay } from 'date-fns';
-import { HOURS_PER_TIER, UserRole } from '@seo/shared';
+import { HOURS_PER_TIER } from '@seo/shared';
 import { Client, ClientDocument } from './client.schema';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
@@ -10,18 +10,13 @@ import { Keyword, KeywordDocument } from '../keywords/keyword.schema';
 import { Task, TaskDocument } from '../tasks/task.schema';
 import { Cycle, CycleDocument } from '../cycles/cycle.schema';
 import { Backlink, BacklinkDocument } from '../backlinks/backlink.schema';
-import { AuthenticatedUser } from '../auth/roles.guard';
-
-const MANAGER_ROLES: UserRole[] = ['root', 'seo-manager'];
-
-function isManager(role: UserRole): boolean {
-  return MANAGER_ROLES.includes(role);
-}
-
-function ownerScopeFilter(user: AuthenticatedUser): Record<string, unknown> {
-  if (isManager(user.role)) return {};
-  return { ownerId: new Types.ObjectId(user.userId) };
-}
+import { User, UserDocument } from '../auth/user.schema';
+import {
+  AuthenticatedUser,
+  canManageTeam,
+  isAdmin,
+  isManagerOrAbove,
+} from '../auth/roles.guard';
 
 @Injectable()
 export class ClientsService {
@@ -31,7 +26,35 @@ export class ClientsService {
     @InjectModel(Task.name) private readonly taskModel: Model<TaskDocument>,
     @InjectModel(Cycle.name) private readonly cycleModel: Model<CycleDocument>,
     @InjectModel(Backlink.name) private readonly backlinkModel: Model<BacklinkDocument>,
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
   ) {}
+
+  /**
+   * Builds the Mongo filter that restricts a query to the clients a
+   * given user is allowed to see:
+   *
+   *   root / owner / admin → no filter (whole roster).
+   *   manager              → ownerId ∈ (self + strategist team members).
+   *   strategist           → ownerId = self.
+   *
+   * Async because manager scope needs a team-member lookup. Callers
+   * are already async, so no cost.
+   */
+  private async ownerScopeFilter(
+    user: AuthenticatedUser,
+  ): Promise<Record<string, unknown>> {
+    if (isAdmin(user.role)) return {};
+    const selfOid = new Types.ObjectId(user.userId);
+    if (user.role === 'manager') {
+      const team = await this.userModel
+        .find({ managerId: selfOid }, { _id: 1 })
+        .lean()
+        .exec();
+      const ids = [selfOid, ...team.map((t) => t._id as Types.ObjectId)];
+      return { ownerId: { $in: ids } };
+    }
+    return { ownerId: selfOid };
+  }
 
   async findAll(
     filters: { tier?: string; packageId?: string; active?: boolean } = {},
@@ -41,7 +64,7 @@ export class ClientsService {
     if (filters.packageId) q.packageId = new Types.ObjectId(filters.packageId);
     else if (filters.tier) q.tier = filters.tier;
     if (typeof filters.active === 'boolean') q.active = filters.active;
-    if (user) Object.assign(q, ownerScopeFilter(user));
+    if (user) Object.assign(q, await this.ownerScopeFilter(user));
     return this.model
       .find(q)
       .populate('ownerId', 'name email')
@@ -59,36 +82,64 @@ export class ClientsService {
       .lean()
       .exec();
     if (!client) throw new NotFoundException(`Client ${id} not found`);
-    if (user && !isManager(user.role)) {
-      const ownerStr = (client.ownerId as unknown as { _id?: unknown } | Types.ObjectId | null);
+    if (user && !isAdmin(user.role)) {
+      const allowedIds = await this.buildAllowedOwnerIds(user);
+      const ownerStr = client.ownerId as
+        | { _id?: unknown }
+        | Types.ObjectId
+        | null;
       const ownerId =
         ownerStr && typeof ownerStr === 'object' && '_id' in ownerStr
           ? String((ownerStr as { _id: unknown })._id)
           : String(ownerStr ?? '');
-      if (ownerId !== user.userId) {
+      if (!allowedIds.some((o) => o.toString() === ownerId)) {
         throw new ForbiddenException('You do not have access to this client');
       }
     }
     return client;
   }
 
+  /**
+   * Returns the set of userIds whose clients the caller is allowed to
+   * see (self + team). Empty means "unrestricted" — root/owner/admin.
+   */
+  private async buildAllowedOwnerIds(
+    user: AuthenticatedUser,
+  ): Promise<Types.ObjectId[]> {
+    if (isAdmin(user.role)) return []; // caller handles unrestricted case
+    const selfOid = new Types.ObjectId(user.userId);
+    if (user.role === 'manager') {
+      const team = await this.userModel
+        .find({ managerId: selfOid }, { _id: 1 })
+        .lean()
+        .exec();
+      return [selfOid, ...team.map((t) => t._id as Types.ObjectId)];
+    }
+    return [selfOid];
+  }
+
   async assertAccess(clientId: string, user: AuthenticatedUser): Promise<void> {
-    if (isManager(user.role)) return;
+    if (isAdmin(user.role)) return;
+    const allowedIds = await this.buildAllowedOwnerIds(user);
     const exists = await this.model
       .exists({
         _id: new Types.ObjectId(clientId),
-        ownerId: new Types.ObjectId(user.userId),
+        ownerId: { $in: allowedIds },
       })
       .exec();
     if (!exists)
       throw new ForbiddenException('You do not have access to this client');
   }
 
-  async listAccessibleIds(user: AuthenticatedUser): Promise<Types.ObjectId[] | null> {
-    // Returns null when no scoping needed (manager/root), or list of ObjectIds owned by user.
-    if (isManager(user.role)) return null;
+  async listAccessibleIds(
+    user: AuthenticatedUser,
+  ): Promise<Types.ObjectId[] | null> {
+    // Returns null when caller can see everything (root/owner/admin);
+    // list of client _ids otherwise.
+    if (isAdmin(user.role)) return null;
+    const allowedIds = await this.buildAllowedOwnerIds(user);
     const docs = await this.model
-      .find({ ownerId: new Types.ObjectId(user.userId) }, { _id: 1 })
+      .find({ ownerId: { $in: allowedIds } }, { _id: 1 })
       .lean()
       .exec();
     return docs.map((d) => d._id as Types.ObjectId);
@@ -117,9 +168,9 @@ export class ClientsService {
 
   async update(id: string, dto: UpdateClientDto, user?: AuthenticatedUser) {
     if (user) await this.assertAccess(id, user);
-    // Strategists cannot reassign ownership
+    // Only manager-or-above can reassign the owner.
     const patch: Record<string, unknown> = { ...dto };
-    if (user && !isManager(user.role)) delete patch.ownerId;
+    if (user && !canManageTeam(user.role)) delete patch.ownerId;
     if (patch.ownerId) patch.ownerId = new Types.ObjectId(patch.ownerId as string);
     const updated = await this.model
       .findByIdAndUpdate(id, patch, { new: true })
@@ -132,8 +183,10 @@ export class ClientsService {
   }
 
   async remove(id: string, user?: AuthenticatedUser) {
-    if (user && !isManager(user.role)) {
-      throw new ForbiddenException('Only managers can delete clients');
+    if (user && !isManagerOrAbove(user.role)) {
+      throw new ForbiddenException(
+        'Only manager-or-above roles can delete clients',
+      );
     }
     const deleted = await this.model.findByIdAndDelete(id).lean().exec();
     if (!deleted) throw new NotFoundException(`Client ${id} not found`);
@@ -142,9 +195,7 @@ export class ClientsService {
 
   async stats(user?: AuthenticatedUser) {
     const match: Record<string, unknown> = { active: true };
-    if (user && !isManager(user.role)) {
-      match.ownerId = new Types.ObjectId(user.userId);
-    }
+    if (user) Object.assign(match, await this.ownerScopeFilter(user));
     const grouped = await this.model.aggregate([
       { $match: match },
       {
@@ -173,7 +224,7 @@ export class ClientsService {
     const q: Record<string, unknown> = {};
     if (filters.tier) q.tier = filters.tier;
     if (typeof filters.active === 'boolean') q.active = filters.active;
-    if (user) Object.assign(q, ownerScopeFilter(user));
+    if (user) Object.assign(q, await this.ownerScopeFilter(user));
     const clients = await this.model
       .find(q)
       .populate('ownerId', 'name email')

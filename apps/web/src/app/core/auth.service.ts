@@ -21,11 +21,27 @@ export class AuthService {
   user = this._user.asReadonly();
   role = computed<UserRole | null>(() => this._user()?.role ?? null);
   isLoggedIn = computed(() => !!this._token());
+
+  // Role-check helpers mirror the backend hierarchy:
+  //   root > owner > admin > manager > strategist > client
   isRoot = computed(() => this.role() === 'root');
-  isManager = computed(() => {
+  isOwner = computed(() => {
     const r = this.role();
-    return r === 'root' || r === 'seo-manager';
+    return r === 'root' || r === 'owner';
   });
+  isAdmin = computed(() => {
+    const r = this.role();
+    return r === 'root' || r === 'owner' || r === 'admin';
+  });
+  /** Legacy alias. Prefer isManagerOrAbove going forward. */
+  isManager = computed(() => this.isManagerOrAbove());
+  isManagerOrAbove = computed(() => {
+    const r = this.role();
+    return r === 'root' || r === 'owner' || r === 'admin' || r === 'manager';
+  });
+  canViewFinancials = computed(() => this.isOwner());
+  canAdministerPlatform = computed(() => this.isAdmin());
+  canManageTeam = computed(() => this.isManagerOrAbove());
 
   hasRole(...roles: UserRole[]): boolean {
     const r = this.role();

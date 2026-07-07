@@ -24,25 +24,25 @@ export class TaskTemplatesController {
   }
 
   @Post()
-  @Roles('root', 'seo-manager')
+  @Roles('root', 'owner', 'admin')
   create(@Body() dto: Partial<TaskTemplate>) {
     return this.svc.create(dto);
   }
 
   @Patch(':id')
-  @Roles('root', 'seo-manager')
+  @Roles('root', 'owner', 'admin')
   update(@Param('id') id: string, @Body() dto: Partial<TaskTemplate>) {
     return this.svc.update(id, dto);
   }
 
   @Delete(':id')
-  @Roles('root', 'seo-manager')
+  @Roles('root', 'owner', 'admin')
   remove(@Param('id') id: string) {
     return this.svc.remove(id);
   }
 
   @Post('apply-recurring')
-  @Roles('root', 'seo-manager')
+  @Roles('root', 'owner', 'admin')
   applyRecurring(@Body() body: { cycleId: string }) {
     return this.svc.applyRecurring(body.cycleId);
   }

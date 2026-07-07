@@ -18,7 +18,7 @@ export class UsersController {
 
   // List of assignable owners — visible to root and managers for the Owner dropdown.
   @Get('assignable')
-  @Roles('root', 'seo-manager')
+  @Roles('root', 'owner', 'admin')
   assignable() {
     return this.users.findAssignable();
   }

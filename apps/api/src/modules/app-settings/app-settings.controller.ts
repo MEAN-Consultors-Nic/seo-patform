@@ -43,26 +43,26 @@ export class AppSettingsController {
   // --- Supervisor management (root + manager only) -----------------------
 
   @Get('supervisors')
-  @Roles('root', 'seo-manager')
+  @Roles('root', 'owner', 'admin')
   listSupervisors() {
     return this.supervisorSvc.listSupervisors();
   }
 
   /** Creates a new supervisor and returns the plaintext PIN ONCE. */
   @Post('supervisors')
-  @Roles('root', 'seo-manager')
+  @Roles('root', 'owner', 'admin')
   createSupervisor(@Body() dto: CreateSupervisorDto) {
     return this.supervisorSvc.createSupervisor(dto.name);
   }
 
   @Post('supervisors/:id/regenerate-pin')
-  @Roles('root', 'seo-manager')
+  @Roles('root', 'owner', 'admin')
   regenerateSupervisorPin(@Param('id') id: string) {
     return this.supervisorSvc.regenerateSupervisorPin(id);
   }
 
   @Patch('supervisors/:id')
-  @Roles('root', 'seo-manager')
+  @Roles('root', 'owner', 'admin')
   updateSupervisor(
     @Param('id') id: string,
     @Body() dto: UpdateSupervisorDto,
@@ -71,7 +71,7 @@ export class AppSettingsController {
   }
 
   @Delete('supervisors/:id')
-  @Roles('root', 'seo-manager')
+  @Roles('root', 'owner', 'admin')
   deleteSupervisor(@Param('id') id: string) {
     return this.supervisorSvc.deleteSupervisor(id);
   }

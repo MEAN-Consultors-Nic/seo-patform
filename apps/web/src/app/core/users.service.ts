@@ -8,12 +8,14 @@ export interface CreateUserPayload {
   name: string;
   password: string;
   role: UserRole;
+  managerId?: string;
   active?: boolean;
 }
 
 export interface UpdateUserPayload {
   name?: string;
   role?: UserRole;
+  managerId?: string;
   active?: boolean;
 }
 

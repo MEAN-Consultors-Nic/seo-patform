@@ -101,10 +101,33 @@ type FormMode = 'create' | 'edit' | 'reset' | null;
                   <label class="label">Role</label>
                   <select class="input" [(ngModel)]="form.role">
                     <option value="root">Root</option>
-                    <option value="seo-manager">SEO Manager</option>
-                    <option value="seo-strategist">SEO Strategist</option>
+                    <option value="owner">Owner</option>
+                    <option value="admin">Admin</option>
+                    <option value="manager">Manager</option>
+                    <option value="strategist">Strategist</option>
                   </select>
+                  <p class="text-[11px] text-ink-500 mt-1">
+                    Client-portal accounts are managed separately once the
+                    portal ships. Internal-app access requires one of the
+                    roles above.
+                  </p>
                 </div>
+                @if (form.role === 'strategist') {
+                  <div>
+                    <label class="label">Manager (optional)</label>
+                    <select class="input" [ngModel]="form.managerId ?? ''"
+                            (ngModelChange)="form.managerId = $event || undefined">
+                      <option value="">— No manager (reports to owner) —</option>
+                      @for (m of eligibleManagers(); track m._id) {
+                        <option [value]="m._id">{{ m.name }} · {{ roleLabel(m.role) }}</option>
+                      }
+                    </select>
+                    <p class="text-[11px] text-ink-500 mt-1">
+                      When set, the manager sees this strategist's clients
+                      via the "team" scope.
+                    </p>
+                  </div>
+                }
                 @if (mode() === 'edit') {
                   <div class="flex items-center gap-2 mt-2">
                     <input type="checkbox" id="active-toggle" [(ngModel)]="form.active" />
@@ -147,13 +170,33 @@ export class UsersListComponent implements OnInit {
   error = signal<string | null>(null);
   editingId: string | null = null;
 
-  form = {
+  form: {
+    name: string;
+    email: string;
+    password: string;
+    role: UserRole;
+    managerId?: string;
+    active: boolean;
+  } = {
     name: '',
     email: '',
     password: '',
-    role: 'seo-strategist' as UserRole,
+    role: 'strategist',
+    managerId: undefined,
     active: true,
   };
+
+  eligibleManagers = computed(() =>
+    this.users().filter(
+      (u) =>
+        u.active &&
+        (u.role === 'root' ||
+          u.role === 'owner' ||
+          u.role === 'admin' ||
+          u.role === 'manager') &&
+        u._id !== this.editingId,
+    ),
+  );
 
   ngOnInit() {
     this.load();
@@ -176,24 +219,42 @@ export class UsersListComponent implements OnInit {
 
   roleBadgeClass(role: UserRole) {
     if (role === 'root') return 'bg-ink-900 text-white';
-    if (role === 'seo-manager') return 'bg-brand-100 text-brand-700';
-    return 'bg-sky-100 text-sky-700';
+    if (role === 'owner') return 'bg-purple-100 text-purple-700';
+    if (role === 'admin') return 'bg-sky-100 text-sky-700';
+    if (role === 'manager') return 'bg-positive-100 text-positive-500';
+    if (role === 'strategist') return 'bg-amber-50 text-amber-600';
+    return 'bg-ink-100 text-ink-500';
   }
 
   openCreate() {
     this.editingId = null;
-    this.form = { name: '', email: '', password: '', role: 'seo-strategist', active: true };
+    this.form = {
+      name: '',
+      email: '',
+      password: '',
+      role: 'strategist',
+      managerId: undefined,
+      active: true,
+    };
     this.error.set(null);
     this.mode.set('create');
   }
 
   openEdit(u: User) {
     this.editingId = u._id!;
+    const populatedManagerId = (u as { managerId?: unknown }).managerId;
+    const managerIdStr =
+      typeof populatedManagerId === 'string'
+        ? populatedManagerId
+        : populatedManagerId && typeof populatedManagerId === 'object'
+          ? String((populatedManagerId as { _id?: unknown })._id ?? '')
+          : undefined;
     this.form = {
       name: u.name,
       email: u.email,
       password: '',
       role: u.role,
+      managerId: managerIdStr || undefined,
       active: u.active,
     };
     this.error.set(null);
@@ -236,6 +297,8 @@ export class UsersListComponent implements OnInit {
           name: this.form.name,
           password: this.form.password,
           role: this.form.role,
+          managerId:
+            this.form.role === 'strategist' ? this.form.managerId : undefined,
           active: this.form.active,
         })
         .subscribe({ next: done, error: onErr });
@@ -244,6 +307,8 @@ export class UsersListComponent implements OnInit {
         .update(this.editingId, {
           name: this.form.name,
           role: this.form.role,
+          managerId:
+            this.form.role === 'strategist' ? this.form.managerId : undefined,
           active: this.form.active,
         })
         .subscribe({ next: done, error: onErr });

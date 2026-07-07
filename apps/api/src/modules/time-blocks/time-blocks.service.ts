@@ -91,7 +91,7 @@ export class TimeBlocksService {
     await this.clientsSvc.assertAccess(dto.clientId, {
       userId,
       email: '',
-      role: 'seo-strategist',
+      role: 'strategist',
     } as AuthenticatedUser);
     const doc = await this.model.create({
       userId: new Types.ObjectId(userId),
@@ -251,7 +251,7 @@ export class TimeBlocksService {
     const accessibleIds = await this.clientsSvc.listAccessibleIds({
       userId,
       email: '',
-      role: 'seo-strategist',
+      role: 'strategist',
     } as AuthenticatedUser);
     const clientQuery: Record<string, unknown> = { active: true };
     if (accessibleIds !== null) clientQuery._id = { $in: accessibleIds };

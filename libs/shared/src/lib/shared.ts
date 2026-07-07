@@ -1,16 +1,86 @@
-export type UserRole = 'root' | 'seo-manager' | 'seo-strategist';
+/**
+ * Platform role hierarchy (Internal Tools Phase 1 · Slice 1.1).
+ *
+ *   root       — system superadmin (dev/system owner). Can do anything
+ *                including irreversible platform ops. 1–2 users max.
+ *   owner      — business owner class. Sees every client, every
+ *                strategist, and financial data. Cannot do the truly
+ *                dangerous stuff (schema migrations, etc.).
+ *   admin      — delegated ops manager. Manages users, packages,
+ *                onboarding items, app settings. Does NOT see revenue.
+ *   manager    — leads a team of strategists. Sees every client
+ *                assigned to any strategist under them.
+ *   strategist — individual contributor. Sees only clients assigned
+ *                to them. Connects their own Google for OAuth pulls.
+ *   client     — external portal user (Phase 6+). Not usable in the
+ *                internal app — rejected at the guard layer.
+ *
+ * Legacy values `seo-manager` and `seo-strategist` are auto-migrated
+ * on boot (users) and normalized on the fly in the RolesGuard so old
+ * JWTs keep working through the transition period.
+ */
+export type UserRole =
+  | 'root'
+  | 'owner'
+  | 'admin'
+  | 'manager'
+  | 'strategist'
+  | 'client';
+
+export const USER_ROLES: UserRole[] = [
+  'root',
+  'owner',
+  'admin',
+  'manager',
+  'strategist',
+  'client',
+];
 
 export const USER_ROLE_LABELS: Record<UserRole, string> = {
   'root': 'Root',
-  'seo-manager': 'SEO Manager',
-  'seo-strategist': 'SEO Strategist',
+  'owner': 'Owner',
+  'admin': 'Admin',
+  'manager': 'Manager',
+  'strategist': 'Strategist',
+  'client': 'Client (portal)',
 };
+
+/** Roles allowed to sign into the internal app. `client` is portal-only. */
+export const INTERNAL_APP_ROLES: UserRole[] = [
+  'root',
+  'owner',
+  'admin',
+  'manager',
+  'strategist',
+];
+
+/**
+ * Legacy → new role mapping. Used by the boot-time migration and by
+ * the RolesGuard normalizer during the transition window.
+ */
+export const LEGACY_ROLE_MAP: Record<string, UserRole> = {
+  'seo-manager': 'manager',
+  'seo-strategist': 'strategist',
+};
+
+export function normalizeRole(role: string | undefined): UserRole | undefined {
+  if (!role) return undefined;
+  if (LEGACY_ROLE_MAP[role]) return LEGACY_ROLE_MAP[role];
+  if ((USER_ROLES as string[]).includes(role)) return role as UserRole;
+  return undefined;
+}
 
 export interface User {
   _id?: string;
   email: string;
   name: string;
   role: UserRole;
+  /**
+   * Strategist → manager reporting line. Populated by the API as
+   * either the raw ObjectId string or the joined `{_id,name,role}`
+   * shape depending on the endpoint.
+   */
+  managerId?: string | { _id: string; name: string; role: UserRole };
   active: boolean;
   createdAt?: Date;
   updatedAt?: Date;

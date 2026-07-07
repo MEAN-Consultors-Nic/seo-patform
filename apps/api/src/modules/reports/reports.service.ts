@@ -18,6 +18,7 @@ import {
   Cycle as CycleType,
   Report as ReportType,
   ReportKpis,
+  UserRole,
   sanitizeText,
 } from '@seo/shared';
 import { Report, ReportDocument } from './report.schema';
@@ -256,7 +257,7 @@ export class ReportsService implements OnModuleInit {
    */
   async findOneById(
     reportId: string,
-    user: { userId: string; role: 'root' | 'seo-manager' | 'seo-strategist' },
+    user: { userId: string; role: UserRole },
   ) {
     const doc = await this.model.findById(reportId).lean().exec();
     if (!doc) throw new NotFoundException('Report not found');
@@ -275,7 +276,7 @@ export class ReportsService implements OnModuleInit {
     clientId: string,
     from: string,
     to: string,
-    user: { userId: string; role: 'root' | 'seo-manager' | 'seo-strategist' },
+    user: { userId: string; role: UserRole },
   ) {
     this.logger.log(
       `createCustomReport start clientId=${clientId} from=${from} to=${to} userId=${user?.userId}`,
@@ -793,7 +794,7 @@ export class ReportsService implements OnModuleInit {
 
   async previewByShareToken(
     token: string,
-    user: { userId: string; role: 'root' | 'seo-manager' | 'seo-strategist' },
+    user: { userId: string; role: UserRole },
   ) {
     const report = await this.model
       .findOne({ shareToken: token })
