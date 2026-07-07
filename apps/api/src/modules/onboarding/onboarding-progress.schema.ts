@@ -4,13 +4,13 @@ import { OnboardingItemState } from '@seo/shared';
 
 @Schema({ _id: false })
 export class OnboardingProgressItemSub {
-  @Prop({ required: true }) key!: string;
-  @Prop({ required: true, default: 'pending' })
+  @Prop({ required: true, type: String }) key!: string;
+  @Prop({ required: true, type: String, default: 'pending' })
   state!: OnboardingItemState;
   @Prop({ type: Date }) completedAt?: Date;
   @Prop({ type: Types.ObjectId, ref: 'User' })
   completedBy?: Types.ObjectId;
-  @Prop() notes?: string;
+  @Prop({ type: String }) notes?: string;
 }
 
 const ProgressItemSchemaDef = SchemaFactory.createForClass(
