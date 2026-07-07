@@ -5,14 +5,12 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { RichTextEditorComponent } from '../../shared/rich-text-editor.component';
 import {
   Client,
-  Cycle,
   LOCATIONS_SORT_OPTIONS,
   LocationsSortKey,
   Report,
   Task,
 } from '@seo/shared';
 import { ClientsService } from '../../core/clients.service';
-import { CyclesService } from '../../core/cycles.service';
 import { ReportsService } from '../../core/reports.service';
 import { TasksService } from '../../core/tasks.service';
 import { SanitizerService } from '../../core/sanitizer.service';
@@ -43,10 +41,10 @@ interface KpiGroup {
                 }
               </h1>
               <p class="text-xs text-ink-500 mt-0.5">
-                @if (selectedCycleLabel(); as cl) {
-                  Cycle <strong>{{ cl }}</strong>
+                @if (customFrom() && customTo()) {
+                  Period <strong>{{ customFrom() }} → {{ customTo() }}</strong>
                 } @else {
-                  Select a client and cycle to start
+                  Select a client to start
                 }
               </p>
             </div>
@@ -105,26 +103,19 @@ interface KpiGroup {
             </select>
           </div>
           <div>
-            <label class="label">Cycle</label>
+            <label class="label">Period type</label>
             <select class="input"
-                    [ngModel]="monthMode() ? '__month__' : (customMode() ? '__custom__' : cycleId())"
-                    (ngModelChange)="onCycleChange($event)"
+                    [ngModel]="monthMode() ? 'month' : 'custom'"
+                    (ngModelChange)="onPeriodTypeChange($event)"
                     [disabled]="loadingReport()">
-              <option value="">Select cycle</option>
-              @for (c of cycles(); track c._id) {
-                <option [value]="c._id">{{ c.label }} ({{ c.status }})</option>
-              }
-              <option value="__month__">Full month…</option>
-              <option value="__custom__">Custom date range…</option>
+              <option value="custom">Custom date range</option>
+              <option value="month">Full month</option>
             </select>
           </div>
         </div>
 
         @if (customMode()) {
           @if (monthMode()) {
-            <!-- Month-picker shortcut: user picks a YYYY-MM value and the
-                 from/to auto-fill to the first and last day of that
-                 month. Everything else reuses the custom-range flow. -->
             <div class="mt-3">
               <label class="label">Month</label>
               <input type="month" class="input"
@@ -889,7 +880,6 @@ interface KpiGroup {
 export class ReportEditorComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private clientsSvc = inject(ClientsService);
-  private cyclesSvc = inject(CyclesService);
   private reportsSvc = inject(ReportsService);
   private tasksSvc = inject(TasksService);
   private sanitizer = inject(SanitizerService);
@@ -915,8 +905,8 @@ export class ReportEditorComponent implements OnInit {
   }
 
   clients = signal<Client[]>([]);
-  cycles = signal<Cycle[]>([]);
   clientId = signal<string>('');
+  /** Legacy — kept as an empty string so any residual code paths noop. */
   cycleId = signal<string>('');
   /**
    * Custom date-range mode. When true the cycle selector value is the
@@ -975,11 +965,6 @@ export class ReportEditorComponent implements OnInit {
 
   selectedClientName = computed(() => this.selectedClient()?.name || '');
 
-  selectedCycleLabel = computed(() => {
-    const id = this.cycleId();
-    return this.cycles().find((c) => c._id === id)?.label || '';
-  });
-
   shareUrl = (): string => {
     const t = this.shareToken();
     if (!t) return '';
@@ -1018,7 +1003,7 @@ export class ReportEditorComponent implements OnInit {
   coverPasteHint = this.detectPasteHint();
   pullingKpis = signal(false);
   pullResult = signal<import('../../core/google-integrations.service').GoogleKpisResult | null>(null);
-  pullRangePreset = signal<'cycle' | 'last7' | 'last28' | 'lastCycle' | 'custom'>('cycle');
+  pullRangePreset = signal<'report' | 'last7' | 'last28' | 'custom'>('report');
   pullFromDate = signal<string>('');
   pullToDate = signal<string>('');
   pullRangeUsed = signal<{ from: string; to: string; days: number } | null>(null);
@@ -1039,19 +1024,20 @@ export class ReportEditorComponent implements OnInit {
    * depend on the currently selected cycle.
    */
   pullRangeOptions = computed(() => {
-    const cycle = this.cycles().find((c) => c._id === this.cycleId());
-    const cycleLabel = cycle
-      ? this.shortRange(cycle.startDate, cycle.endDate)
-      : '';
-    const prev = this.resolvePullRange('lastCycle');
+    const reportFrom = this.customFrom();
+    const reportTo = this.customTo();
+    const reportLabel =
+      reportFrom && reportTo
+        ? this.shortRange(reportFrom, reportTo)
+        : '';
     const last7 = this.resolvePullRange('last7');
     const last28 = this.resolvePullRange('last28');
     return [
       {
-        value: 'cycle' as const,
-        label: cycleLabel
-          ? `This report's cycle (${cycleLabel})`
-          : "This report's cycle",
+        value: 'report' as const,
+        label: reportLabel
+          ? `This report's period (${reportLabel})`
+          : "This report's period",
       },
       {
         value: 'last7' as const,
@@ -1064,12 +1050,6 @@ export class ReportEditorComponent implements OnInit {
         label: last28
           ? `Last 28 days (${this.shortRange(last28.from, last28.to)})`
           : 'Last 28 days',
-      },
-      {
-        value: 'lastCycle' as const,
-        label: prev
-          ? `Previous cycle (${this.shortRange(prev.from, prev.to)})`
-          : 'Previous cycle (none yet)',
       },
       { value: 'custom' as const, label: 'Custom range…' },
     ];
@@ -1183,53 +1163,70 @@ export class ReportEditorComponent implements OnInit {
 
   ngOnInit() {
     this.clientsSvc.list().subscribe((cs) => this.clients.set(cs));
-    this.cyclesSvc.list().subscribe((cs) => this.cycles.set(cs));
     const cid = this.route.snapshot.queryParamMap.get('clientId');
-    if (cid) this.clientId.set(cid);
-    this.cyclesSvc.current().subscribe({
-      next: (c) => { if (c._id) this.cycleId.set(c._id); this.tryLoad(); },
-      error: () => null,
-    });
+    if (cid) {
+      this.clientId.set(cid);
+      this.enterCustomMode();
+    }
   }
 
   ready(): boolean {
-    if (this.customMode()) {
-      return !!(this.clientId() && this.customReportId());
-    }
-    return !!(this.clientId() && this.cycleId());
+    // All reports are custom-range now — cycle-anchored path is gone
+    // from the editor. Ready when we have a client AND the custom
+    // report has been created in Mongo (customReportId populated by
+    // tryLoadCustom's POST /reports/custom).
+    return !!(this.clientId() && this.customReportId());
   }
 
-  onClientChange(v: string) { this.clientId.set(v); this.tryLoad(); }
+  onClientChange(v: string) {
+    this.clientId.set(v);
+    this.enterCustomMode();
+  }
+
+  /**
+   * Bootstraps the editor into custom-range mode with a sensible
+   * default window (last 30 days ending yesterday). The GSC/GA4 data
+   * for 'today' is usually incomplete so ending at yesterday gives
+   * more reliable pulls.
+   */
+  private enterCustomMode() {
+    this.customMode.set(true);
+    this.monthMode.set(false);
+    this.cycleId.set('');
+    if (!this.customFrom() || !this.customTo()) {
+      const to = new Date();
+      to.setDate(to.getDate() - 1);
+      const from = new Date(to);
+      from.setDate(from.getDate() - 29);
+      const iso = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      this.customFrom.set(iso(from));
+      this.customTo.set(iso(to));
+    }
+    this.tryLoadCustom();
+  }
 
   /**
    * Switching to '__custom__' enables custom-range mode and clears
    * cycleId so downstream readiness checks branch through the custom
-   * path. Switching back to a real cycleId disables custom mode.
+   * path. All reports are now custom-range only; cycle-anchored
+   * paths remain in the backend for legacy compat but are never
+   * hit by this editor.
    */
-  onCycleChange(v: string) {
-    if (v === '__custom__' || v === '__month__') {
-      this.customMode.set(true);
-      this.monthMode.set(v === '__month__');
-      this.cycleId.set('');
-      this.customReportId.set('');
-      this.customLoadError.set(null);
-      this.report.set(null);
-      // Month mode: clear the free-form dates so the user starts fresh
-      // and picks a month; custom mode: preserve whatever was typed so
-      // switching between the two doesn't wipe input.
-      if (v === '__month__') {
-        this.customFrom.set('');
-        this.customTo.set('');
-        this.monthValue.set('');
-      }
-      return;
-    }
-    this.customMode.set(false);
-    this.monthMode.set(false);
+  onPeriodTypeChange(v: 'custom' | 'month') {
+    this.customMode.set(true);
+    this.monthMode.set(v === 'month');
+    this.cycleId.set('');
     this.customReportId.set('');
     this.customLoadError.set(null);
-    this.cycleId.set(v);
-    this.tryLoad();
+    this.report.set(null);
+    if (v === 'month') {
+      // Fresh month picker — clear the day-level dates so the user
+      // picks a month explicitly and the from/to auto-populate.
+      this.customFrom.set('');
+      this.customTo.set('');
+      this.monthValue.set('');
+    }
   }
 
   /**
@@ -1337,21 +1334,21 @@ export class ReportEditorComponent implements OnInit {
         completedTo: this.customTo(),
       })
       .subscribe((completed) => {
-        this.cyclesSvc.current().subscribe({
-          next: (currentCycle) => {
-            if (!currentCycle?._id) {
-              this.cycleTasks.set(completed);
-              return;
-            }
-            this.tasksSvc
-              .list({ clientId, cycleId: currentCycle._id })
-              .subscribe((currentTasks) => {
-                const seen = new Set(completed.map((t) => t._id));
-                const pending = currentTasks.filter(
-                  (t) => t.status !== 'completed' && !seen.has(t._id),
-                );
-                this.cycleTasks.set([...completed, ...pending]);
-              });
+        // Merge in currently-open tasks (pending / in_progress / blocked)
+        // so the report's Next Period Plan section has something to
+        // show. Dedupe by _id in case a task was both completed in the
+        // window AND is still open (shouldn't happen but harmless).
+        this.tasksSvc.list({ clientId }).subscribe({
+          next: (all) => {
+            const openOnes = all.filter(
+              (t) => t.status !== 'completed',
+            );
+            const seen = new Set(completed.map((t) => t._id));
+            const merged = [
+              ...completed,
+              ...openOnes.filter((t) => !seen.has(t._id)),
+            ];
+            this.cycleTasks.set(merged);
           },
           error: () => this.cycleTasks.set(completed),
         });
@@ -1376,7 +1373,10 @@ export class ReportEditorComponent implements OnInit {
   }
 
   tryLoad() {
-    if (!this.ready()) return;
+    // Legacy cycle-anchored path kept for compat with any deep-linked
+    // legacy report. New editor sessions never call this — they use
+    // enterCustomMode + tryLoadCustom instead.
+    if (!this.cycleId() || !this.clientId()) return;
     this.loadingReport.set(true);
     this.saveMessage.set(null);
     this.pdfError.set(null);
@@ -1497,31 +1497,29 @@ export class ReportEditorComponent implements OnInit {
     this.maybeAutoPullKpis(r);
   }
 
-  /** Cycles for which we've already triggered an auto-pull this session. */
+  /** Report ids for which we've already triggered an auto-pull this session. */
   private autoPulledFor = new Set<string>();
 
   /**
-   * On first load of a report whose cycle has already ended, automatically
-   * trigger a KPI pull from Google for the report's own date range. Skipped
-   * when the report already has any KPI values stored (so we never overwrite
-   * the user's work) and skipped for cycles that haven't ended yet. A short
-   * defer lets the cycles list signal settle before we look it up.
+   * On first load of a report whose period has already ended, auto-
+   * triggers a KPI pull from Google. Skipped when the report already
+   * has any KPI values stored (so we never overwrite the user's work).
    */
   private maybeAutoPullKpis(r: Report | null) {
     setTimeout(() => {
-      const cycleId = this.cycleId();
-      if (!cycleId || this.autoPulledFor.has(cycleId)) return;
+      const id = this.customReportId();
+      if (!id || this.autoPulledFor.has(id)) return;
       const stored = r?.kpis ?? {};
       const hasAnyKpi = Object.values(stored).some(
         (v) => typeof v === 'number' && !Number.isNaN(v) && v !== 0,
       );
       if (hasAnyKpi) return;
-      const cycle = this.cycles().find((c) => c._id === cycleId);
-      if (!cycle) return;
-      const endsAt = new Date(cycle.endDate).getTime();
+      const to = this.customTo();
+      if (!to) return;
+      const endsAt = new Date(`${to}T23:59:59Z`).getTime();
       if (endsAt > Date.now()) return;
-      this.autoPulledFor.add(cycleId);
-      this.pullRangePreset.set('cycle');
+      this.autoPulledFor.add(id);
+      this.pullRangePreset.set('report');
       this.pullKpisFromGoogle();
     }, 250);
   }
@@ -1878,12 +1876,12 @@ export class ReportEditorComponent implements OnInit {
     return cleaned as Report['kpis'];
   }
 
-  setPullRangePreset(preset: 'cycle' | 'last7' | 'last28' | 'lastCycle' | 'custom') {
+  setPullRangePreset(preset: 'report' | 'last7' | 'last28' | 'custom') {
     this.pullRangePreset.set(preset);
     if (preset === 'custom') {
-      // Seed custom inputs with whatever was last used (default to cycle).
+      // Seed custom inputs with the current report window.
       if (!this.pullFromDate() || !this.pullToDate()) {
-        const range = this.resolvePullRange('cycle');
+        const range = this.resolvePullRange('report');
         if (range) {
           this.pullFromDate.set(range.from);
           this.pullToDate.set(range.to);
@@ -1893,7 +1891,7 @@ export class ReportEditorComponent implements OnInit {
   }
 
   private resolvePullRange(
-    preset: 'cycle' | 'last7' | 'last28' | 'lastCycle' | 'custom',
+    preset: 'report' | 'last7' | 'last28' | 'custom',
   ): { from: string; to: string } | null {
     if (preset === 'custom') {
       if (!this.pullFromDate() || !this.pullToDate()) return null;
@@ -1905,37 +1903,9 @@ export class ReportEditorComponent implements OnInit {
       start.setDate(start.getDate() - (preset === 'last7' ? 7 : 28));
       return { from: this.formatIsoDate(start), to: this.formatIsoDate(end) };
     }
-    // In custom-range mode, 'cycle' preset folds to the report's own
-    // From/To dates so the picker label stays meaningful.
-    if (this.customMode() && preset === 'cycle') {
-      if (!this.customFrom() || !this.customTo()) return null;
-      return { from: this.customFrom(), to: this.customTo() };
-    }
-    const cycle = this.cycles().find((c) => c._id === this.cycleId());
-    if (!cycle) return null;
-    if (preset === 'cycle') {
-      return {
-        from: this.formatIsoDate(cycle.startDate),
-        to: this.formatIsoDate(cycle.endDate),
-      };
-    }
-    // lastCycle: previous cycle in chronological order
-    if (preset === 'lastCycle') {
-      const sorted = this.cycles()
-        .slice()
-        .sort(
-          (a, b) =>
-            new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
-        );
-      const idx = sorted.findIndex((c) => c._id === cycle._id);
-      const prev = idx > 0 ? sorted[idx - 1] : null;
-      if (!prev) return null;
-      return {
-        from: this.formatIsoDate(prev.startDate),
-        to: this.formatIsoDate(prev.endDate),
-      };
-    }
-    return null;
+    // 'report' — the report's own custom date range.
+    if (!this.customFrom() || !this.customTo()) return null;
+    return { from: this.customFrom(), to: this.customTo() };
   }
 
   pullKpisFromGoogle() {
@@ -1948,11 +1918,7 @@ export class ReportEditorComponent implements OnInit {
         sources: {
           gsc: false,
           ga4: false,
-          warnings: [
-            this.pullRangePreset() === 'lastCycle'
-              ? 'No previous cycle found.'
-              : 'Please fill the From and To dates.',
-          ],
+          warnings: ['Please fill the From and To dates.'],
         },
       });
       return;
@@ -2219,9 +2185,7 @@ export class ReportEditorComponent implements OnInit {
         const a = document.createElement('a');
         a.href = url;
         const clientName = this.clients().find((c) => c._id === this.clientId())?.name || 'report';
-        const label = this.customMode()
-          ? `${this.customFrom()}_${this.customTo()}`
-          : this.cycles().find((c) => c._id === this.cycleId())?.label || '';
+        const label = `${this.customFrom()}_${this.customTo()}`;
         a.download = `${clientName}-${label}.pdf`.replace(/\s+/g, '_');
         document.body.appendChild(a);
         a.click();
@@ -2257,9 +2221,7 @@ export class ReportEditorComponent implements OnInit {
         const a = document.createElement('a');
         a.href = url;
         const clientName = this.clients().find((c) => c._id === this.clientId())?.name || 'report';
-        const label = this.customMode()
-          ? `${this.customFrom()}_${this.customTo()}`
-          : this.cycles().find((c) => c._id === this.cycleId())?.label || '';
+        const label = `${this.customFrom()}_${this.customTo()}`;
         a.download = `${clientName}-${label}.docx`.replace(/\s+/g, '_');
         document.body.appendChild(a);
         a.click();
