@@ -23,11 +23,12 @@ import {
 import { CloudinaryService } from '../../../core/cloudinary.service';
 import { ContentService } from '../../../core/content.service';
 import { TasksService } from '../../../core/tasks.service';
+import { FileDropDirective } from '../../../shared/file-drop.directive';
 
 @Component({
   selector: 'app-client-content-tab',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, FileDropDirective],
   template: `
     <div class="space-y-4">
       <input #fileInput type="file" class="hidden" (change)="onFilePicked($event)" />
@@ -74,7 +75,17 @@ import { TasksService } from '../../../core/tasks.service';
             </div>
             <div class="space-y-2">
               @for (p of byStatus()[status] || []; track p._id) {
-                <div class="bg-ink-50 rounded-md p-2.5 border border-ink-200 text-sm hover:border-brand-500 hover:shadow-sm transition-all">
+                <div class="relative bg-ink-50 rounded-md p-2.5 border border-ink-200 text-sm hover:border-brand-500 hover:shadow-sm transition-all"
+                     [appFileDrop]="cloudinary.isConfigured() && uploadingFor() !== p._id"
+                     #drop="fileDrop"
+                     (filesDropped)="onFilesDropped(p, $event)">
+                  <!-- Hovering-drag overlay. Only visible while the user
+                       is actively dragging a file over the card — drop
+                       target isn't discoverable otherwise. -->
+                  <div class="absolute inset-0 z-10 rounded-md border-2 border-dashed border-brand-500 bg-brand-500/10 pointer-events-none flex items-center justify-center text-[10px] font-bold uppercase tracking-wider text-brand-500 opacity-0 transition-opacity"
+                       [class.opacity-100]="drop.active">
+                    📎 Drop to attach
+                  </div>
                   <div class="flex items-start justify-between gap-2">
                     <div class="font-medium text-ink-900 leading-tight text-xs flex-1">{{ p.title }}</div>
                     <span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0"
@@ -599,42 +610,72 @@ export class ClientContentTab implements OnChanges {
     const file = input.files?.[0];
     const pieceId = this.attachTargetId;
     if (!file || !pieceId) return;
+    await this.uploadOne(pieceId, file);
+  }
+
+  /**
+   * Drag-and-drop entry point. Uploads every dropped file sequentially
+   * so we don't spam the Cloudinary widget or the progress signal.
+   * Skips silently if the piece has an upload already running.
+   */
+  async onFilesDropped(p: ContentPiece, files: File[]) {
+    if (!p._id) return;
+    if (!this.cloudinary.isConfigured()) {
+      this.flashToast('error', 'Cloudinary is not configured — cannot upload files.');
+      return;
+    }
+    if (this.uploadingFor()) return;
+    for (const file of files) {
+      await this.uploadOne(p._id, file);
+    }
+  }
+
+  /**
+   * Single-file upload path shared by the menu button (file input) and
+   * drag-and-drop. Uploads to Cloudinary with progress, then registers
+   * the metadata with the API. Toast + load on completion.
+   */
+  private async uploadOne(pieceId: string, file: File): Promise<void> {
     this.uploadingFor.set(pieceId);
     this.uploadProgress.set(0);
     try {
       const result = await this.cloudinary.upload(file, (pct) =>
         this.uploadProgress.set(pct),
       );
-      this.svc
-        .addAttachment(pieceId, {
-          publicId: result.publicId,
-          url: result.url,
-          thumbnailUrl: result.thumbnailUrl,
-          format: result.format,
-          width: result.width,
-          height: result.height,
-          bytes: result.bytes,
-          resourceType: result.resourceType,
-          originalFilename: result.originalFilename,
-        })
-        .subscribe({
-          next: () => {
-            this.uploadingFor.set(null);
-            this.uploadProgress.set(0);
-            this.attachTargetId = null;
-            this.flashToast('success', 'File attached.');
-            this.load();
-          },
-          error: (err) => {
-            this.uploadingFor.set(null);
-            this.attachTargetId = null;
-            const m = err?.error?.message;
-            this.flashToast(
-              'error',
-              `Attach failed: ${Array.isArray(m) ? m.join(', ') : m || 'unknown error'}`,
-            );
-          },
-        });
+      await new Promise<void>((resolve) => {
+        this.svc
+          .addAttachment(pieceId, {
+            publicId: result.publicId,
+            url: result.url,
+            thumbnailUrl: result.thumbnailUrl,
+            format: result.format,
+            width: result.width,
+            height: result.height,
+            bytes: result.bytes,
+            resourceType: result.resourceType,
+            originalFilename: result.originalFilename,
+          })
+          .subscribe({
+            next: () => {
+              this.uploadingFor.set(null);
+              this.uploadProgress.set(0);
+              this.attachTargetId = null;
+              this.flashToast('success', `Attached ${file.name}.`);
+              this.load();
+              resolve();
+            },
+            error: (err) => {
+              this.uploadingFor.set(null);
+              this.attachTargetId = null;
+              const m = err?.error?.message;
+              this.flashToast(
+                'error',
+                `Attach failed: ${Array.isArray(m) ? m.join(', ') : m || 'unknown error'}`,
+              );
+              resolve();
+            },
+          });
+      });
     } catch (err: unknown) {
       this.uploadingFor.set(null);
       this.attachTargetId = null;
