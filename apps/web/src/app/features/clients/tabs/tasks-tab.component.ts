@@ -142,23 +142,6 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
             [ngModel]="searchQuery()"
             (ngModelChange)="searchQuery.set($event)" />
         </div>
-        <!-- View mode toggle. Kanban is the compact default;
-             List keeps title + full description visible for every
-             task at once when you need to scan long descriptions. -->
-        <div class="inline-flex rounded-md border border-ink-200 p-0.5 bg-white">
-          <button type="button"
-                  (click)="setViewMode('kanban')"
-                  [class]="'px-3 py-1 text-xs font-semibold rounded transition ' +
-                    (viewMode() === 'kanban' ? 'bg-ink-900 text-white' : 'text-ink-600 hover:text-ink-900')">
-            ▦ Kanban
-          </button>
-          <button type="button"
-                  (click)="setViewMode('list')"
-                  [class]="'px-3 py-1 text-xs font-semibold rounded transition ' +
-                    (viewMode() === 'list' ? 'bg-ink-900 text-white' : 'text-ink-600 hover:text-ink-900')">
-            ☰ List
-          </button>
-        </div>
       </div>
 
       <!-- Kanban board -->
@@ -166,7 +149,7 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
         <div class="card text-center py-12 text-ink-400 italic">
           No tasks for this client yet. Click "+ New task" to add one.
         </div>
-      } @else if (viewMode() === 'list') {
+      } @else {
         <!-- Structured list. Single sorted feed governed by the
              KPI-card filter (Total / Pending / In progress / Completed)
              + search input above. Blocked tasks surface under the All
@@ -283,134 +266,6 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
               </li>
             }
           </ul>
-        </div>
-      } @else {
-        <!-- Columns intentionally do NOT cap their height or scroll
-             internally. An inner overflow container (overflow-y-auto)
-             would clip the ⋮ menu's absolute-positioned dropdown when
-             the menu is longer than the space below the button, since
-             CSS overflow constraints trap absolute descendants. The
-             whole tab scrolls instead — matches Trello / GitHub
-             Projects and keeps the menu fully visible. -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 pb-2">
-          @for (col of kanbanColumns; track col.status) {
-            <div class="rounded-lg bg-ink-50/60 border border-ink-100 p-2 flex flex-col min-w-0">
-              <div class="flex items-center justify-between px-2 py-2 mb-2">
-                <div class="inline-flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full" [ngClass]="col.dot"></span>
-                  <span class="text-sm font-bold text-ink-900">{{ col.label }}</span>
-                </div>
-                <span class="text-xs font-semibold text-ink-500 bg-white rounded-full px-2 py-0.5">
-                  {{ kanbanTasksByStatus(col.status).length }}
-                </span>
-              </div>
-              <div class="space-y-3 flex-1">
-                @if (kanbanTasksByStatus(col.status).length === 0) {
-                  <div class="text-center text-xs text-ink-400 italic py-10">
-                    No tasks in this column.
-                  </div>
-                }
-                @for (t of kanbanTasksByStatus(col.status); track t._id) {
-            <article
-              class="relative rounded-lg border border-ink-200 shadow-card hover:shadow-elevated transition-all flex flex-col"
-              [class.bg-white]="t.status !== 'completed'"
-              [class.bg-ink-50]="t.status === 'completed'">
-              <!-- Status side bar -->
-              <div class="absolute top-0 left-0 bottom-0 w-1 rounded-l-lg" [ngClass]="statusOf(t).bar"></div>
-
-              <div class="pl-5 pr-4 py-4 flex-1 flex flex-col">
-                <!-- Top row -->
-                <div class="flex items-start justify-between gap-3">
-                  <div class="flex flex-wrap items-center gap-1.5 min-w-0">
-                    <span [class]="'inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded ' + statusOf(t).pill">
-                      <span class="w-1.5 h-1.5 rounded-full" [ngClass]="statusOf(t).dot"></span>
-                      {{ statusOf(t).label }}
-                    </span>
-                    <span class="badge-neutral text-[10px]">{{ t.category }}</span>
-                    <span [class]="'text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ' + priorityBadgeClass(t.priority)">
-                      {{ t.priority }}
-                    </span>
-                  </div>
-                  <ng-container *ngTemplateOutlet="taskMenu; context: { $implicit: t }"></ng-container>
-                </div>
-
-                <!-- Title -->
-                <h3 class="mt-2 text-base font-semibold text-ink-900 leading-snug"
-                    [class.line-through]="t.status === 'completed'"
-                    [class.text-ink-400]="t.status === 'completed'">
-                  {{ t.title }}
-                </h3>
-
-                <!-- Description is intentionally hidden on the kanban
-                     card to keep tiles compact. A 'View details' link is
-                     always rendered below so the full description (plus
-                     subtasks, comments, attachments) is one click away
-                     for any task — not gated on description length like
-                     it used to be. -->
-                <button type="button"
-                        (click)="openDetailModal(t)"
-                        class="mt-2 text-xs font-semibold text-brand-500 hover:text-brand-600 inline-flex items-center gap-1">
-                  View details
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <path d="M3 1h6v6M9 1L3.5 6.5" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
-                </button>
-
-                @if (t.notes) {
-                  <div class="mt-2 rounded-md bg-ink-50 border border-ink-100 px-3 py-2 text-xs text-ink-700">
-                    <span class="font-semibold uppercase text-[9px] tracking-wider text-ink-400 mr-1">Notes</span>
-                    {{ t.notes }}
-                  </div>
-                }
-
-                <!-- Attachments -->
-                <app-attachments-strip
-                  [taskId]="t._id!"
-                  [attachments]="t.attachments || []"
-                  (changed)="onAttachmentsChanged(t, $event)" />
-
-                @if ((t.subtasks?.length || 0) > 0) {
-                  <div class="mt-2 flex items-center gap-2 text-[11px]">
-                    <span class="text-ink-400 uppercase tracking-wider text-[10px] font-semibold">Subtasks</span>
-                    <div class="flex-1 h-1.5 bg-ink-100 rounded-full overflow-hidden">
-                      <div class="h-full bg-positive-500 transition-all"
-                           [style.width.%]="subtaskProgressPct(t)"></div>
-                    </div>
-                    <span class="font-semibold tabular-nums"
-                          [class.text-positive-500]="subtasksAllDone(t)"
-                          [class.text-ink-700]="!subtasksAllDone(t)">
-                      {{ subtasksDone(t) }} / {{ t.subtasks?.length }}
-                    </span>
-                  </div>
-                }
-
-                <!-- Footer: hours -->
-                <div class="mt-auto pt-3 border-t border-ink-100 flex items-center justify-between gap-4 text-xs">
-                  <div class="flex items-center gap-4">
-                    <div>
-                      <span class="text-ink-400 uppercase tracking-wider text-[10px] font-semibold mr-1">Est.</span>
-                      <span class="font-semibold text-ink-900">{{ t.estimatedHours || 0 }}h</span>
-                    </div>
-                    <div class="flex items-center gap-1.5">
-                      <span class="text-ink-400 uppercase tracking-wider text-[10px] font-semibold">Actual</span>
-                      <input type="number" class="input input-sm w-20 text-right"
-                             [ngModel]="t.actualHours" (ngModelChange)="updateHours(t, $event)"
-                             step="0.25" min="0" />
-                      <span class="text-ink-500">h</span>
-                    </div>
-                  </div>
-                  @if (t.completedAt && t.status === 'completed') {
-                    <div class="text-[11px] text-ink-400">
-                      Completed {{ t.completedAt | date: 'MMM d' }}
-                    </div>
-                  }
-                </div>
-              </div>
-            </article>
-                }
-              </div>
-            </div>
-          }
         </div>
       }
     </div>
@@ -1040,31 +895,6 @@ export class ClientTasksTab implements OnChanges {
   statusFilter = signal<StatusFilter>('all');
   searchQuery = signal('');
 
-  /**
-   * Kanban vs list view. Persisted in localStorage so the user's
-   * preference sticks across sessions. List mode keeps title +
-   * full description visible on every row; kanban keeps the tiles
-   * compact and groups by status column.
-   */
-  viewMode = signal<'kanban' | 'list'>(this.readViewMode());
-  private readViewMode(): 'kanban' | 'list' {
-    try {
-      const v = localStorage.getItem('tasks-view-mode');
-      // List is the new default — kanban stayed as an opt-in mode after
-      // the redesign because it doesn't scale past a handful of tasks.
-      return v === 'kanban' ? 'kanban' : 'list';
-    } catch {
-      return 'list';
-    }
-  }
-  setViewMode(mode: 'kanban' | 'list') {
-    this.viewMode.set(mode);
-    try {
-      localStorage.setItem('tasks-view-mode', mode);
-    } catch {
-      // Non-fatal — private mode blocks localStorage.
-    }
-  }
   menuOpenId = signal<string | null>(null);
   editingTask = signal<Task | null>(null);
   creatingTask = signal(false);
@@ -1275,42 +1105,6 @@ export class ClientTasksTab implements OnChanges {
         this.setStatus(t, 'in_progress');
         return;
     }
-  }
-
-  /**
-   * Kanban column definitions in the order the user wants them
-   * shown left → right: Pending → In progress → Blocked → Completed.
-   * The same dot/label vocabulary as the rest of the component, just
-   * stripped to what the column header needs.
-   */
-  kanbanColumns: Array<{ status: TaskStatus; label: string; dot: string }> = [
-    { status: 'pending', label: 'Pending', dot: 'bg-ink-400' },
-    { status: 'in_progress', label: 'In progress', dot: 'bg-sky-500' },
-    { status: 'blocked', label: 'Blocked', dot: 'bg-danger-500' },
-    { status: 'completed', label: 'Completed', dot: 'bg-positive-500' },
-  ];
-
-  /**
-   * Tasks for one kanban column. Honors the same search input the
-   * old chip view used, but no status chip filter — the column IS
-   * the filter now. High-priority items float to the top of each
-   * column so urgent work is visible at a glance.
-   */
-  kanbanTasksByStatus(status: TaskStatus): Task[] {
-    const q = this.searchQuery().trim().toLowerCase();
-    const priorityRank: Record<string, number> = { high: 0, medium: 1, low: 2 };
-    return this.tasks()
-      .filter((t) => t.status === status)
-      .filter((t) => !q || this.matchesQuery(t, q))
-      .sort((a, b) => {
-        const pa = priorityRank[a.priority] ?? 9;
-        const pb = priorityRank[b.priority] ?? 9;
-        if (pa !== pb) return pa - pb;
-        // Within a priority, newest-first (recent edits stay on top).
-        const da = new Date(a.updatedAt ?? 0).getTime();
-        const db = new Date(b.updatedAt ?? 0).getTime();
-        return db - da;
-      });
   }
 
   statCards = computed(() => [
