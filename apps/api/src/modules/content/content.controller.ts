@@ -52,4 +52,32 @@ export class ContentController {
   remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.svc.remove(id, user);
   }
+
+  @Post(':id/attachments')
+  addAttachment(
+    @Param('id') id: string,
+    @Body() body: {
+      publicId: string;
+      url: string;
+      thumbnailUrl?: string;
+      format?: string;
+      width?: number;
+      height?: number;
+      bytes?: number;
+      resourceType?: 'image' | 'raw' | 'video';
+      originalFilename?: string;
+    },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.svc.addAttachment(id, body, user);
+  }
+
+  @Delete(':id/attachments')
+  removeAttachment(
+    @Param('id') id: string,
+    @Body() body: { publicId: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.svc.removeAttachment(id, body.publicId, user);
+  }
 }

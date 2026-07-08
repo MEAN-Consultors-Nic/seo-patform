@@ -898,11 +898,30 @@ export const CONTENT_STATUSES: ContentStatus[] = [
   'published',
 ];
 
+export type ContentPieceType = 'page' | 'post';
+
+export const CONTENT_PIECE_TYPES: ContentPieceType[] = ['page', 'post'];
+
+export interface ContentAttachment {
+  publicId: string;
+  url: string;
+  thumbnailUrl?: string;
+  format?: string;
+  width?: number;
+  height?: number;
+  bytes?: number;
+  resourceType?: 'image' | 'raw' | 'video';
+  originalFilename?: string;
+  uploadedAt: Date;
+}
+
 export interface ContentPiece {
   _id?: string;
   clientId: string;
   title: string;
   status: ContentStatus;
+  /** Whether this piece is a static page or a blog post. Defaults to 'post' for legacy docs. */
+  contentType?: ContentPieceType;
   targetKeyword?: string;
   targetUrl?: string;
   briefUrl?: string;
@@ -911,6 +930,7 @@ export interface ContentPiece {
   assignedTo?: string;
   wordCount?: number;
   notes?: string;
+  attachments?: ContentAttachment[];
   createdAt?: Date;
   updatedAt?: Date;
 }

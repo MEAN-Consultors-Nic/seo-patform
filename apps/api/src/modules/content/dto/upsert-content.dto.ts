@@ -5,7 +5,7 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
-import { ContentStatus } from '@seo/shared';
+import { ContentPieceType, ContentStatus } from '@seo/shared';
 
 export class UpsertContentDto {
   @IsMongoId() clientId!: string;
@@ -13,6 +13,9 @@ export class UpsertContentDto {
   @IsOptional()
   @IsEnum(['idea', 'draft', 'published'])
   status?: ContentStatus;
+  @IsOptional()
+  @IsEnum(['page', 'post'])
+  contentType?: ContentPieceType;
   @IsOptional() @IsString() targetKeyword?: string;
   @IsOptional() @IsString() targetUrl?: string;
   @IsOptional() @IsString() briefUrl?: string;

@@ -1,12 +1,26 @@
 import { CommonModule } from '@angular/common';
-import { Component, HostListener, Input, OnChanges, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  HostListener,
+  Input,
+  OnChanges,
+  ViewChild,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
-  ContentPiece,
-  ContentStatus,
+  CONTENT_PIECE_TYPES,
   CONTENT_STATUSES,
+  ContentAttachment,
+  ContentPiece,
+  ContentPieceType,
+  ContentStatus,
   Task,
 } from '@seo/shared';
+import { CloudinaryService } from '../../../core/cloudinary.service';
 import { ContentService } from '../../../core/content.service';
 import { TasksService } from '../../../core/tasks.service';
 
@@ -16,10 +30,16 @@ import { TasksService } from '../../../core/tasks.service';
   imports: [CommonModule, FormsModule],
   template: `
     <div class="space-y-4">
+      <input #fileInput type="file" class="hidden" (change)="onFilePicked($event)" />
       <div class="card">
         <h3 class="text-sm font-semibold text-ink-900 mb-3">+ New piece</h3>
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-2">
           <input class="input md:col-span-2" [(ngModel)]="newPiece.title" placeholder="Piece title" />
+          <select class="input" [(ngModel)]="newPiece.contentType" title="Type">
+            @for (t of types; track t) {
+              <option [value]="t">{{ t }}</option>
+            }
+          </select>
           <input class="input" [(ngModel)]="newPiece.targetKeyword" placeholder="Target keyword" />
           <select class="input" [(ngModel)]="newPiece.status">
             @for (s of statuses; track s) {
@@ -55,7 +75,13 @@ import { TasksService } from '../../../core/tasks.service';
             <div class="space-y-2">
               @for (p of byStatus()[status] || []; track p._id) {
                 <div class="bg-ink-50 rounded-md p-2.5 border border-ink-200 text-sm hover:border-brand-500 hover:shadow-sm transition-all">
-                  <div class="font-medium text-ink-900 leading-tight text-xs">{{ p.title }}</div>
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="font-medium text-ink-900 leading-tight text-xs flex-1">{{ p.title }}</div>
+                    <span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0"
+                          [class]="typeChipClass(p.contentType)">
+                      {{ p.contentType || 'post' }}
+                    </span>
+                  </div>
                   @if (p.targetKeyword) {
                     <div class="text-[10px] text-brand-600 mt-1 font-medium">🎯 {{ p.targetKeyword }}</div>
                   }
@@ -72,6 +98,27 @@ import { TasksService } from '../../../core/tasks.service';
                        [title]="p.publishedUrl">
                       ↗ {{ p.publishedUrl }}
                     </a>
+                  }
+                  @if (p.attachments?.length) {
+                    <div class="mt-1.5 space-y-1">
+                      @for (a of p.attachments || []; track a.publicId) {
+                        <div class="flex items-center gap-1.5 text-[10px] bg-white border border-ink-200 rounded px-1.5 py-1">
+                          <a [href]="a.url" target="_blank" rel="noopener"
+                             class="flex-1 text-ink-700 hover:text-brand-500 truncate font-medium"
+                             [title]="a.originalFilename || a.publicId">
+                            📎 {{ a.originalFilename || 'attachment' }}
+                          </a>
+                          <button type="button" class="text-ink-400 hover:text-danger-500 leading-none px-0.5"
+                                  (click)="removeAttachment(p, a)"
+                                  title="Remove attachment">×</button>
+                        </div>
+                      }
+                    </div>
+                  }
+                  @if (uploadingFor() === p._id) {
+                    <div class="text-[10px] text-brand-500 mt-1 font-medium">
+                      Uploading {{ uploadProgress() }}%…
+                    </div>
                   }
                   <div class="flex items-center justify-between mt-2 gap-1">
                     <select class="text-[10px] border border-ink-200 rounded px-1 py-0.5 bg-white flex-1"
@@ -110,6 +157,12 @@ import { TasksService } from '../../../core/tasks.service';
                             <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900"
                                     (click)="openDraftLinkModal(p)">
                               {{ p.briefUrl ? 'Edit draft link' : 'Add draft link' }}
+                            </button>
+                            <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900 disabled:opacity-50"
+                                    [disabled]="!cloudinary.isConfigured() || uploadingFor() === p._id"
+                                    [title]="cloudinary.isConfigured() ? '' : 'Cloudinary not configured'"
+                                    (click)="triggerAttachFile(p)">
+                              {{ uploadingFor() === p._id ? 'Uploading…' : 'Attach file' }}
                             </button>
                           }
                           <div class="my-1 border-t border-ink-100"></div>
@@ -238,13 +291,27 @@ import { TasksService } from '../../../core/tasks.service';
 })
 export class ClientContentTab implements OnChanges {
   @Input({ required: true }) clientId!: string;
+  @ViewChild('fileInput') fileInput?: ElementRef<HTMLInputElement>;
   private svc = inject(ContentService);
   private tasksSvc = inject(TasksService);
+  protected cloudinary = inject(CloudinaryService);
 
   pieces = signal<ContentPiece[]>([]);
   statuses: ContentStatus[] = CONTENT_STATUSES;
+  types: ContentPieceType[] = CONTENT_PIECE_TYPES;
 
-  newPiece: Partial<ContentPiece> = { title: '', targetKeyword: '', status: 'idea' };
+  newPiece: Partial<ContentPiece> = {
+    title: '',
+    targetKeyword: '',
+    status: 'idea',
+    contentType: 'post',
+  };
+
+  // Which piece the file input is bound to. Used to route the file
+  // through the upload flow to the correct content piece.
+  private attachTargetId: string | null = null;
+  uploadingFor = signal<string | null>(null);
+  uploadProgress = signal(0);
 
   // Published URL modal state
   publishModalPiece = signal<ContentPiece | null>(null);
@@ -286,9 +353,24 @@ export class ClientContentTab implements OnChanges {
   add() {
     if (!this.newPiece.title) return;
     this.svc.create({ ...this.newPiece, clientId: this.clientId }).subscribe(() => {
-      this.newPiece = { title: '', targetKeyword: '', status: 'idea' };
+      this.newPiece = {
+        title: '',
+        targetKeyword: '',
+        status: 'idea',
+        contentType: 'post',
+      };
       this.load();
     });
+  }
+
+  typeChipClass(t?: ContentPieceType): string {
+    switch (t) {
+      case 'page':
+        return 'bg-brand-500/10 text-brand-700';
+      case 'post':
+      default:
+        return 'bg-sky-100 text-sky-700';
+    }
   }
 
   changeStatus(p: ContentPiece, status: ContentStatus) {
@@ -489,6 +571,88 @@ export class ClientContentTab implements OnChanges {
         const m = err?.error?.message;
         this.draftLinkError.set(
           Array.isArray(m) ? m.join(', ') : m || 'Could not save',
+        );
+      },
+    });
+  }
+
+  // --- Attachments ------------------------------------------------------
+
+  triggerAttachFile(p: ContentPiece) {
+    if (!p._id || !this.fileInput) return;
+    if (!this.cloudinary.isConfigured()) {
+      this.flashToast(
+        'error',
+        'Cloudinary is not configured — cannot upload files.',
+      );
+      return;
+    }
+    this.attachTargetId = p._id;
+    this.menuOpenId.set(null);
+    // Reset the input so picking the same file twice still fires (change).
+    this.fileInput.nativeElement.value = '';
+    this.fileInput.nativeElement.click();
+  }
+
+  async onFilePicked(ev: Event) {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    const pieceId = this.attachTargetId;
+    if (!file || !pieceId) return;
+    this.uploadingFor.set(pieceId);
+    this.uploadProgress.set(0);
+    try {
+      const result = await this.cloudinary.upload(file, (pct) =>
+        this.uploadProgress.set(pct),
+      );
+      this.svc
+        .addAttachment(pieceId, {
+          publicId: result.publicId,
+          url: result.url,
+          thumbnailUrl: result.thumbnailUrl,
+          format: result.format,
+          width: result.width,
+          height: result.height,
+          bytes: result.bytes,
+          resourceType: result.resourceType,
+          originalFilename: result.originalFilename,
+        })
+        .subscribe({
+          next: () => {
+            this.uploadingFor.set(null);
+            this.uploadProgress.set(0);
+            this.attachTargetId = null;
+            this.flashToast('success', 'File attached.');
+            this.load();
+          },
+          error: (err) => {
+            this.uploadingFor.set(null);
+            this.attachTargetId = null;
+            const m = err?.error?.message;
+            this.flashToast(
+              'error',
+              `Attach failed: ${Array.isArray(m) ? m.join(', ') : m || 'unknown error'}`,
+            );
+          },
+        });
+    } catch (err: unknown) {
+      this.uploadingFor.set(null);
+      this.attachTargetId = null;
+      const msg = err instanceof Error ? err.message : 'Upload failed';
+      this.flashToast('error', `Upload failed: ${msg}`);
+    }
+  }
+
+  removeAttachment(p: ContentPiece, a: ContentAttachment) {
+    if (!p._id) return;
+    if (!confirm(`Remove ${a.originalFilename || 'this file'}?`)) return;
+    this.svc.removeAttachment(p._id, a.publicId).subscribe({
+      next: () => this.load(),
+      error: (err) => {
+        const m = err?.error?.message;
+        this.flashToast(
+          'error',
+          `Remove failed: ${Array.isArray(m) ? m.join(', ') : m || 'unknown error'}`,
         );
       },
     });

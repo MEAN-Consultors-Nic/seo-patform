@@ -1,7 +1,7 @@
 import { forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { ContentStatus } from '@seo/shared';
+import { ContentAttachment, ContentStatus } from '@seo/shared';
 import { ContentPiece, ContentPieceDocument } from './content-piece.schema';
 import { UpsertContentDto } from './dto/upsert-content.dto';
 import { ClientsService } from '../clients/clients.service';
@@ -122,5 +122,51 @@ export class ContentService {
     const deleted = await this.model.findByIdAndDelete(id).lean().exec();
     if (!deleted) throw new NotFoundException(`Content ${id} not found`);
     return { deleted: true };
+  }
+
+  async addAttachment(
+    id: string,
+    attachment: Partial<ContentAttachment>,
+    user?: AuthenticatedUser,
+  ) {
+    await this.ensureAccessToContent(id, user);
+    if (!attachment.publicId || !attachment.url) {
+      throw new NotFoundException('Attachment missing publicId or url');
+    }
+    const updated = await this.model
+      .findByIdAndUpdate(
+        id,
+        {
+          $push: {
+            attachments: {
+              ...attachment,
+              uploadedAt: new Date(),
+            },
+          },
+        },
+        { new: true },
+      )
+      .lean()
+      .exec();
+    if (!updated) throw new NotFoundException(`Content ${id} not found`);
+    return normalizeStatus(updated);
+  }
+
+  async removeAttachment(
+    id: string,
+    publicId: string,
+    user?: AuthenticatedUser,
+  ) {
+    await this.ensureAccessToContent(id, user);
+    const updated = await this.model
+      .findByIdAndUpdate(
+        id,
+        { $pull: { attachments: { publicId } } },
+        { new: true },
+      )
+      .lean()
+      .exec();
+    if (!updated) throw new NotFoundException(`Content ${id} not found`);
+    return normalizeStatus(updated);
   }
 }

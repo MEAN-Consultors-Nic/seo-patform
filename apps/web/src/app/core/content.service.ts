@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ContentPiece, ContentStatus } from '@seo/shared';
+import { ContentAttachment, ContentPiece, ContentStatus } from '@seo/shared';
 import { API_BASE_URL } from './api.config';
 
 @Injectable({ providedIn: 'root' })
@@ -26,5 +26,20 @@ export class ContentService {
 
   remove(id: string) {
     return this.http.delete(`${this.base}/content/${id}`);
+  }
+
+  addAttachment(id: string, attachment: Partial<ContentAttachment>): Observable<ContentPiece> {
+    return this.http.post<ContentPiece>(
+      `${this.base}/content/${id}/attachments`,
+      attachment,
+    );
+  }
+
+  removeAttachment(id: string, publicId: string): Observable<ContentPiece> {
+    return this.http.request<ContentPiece>(
+      'delete',
+      `${this.base}/content/${id}/attachments`,
+      { body: { publicId } },
+    );
   }
 }
