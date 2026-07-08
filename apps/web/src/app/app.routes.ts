@@ -154,14 +154,6 @@ export const appRoutes: Route[] = [
           ),
       },
       {
-        path: 'settings/supervisor',
-        canActivate: [roleGuard('root', 'owner', 'admin')],
-        loadComponent: () =>
-          import('./features/settings/supervisor-settings.component').then(
-            (m) => m.SupervisorSettingsComponent,
-          ),
-      },
-      {
         path: 'users',
         canActivate: [roleGuard('root', 'owner', 'admin')],
         loadComponent: () =>

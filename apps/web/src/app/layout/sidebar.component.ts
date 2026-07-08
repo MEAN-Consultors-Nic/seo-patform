@@ -323,7 +323,6 @@ export class SidebarComponent {
           icon: 'clipboard-list',
           roles: ['root', 'owner', 'admin'],
         },
-        { route: '/settings/supervisor', label: 'Supervisor', icon: 'shield' },
       ],
     },
     {

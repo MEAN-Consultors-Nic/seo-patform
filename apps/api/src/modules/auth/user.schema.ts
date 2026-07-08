@@ -31,6 +31,7 @@ export class User {
       'admin',
       'manager',
       'strategist',
+      'supervisor',
       'client',
       'seo-manager',
       'seo-strategist',

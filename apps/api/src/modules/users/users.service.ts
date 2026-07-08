@@ -10,10 +10,18 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { LEGACY_ROLE_MAP, UserRole } from '@seo/shared';
+import { randomBytes } from 'crypto';
 import { User, UserDocument } from '../auth/user.schema';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ActivityLogService } from '../activity-log/activity-log.service';
+
+interface LegacySupervisorDoc {
+  _id: Types.ObjectId;
+  name: string;
+  active: boolean;
+  createdAt?: Date;
+}
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -21,6 +29,8 @@ export class UsersService implements OnModuleInit {
 
   constructor(
     @InjectModel(User.name) private readonly model: Model<UserDocument>,
+    @InjectModel('Supervisor')
+    private readonly supervisorModel: Model<LegacySupervisorDoc>,
     private readonly audit: ActivityLogService,
   ) {}
 
@@ -45,10 +55,59 @@ export class UsersService implements OnModuleInit {
           );
         }
       }
+      await this.migrateLegacySupervisors();
     } catch (e) {
       this.logger.error(
         `Role migration failed: ${(e as Error).message}`,
         (e as Error).stack,
+      );
+    }
+  }
+
+  /**
+   * One-shot migration from the legacy PIN-gated Supervisor collection
+   * into standard User docs with role='supervisor'. Each row maps to
+   * a User with a placeholder email (name-slug@supervisor.local) and
+   * a random temporary password — the admin resets it from the Users
+   * page. Legacy Supervisor docs are left in place for audit; the
+   * Supervisor Settings tab + /supervisor portal are being retired.
+   */
+  private async migrateLegacySupervisors(): Promise<void> {
+    let supervisors: LegacySupervisorDoc[];
+    try {
+      supervisors = await this.supervisorModel.find().lean().exec();
+    } catch {
+      return;
+    }
+    if (!supervisors?.length) return;
+    let migrated = 0;
+    for (const s of supervisors) {
+      const slug = (s.name || '')
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 40) || 'supervisor';
+      const email = `${slug}@supervisor.local`;
+      const exists = await this.model.exists({ email });
+      if (exists) continue;
+      const tempPassword = randomBytes(9).toString('base64url');
+      const passwordHash = await bcrypt.hash(tempPassword, 10);
+      await this.model.create({
+        email,
+        name: s.name || slug,
+        role: 'supervisor',
+        active: s.active !== false,
+        passwordHash,
+      });
+      migrated++;
+      this.logger.log(
+        `Migrated legacy supervisor "${s.name}" -> user ${email} (temp password: ${tempPassword} — reset via Users page).`,
+      );
+    }
+    if (migrated > 0) {
+      this.logger.log(
+        `Migrated ${migrated} legacy supervisor(s) to standard User docs.`,
       );
     }
   }

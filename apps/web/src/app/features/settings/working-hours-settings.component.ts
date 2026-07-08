@@ -45,9 +45,6 @@ const WEEKDAYS = [
             Onboarding
           </a>
           <a routerLink="/settings/activity-log" routerLinkActive="tab-active" class="tab">Activity Log</a>
-          <a routerLink="/settings/supervisor" routerLinkActive="tab-active" class="tab">
-            Supervisor
-          </a>
         </div>
       </nav>
 

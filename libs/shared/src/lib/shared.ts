@@ -25,6 +25,7 @@ export type UserRole =
   | 'admin'
   | 'manager'
   | 'strategist'
+  | 'supervisor'
   | 'client';
 
 export const USER_ROLES: UserRole[] = [
@@ -33,6 +34,7 @@ export const USER_ROLES: UserRole[] = [
   'admin',
   'manager',
   'strategist',
+  'supervisor',
   'client',
 ];
 
@@ -42,16 +44,22 @@ export const USER_ROLE_LABELS: Record<UserRole, string> = {
   'admin': 'Admin',
   'manager': 'Manager',
   'strategist': 'Strategist',
+  'supervisor': 'Supervisor',
   'client': 'Client (portal)',
 };
 
-/** Roles allowed to sign into the internal app. `client` is portal-only. */
+/**
+ * Roles allowed to sign into the internal app. `client` is portal-only.
+ * `supervisor` is a read-only observer role — replaces the legacy
+ * PIN-gated /supervisor flow with a standard email/password login.
+ */
 export const INTERNAL_APP_ROLES: UserRole[] = [
   'root',
   'owner',
   'admin',
   'manager',
   'strategist',
+  'supervisor',
 ];
 
 /**
