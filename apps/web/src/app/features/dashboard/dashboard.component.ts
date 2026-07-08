@@ -1,609 +1,367 @@
-import { CommonModule, DatePipe } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { Task, TimeBlock } from '@seo/shared';
-import { ClientsService, ClientWithStats } from '../../core/clients.service';
-import {
-  PriorityQueueItem,
-  PriorityQueueResponse,
-  PriorityQueueService,
-} from '../../core/priority-queue.service';
-import { TasksService } from '../../core/tasks.service';
-import { TimeBlocksService } from '../../core/time-blocks.service';
+import { PipelineStats } from '@seo/shared';
+import { AuthService } from '../../core/auth.service';
+import { ClientsService } from '../../core/clients.service';
+import { PipelineService } from '../../core/pipeline.service';
 
-interface PendingByClient {
-  clientId: string;
-  name: string;
-  tier?: 'A' | 'B' | 'C';
-  logoUrl?: string;
-  pending: number;
-  inProgress: number;
-  blocked: number;
-}
-
-interface RecentActivity {
-  taskId: string;
-  title: string;
-  clientId: string;
-  clientName: string;
-  tier?: 'A' | 'B' | 'C';
-  category: string;
-  when: string;
-}
-
+/**
+ * Agency ops dashboard — the front door of the platform. This is
+ * intentionally broader than SEO now: it surfaces client counts across
+ * SEO / PPC / Websites and links out to Pipeline. Older widgets
+ * (priority queue, task rollup, today's plan) were removed on purpose
+ * — they belong on their own pages, not on the home screen.
+ */
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterLink, DatePipe],
+  imports: [CommonModule, RouterLink],
   template: `
-    <div class="page-container">
-      <header class="page-header">
-        <div>
-          <h1 class="page-title">Dashboard</h1>
-          <p class="page-subtitle">Overview of your SEO portfolio</p>
-        </div>
-      </header>
+    <div class="min-h-full bg-[#FDF7F3]">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
 
-      <!-- Today's priority queue. Computed daily score across cycle
-           urgency, GSC momentum (week-over-week) and pending high-priority
-           work. Aimed at the 10-15min daily triage of which clients
-           deserve attention first. -->
-      <section class="card mb-4">
-        <header class="flex items-center justify-between mb-3">
+        <!-- Top command bar -->
+        <div class="mb-6 flex items-center gap-2 sm:gap-3">
+          <div class="flex-1 relative">
+            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            </span>
+            <input
+              type="text"
+              placeholder="Search clients, plans, tools…"
+              class="w-full rounded-2xl border border-ink-200 bg-white pl-10 pr-16 py-2.5 text-sm text-ink-900 placeholder-ink-400 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+            />
+            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-ink-400 border border-ink-200 rounded px-1.5 py-0.5 bg-ink-50">
+              ⌘K
+            </span>
+          </div>
+          <button type="button" title="Notifications"
+                  class="w-10 h-10 rounded-xl bg-white border border-ink-200 shadow-sm flex items-center justify-center text-ink-600 hover:text-ink-900 hover:border-ink-300 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          </button>
+          <button type="button" title="Toggle theme (coming soon)"
+                  class="w-10 h-10 rounded-xl bg-white border border-ink-200 shadow-sm flex items-center justify-center text-ink-600 hover:text-ink-900 hover:border-ink-300 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+          <button type="button" title="Filters"
+                  class="w-10 h-10 rounded-xl bg-white border border-ink-200 shadow-sm flex items-center justify-center text-ink-600 hover:text-ink-900 hover:border-ink-300 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          </button>
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white text-sm font-bold shadow-sm">
+            {{ userInitial() }}
+          </div>
+        </div>
+
+        <!-- Greeting hero -->
+        <div class="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
           <div>
-            <h2 class="text-sm font-bold text-ink-900 flex items-center gap-2">
-              <span class="text-base">⚡</span>
-              <span>Today's priority queue</span>
-            </h2>
-            <p class="text-[11px] text-ink-500 mt-0.5">
-              Ranked by cycle urgency, week-over-week GSC drop and pending high-priority work.
+            <h1 class="text-2xl sm:text-[28px] font-bold tracking-tight text-ink-900">
+              {{ greetingPrefix() }}, {{ firstName() }} <span aria-hidden="true">👋</span>
+              <span> let's make today </span>
+              <span class="bg-gradient-to-r from-sky-500 to-sky-600 bg-clip-text text-transparent">spearhead-sharp</span>.
+            </h1>
+            <p class="mt-1.5 text-sm text-ink-500">
+              Here's where everything lives. Pulse and Pipeline are one tap away.
             </p>
           </div>
-          @if (priorityQueue(); as q) {
-            @if (q.hasStaleMomentum) {
-              <span class="text-[10px] text-ink-400 italic"
-                    title="At least one client's GSC momentum was refreshed today; others are still stale.">
-                Momentum partially refreshed
-              </span>
-            }
-          }
-        </header>
-
-        @if (priorityLoading()) {
-          <div class="py-6 text-center text-xs text-ink-500">
-            Computing scores — first daily run pulls fresh GSC data, can take a few seconds.
-          </div>
-        } @else if (topPriorityItems().length === 0) {
-          <div class="py-6 text-center text-xs text-ink-500">
-            No clients need urgent attention right now. Nice. 🎉
-          </div>
-        } @else {
-          <ol class="space-y-2">
-            @for (it of topPriorityItems(); track it.clientId; let i = $index) {
-              <li>
-                <a [routerLink]="['/clients', it.clientId]"
-                   class="flex items-start gap-3 p-3 rounded-md border border-ink-200 bg-white hover:border-brand-500 hover:shadow-sm transition-all">
-                  <div class="text-lg font-bold text-ink-400 w-6 text-center flex-shrink-0">
-                    {{ i + 1 }}
-                  </div>
-                  @if (it.logoUrl) {
-                    <img [src]="it.logoUrl" [alt]="it.name"
-                         class="w-10 h-10 rounded-md object-contain bg-white border border-ink-200 flex-shrink-0" />
-                  } @else {
-                    <div class="w-10 h-10 rounded-md bg-ink-100 flex items-center justify-center text-sm font-bold text-ink-600 flex-shrink-0">
-                      {{ it.name.charAt(0) }}
-                    </div>
-                  }
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-baseline gap-2 flex-wrap">
-                      <span class="text-sm font-bold text-ink-900 truncate">{{ it.name }}</span>
-                      <span [class]="tierClass(it.tier)">{{ it.tier }}</span>
-                    </div>
-                    @if (it.reasons.length) {
-                      <ul class="mt-1 space-y-0.5">
-                        @for (r of it.reasons.slice(0, 2); track r.tag) {
-                          <li class="text-[11px] text-ink-600 leading-snug">
-                            <span class="font-semibold text-ink-700">{{ r.tag }}:</span>
-                            {{ r.detail }}
-                          </li>
-                        }
-                      </ul>
-                    }
-                  </div>
-                  <div [class]="'flex-shrink-0 px-2.5 py-1 rounded-md text-sm font-bold ' + scoreClass(it.score)">
-                    {{ it.score }}
-                  </div>
-                </a>
-              </li>
-            }
-          </ol>
-        }
-      </section>
-
-      <div class="card mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div class="text-xs font-semibold text-ink-500 uppercase tracking-wider">Portfolio</div>
-          <div class="text-lg font-bold text-ink-900">{{ clientsWithStats().length }} active clients</div>
-        </div>
-        <a routerLink="/reports" class="btn-primary text-xs sm:text-sm">Reports</a>
-      </div>
-
-      <!-- Tier stats -->
-      <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-4">
-        @for (s of stats(); track s._id) {
-          <div class="stat-card">
-            <div class="flex items-center justify-between">
-              <span class="stat-label">Tier {{ s._id }}</span>
-              <span [class]="'tier-' + s._id">{{ s._id }}</span>
-            </div>
-            <div class="stat-value">{{ s.count }}</div>
-            <div class="text-xs text-ink-500 mt-1">
-              <span class="font-semibold text-ink-700">{{ s.totalHours }}h</span> / week
-            </div>
-          </div>
-        }
-
-        @if (totalHours()) {
-          <div class="stat-card bg-ink-900 text-white border-ink-900">
-            <span class="stat-label !text-ink-300">Total capacity</span>
-            <div class="text-2xl font-bold text-white mt-1">{{ totalHours() }}h</div>
-            <div class="text-xs text-ink-300 mt-1">billable / week</div>
-          </div>
-        }
-      </div>
-
-      <!-- Today's plan -->
-      <div class="card mb-4">
-        <div class="flex items-center justify-between mb-3">
-          <div>
-            <h3 class="text-sm font-semibold text-ink-900">Today's plan</h3>
-            <p class="text-[11px] text-ink-500">{{ todayDateLabel() }}</p>
+          <div class="inline-flex items-center gap-2 self-start sm:self-auto rounded-full bg-white border border-ink-200 px-3.5 py-1.5 text-xs font-semibold text-ink-700 shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-sky-500"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            {{ dateLabel() }}
           </div>
         </div>
 
-        @if (loadingToday()) {
-          <div class="text-center py-8 text-ink-400 italic text-sm">Loading…</div>
-        } @else if (todayBlocks().length === 0) {
-          <div class="text-center py-8">
-            <div class="text-3xl mb-2">📅</div>
-            <div class="text-sm text-ink-500">
-              No blocks scheduled for today.
-            </div>
-          </div>
-        } @else {
-          <div class="space-y-2">
-            @for (b of todayBlocks(); track b._id) {
-              <div [class]="'flex flex-wrap items-center gap-3 rounded-md border px-3 py-2.5 transition ' +
-                            (b.status === 'completed' ? 'border-positive-500/30 bg-positive-100/30' :
-                             b.status === 'in_progress' ? 'border-sky-500 bg-sky-50' :
-                             'border-ink-200 hover:bg-ink-50')">
-                <div class="text-center flex-shrink-0 w-14">
-                  <div class="text-xs font-bold text-ink-900">{{ b.startTime }}</div>
-                  <div class="text-[10px] text-ink-400">{{ formatDuration(b.durationMinutes) }}</div>
-                </div>
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <span [class]="'tier-' + clientTier(b)">{{ clientTier(b) }}</span>
-                    <span class="font-semibold text-ink-900 text-sm truncate">{{ clientName(b) }}</span>
-                  </div>
-                  @if (taskTitle(b)) {
-                    <div class="text-xs text-ink-500 truncate mt-0.5">{{ taskTitle(b) }}</div>
-                  } @else {
-                    <div class="text-xs text-ink-400 italic mt-0.5">Generic block</div>
-                  }
-                </div>
-                <div class="flex items-center gap-1 flex-shrink-0 w-full sm:w-auto justify-end">
-                  @if (b.status === 'completed') {
-                    <span class="text-positive-500 text-xs font-bold">✓ Done</span>
-                  } @else {
-                    @if (b.status === 'planned') {
-                      <button class="text-[11px] font-semibold px-2 py-1 rounded border border-ink-200 hover:border-sky-500 hover:text-sky-600 transition"
-                              (click)="startBlock(b)">▶ Start</button>
-                    }
-                    <button class="text-[11px] font-semibold px-2 py-1 rounded border border-ink-200 hover:border-positive-500 hover:text-positive-500 transition"
-                            (click)="completeBlock(b)">✓ Done</button>
-                  }
-                </div>
+        <!-- KPI row -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <!-- Active clients -->
+          <div class="rounded-2xl bg-white border border-ink-200 shadow-sm hover:shadow-md transition p-5">
+            <div class="flex items-start justify-between mb-4">
+              <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center text-white shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
               </div>
-            }
+              <span class="text-[10px] uppercase tracking-wider font-semibold text-ink-400">Portfolio</span>
+            </div>
+            <div class="text-4xl font-bold text-ink-900 leading-none">{{ activeClientsDisplay() }}</div>
+            <div class="mt-1 text-sm font-semibold text-ink-700">Active clients</div>
+            <a routerLink="/clients"
+               class="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-sky-600 hover:text-sky-700">
+              unique clients
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
+            </a>
           </div>
-          <div class="mt-3 pt-3 border-t border-ink-100 text-xs text-ink-500 flex flex-wrap items-center justify-between gap-2">
-            <span>
-              <strong class="text-ink-900">{{ todayPlannedMinutes() / 60 | number: '1.1-1' }}h</strong> planned
-              · <strong class="text-positive-500">{{ todayCompletedMinutes() / 60 | number: '1.1-1' }}h</strong> completed
+
+          <!-- Active PPC clients -->
+          <!-- TODO: filter Clients by PPC service line once packages carry a
+               service classifier. For now this is a placeholder. -->
+          <div class="rounded-2xl bg-white border border-ink-200 shadow-sm hover:shadow-md transition p-5">
+            <div class="flex items-start justify-between mb-4">
+              <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              </div>
+              <span class="text-[10px] uppercase tracking-wider font-semibold text-ink-400">Paid</span>
+            </div>
+            <div class="text-4xl font-bold text-ink-900 leading-none">—</div>
+            <div class="mt-1 text-sm font-semibold text-ink-700">Active PPC clients</div>
+            <span class="mt-3 inline-flex items-center gap-1 rounded-full bg-brand-50 text-brand-700 text-[11px] font-semibold px-2 py-0.5">
+              Google Ads
             </span>
-            <span class="text-ink-400">{{ todayBlocks().length }} block(s)</span>
           </div>
-        }
-      </div>
 
-      <!-- Portfolio health -->
-      <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-        <div class="stat-card">
-          <span class="stat-label">Pending work</span>
-          <div class="text-2xl font-bold text-ink-900 mt-1">{{ totals().pending + totals().inProgress }}</div>
-          <div class="text-xs text-ink-500 mt-1">
-            <span class="text-ink-600 font-semibold">{{ totals().inProgress }}</span> in progress
-            · <span class="text-ink-600 font-semibold">{{ totals().pending }}</span> pending
+          <!-- Active SEO plans -->
+          <!-- TODO: replace with a count of active SEO plans (packages) once
+               packages carry a service classifier. -->
+          <div class="rounded-2xl bg-white border border-ink-200 shadow-sm hover:shadow-md transition p-5">
+            <div class="flex items-start justify-between mb-4">
+              <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-positive-500 to-emerald-600 flex items-center justify-center text-white shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+              </div>
+              <span class="text-[10px] uppercase tracking-wider font-semibold text-ink-400">Organic</span>
+            </div>
+            <div class="text-4xl font-bold text-ink-900 leading-none">—</div>
+            <div class="mt-1 text-sm font-semibold text-ink-700">Active SEO plans</div>
+            <span class="mt-3 inline-flex items-center gap-1 rounded-full bg-positive-100 text-positive-500 text-[11px] font-semibold px-2 py-0.5">
+              Search visibility
+            </span>
+          </div>
+
+          <!-- Websites -->
+          <!-- TODO: wire once we track site builds explicitly (WP / Shopify /
+               custom). Placeholder for now. -->
+          <div class="rounded-2xl bg-white border border-ink-200 shadow-sm hover:shadow-md transition p-5">
+            <div class="flex items-start justify-between mb-4">
+              <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-white shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              </div>
+              <span class="text-[10px] uppercase tracking-wider font-semibold text-ink-400">Build</span>
+            </div>
+            <div class="text-4xl font-bold text-ink-900 leading-none">—</div>
+            <div class="mt-1 text-sm font-semibold text-ink-700">Websites</div>
+            <span class="mt-3 inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-700 text-[11px] font-semibold px-2 py-0.5">
+              active builds
+            </span>
           </div>
         </div>
 
-        <div class="stat-card">
-          <span class="stat-label">Blocked</span>
-          <div class="text-2xl font-bold mt-1" [ngClass]="totals().blocked > 0 ? 'text-danger-500' : 'text-ink-300'">
-            {{ totals().blocked }}
-          </div>
-          <div class="text-xs text-ink-500 mt-1">
-            @if (totals().blocked > 0) {
-              Tasks need unblocking
-            } @else {
-              Nothing blocked
-            }
-          </div>
+        <!-- WORK THE BOOK section -->
+        <div class="flex items-center gap-2 mb-3">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-brand-500"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <span class="text-[11px] uppercase tracking-[0.14em] font-bold text-ink-500">Work the book</span>
         </div>
 
-        <div class="stat-card">
-          <span class="stat-label">Completed (last 30d)</span>
-          <div class="text-2xl font-bold text-positive-500 mt-1">{{ totals().completed }}</div>
-          <div class="text-xs text-ink-500 mt-1">Tasks closed in the last month</div>
-        </div>
-      </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
+          <!-- Pipeline card -->
+          <a routerLink="/pipeline"
+             class="group rounded-2xl bg-white border border-ink-200 shadow-sm hover:shadow-md transition p-5 sm:p-6 flex flex-col">
+            <div class="flex items-start justify-between mb-4">
+              <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center text-white shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+              </div>
+              <span class="text-ink-400 group-hover:text-ink-700 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
+              </span>
+            </div>
+            <h3 class="text-lg font-bold text-ink-900">Pipeline</h3>
+            <p class="mt-1 text-sm text-ink-500">Your live sales pipeline, deal by deal.</p>
+            <div class="mt-5 grid grid-cols-2 gap-3">
+              <div class="rounded-xl bg-ink-50 border border-ink-100 p-3">
+                <div class="text-2xl font-bold text-ink-900 leading-none">{{ openDealsDisplay() }}</div>
+                <div class="mt-1 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Open deals</div>
+              </div>
+              <div class="rounded-xl bg-ink-50 border border-ink-100 p-3">
+                <div class="text-2xl font-bold text-ink-900 leading-none">{{ pipelineMrrDisplay() }}</div>
+                <div class="mt-1 text-[11px] font-semibold uppercase tracking-wider text-ink-500">In play (MRR)</div>
+              </div>
+            </div>
+          </a>
 
-      <!-- Two columns: Pending by client + Recent activity -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <!-- Pending by client (2 cols wide) -->
-        <div class="lg:col-span-2 card">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="text-sm font-semibold text-ink-900">Pending work by client</h3>
-            <a routerLink="/clients" class="text-xs text-brand-500 hover:text-brand-600 font-semibold">View all →</a>
-          </div>
-          @if (pendingByClient().length === 0) {
-            <div class="text-center py-10 text-ink-400 italic text-sm">
-              @if (loading()) {
-                Loading…
+          <div class="flex flex-col gap-4">
+            <!-- Needs attention -->
+            <div class="rounded-2xl bg-white border border-ink-200 shadow-sm p-5 sm:p-6">
+              <div class="flex items-start justify-between gap-3 mb-3">
+                <div class="flex items-center gap-2.5">
+                  <span class="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  </span>
+                  <h3 class="text-base font-bold text-ink-900">Needs attention today</h3>
+                </div>
+                <span class="rounded-full bg-ink-100 text-ink-700 text-xs font-bold px-2.5 py-0.5">
+                  {{ needsAttentionCount() }}
+                </span>
+              </div>
+              @if (needsAttentionCount() === 0) {
+                <p class="text-sm text-ink-500">
+                  All clear — every client is healthy today.
+                </p>
               } @else {
-                🎉 No pending tasks — everything is done.
+                <p class="text-sm text-ink-500">
+                  Clients to touch before end of day.
+                </p>
               }
             </div>
-          } @else {
-            <div class="space-y-2">
-              @for (p of pendingByClient(); track p.clientId) {
-                <a [routerLink]="['/clients', p.clientId]"
-                   class="block rounded-md border border-ink-200 hover:border-brand-500/40 hover:shadow-card transition p-3">
-                  <div class="flex items-center justify-between gap-3">
-                    <div class="flex items-center gap-3 min-w-0 flex-1">
-                      @if (p.logoUrl) {
-                        <img [src]="p.logoUrl" [alt]="p.name"
-                             class="w-9 h-9 rounded-md object-contain bg-white border border-ink-200 flex-shrink-0" />
-                      } @else {
-                        <div class="w-9 h-9 rounded-md bg-ink-100 border border-ink-200 flex items-center justify-center text-xs font-bold text-ink-500 flex-shrink-0">
-                          {{ p.name.charAt(0) }}
-                        </div>
-                      }
-                      <div class="min-w-0 flex-1">
-                        <div class="flex items-center gap-2">
-                          <span class="font-semibold text-ink-900 text-sm truncate">{{ p.name }}</span>
-                          <span [class]="'tier-' + p.tier + ' flex-shrink-0'">{{ p.tier }}</span>
-                        </div>
-                        <div class="mt-1 flex items-center gap-2 text-[11px] text-ink-500">
-                          @if (p.pending > 0) {
-                            <span><strong class="text-ink-700">{{ p.pending }}</strong> pending</span>
-                          }
-                          @if (p.inProgress > 0) {
-                            @if (p.pending > 0) { <span class="text-ink-300">·</span> }
-                            <span class="text-sky-600"><strong>{{ p.inProgress }}</strong> in progress</span>
-                          }
-                          @if (p.blocked > 0) {
-                            <span class="text-ink-300">·</span>
-                            <span class="text-danger-500"><strong>{{ p.blocked }}</strong> blocked</span>
-                          }
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </a>
-              }
+
+            <!-- LATEST FROM GOOGLE -->
+            <!-- NOTE: hardcoded placeholder. When we wire an RSS/JSON feed
+                 (Search Central / Ads blog), it would live here. -->
+            <div class="rounded-2xl bg-white border border-ink-200 shadow-sm overflow-hidden">
+              <div class="px-5 pt-4 pb-2 flex items-center justify-between border-b border-ink-100">
+                <div class="flex items-center gap-1.5">
+                  <span class="w-2.5 h-2.5 rounded-full bg-danger-500/70"></span>
+                  <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                  <span class="w-2.5 h-2.5 rounded-full bg-positive-500/70"></span>
+                </div>
+                <span class="text-[10px] uppercase tracking-[0.14em] font-bold text-ink-400">Latest from Google</span>
+              </div>
+              <div class="p-5">
+                <h4 class="text-sm font-bold text-ink-900 leading-snug">
+                  New Performance Max asset reporting rolls out
+                </h4>
+                <p class="mt-1.5 text-xs text-ink-500 leading-relaxed">
+                  Advertisers can now see conversions attributed to individual creative assets inside Performance Max campaigns — clearer signal for what's actually pulling weight.
+                </p>
+                <button
+                  type="button"
+                  (click)="turnIntoClientEmail()"
+                  class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-brand-500 text-white text-xs font-semibold px-3 py-2 hover:bg-brand-600 transition shadow-sm">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                  Turn into client email
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- REPORTING & DELIVERY section -->
+        <div class="flex items-center gap-2 mb-3">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-sky-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          <span class="text-[11px] uppercase tracking-[0.14em] font-bold text-ink-500">Reporting &amp; delivery</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          @for (p of comingSoonCards; track p.title) {
+            <div class="rounded-2xl bg-white border border-ink-200 shadow-sm p-5">
+              <div class="flex items-center justify-between mb-3">
+                <div class="w-10 h-10 rounded-xl bg-ink-100 text-ink-500 flex items-center justify-center">
+                  <span [innerHTML]="p.iconHtml"></span>
+                </div>
+                <span class="rounded-full bg-sky-100 text-sky-600 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5">
+                  Coming soon
+                </span>
+              </div>
+              <h4 class="text-sm font-bold text-ink-900">{{ p.title }}</h4>
+              <p class="mt-1 text-xs text-ink-500 leading-relaxed">{{ p.blurb }}</p>
             </div>
           }
         </div>
 
-        <!-- Recent activity -->
-        <div class="card">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="text-sm font-semibold text-ink-900">Recent activity</h3>
-            <span class="text-[10px] uppercase tracking-wider text-ink-400 font-semibold">{{ recentActivity().length }} latest</span>
-          </div>
-          @if (recentActivity().length === 0) {
-            <div class="text-center py-8 text-ink-400 italic text-xs">
-              No completed tasks yet.
-            </div>
-          } @else {
-            <ul class="space-y-2">
-              @for (r of recentActivity(); track r.taskId) {
-                <li class="border-l-2 border-positive-500 pl-3 py-1">
-                  <a [routerLink]="['/clients', r.clientId]" class="block hover:opacity-80">
-                    <div class="text-[11px] text-ink-500 flex items-center gap-1.5">
-                      <span [class]="'tier-' + r.tier">{{ r.tier }}</span>
-                      <span class="font-semibold text-ink-700 truncate">{{ r.clientName }}</span>
-                      <span class="text-ink-300">·</span>
-                      <span class="text-ink-400">{{ r.when | date: 'MMM d' }}</span>
-                    </div>
-                    <div class="text-sm text-ink-900 leading-snug mt-0.5">{{ r.title }}</div>
-                    <div class="text-[10px] text-ink-400 mt-0.5 uppercase tracking-wider">{{ r.category }}</div>
-                  </a>
-                </li>
-              }
-            </ul>
-          }
-        </div>
       </div>
     </div>
   `,
 })
 export class DashboardComponent implements OnInit {
   private clientsSvc = inject(ClientsService);
-  private tasksSvc = inject(TasksService);
-  private blocksSvc = inject(TimeBlocksService);
-  private prioritySvc = inject(PriorityQueueService);
+  private pipelineSvc = inject(PipelineService);
+  private auth = inject(AuthService);
 
-  priorityQueue = signal<PriorityQueueResponse | null>(null);
-  priorityLoading = signal(true);
+  activeClientCount = signal<number | null>(null);
+  pipelineStats = signal<PipelineStats | null>(null);
 
-  stats = signal<Array<{ _id: string; count: number; totalHours: number }>>([]);
-  totalHours = signal<number>(0);
+  // Placeholder — future ops-digests module (e.g. flagged accounts,
+  // overdue reports, silent PPC accounts) will populate this signal.
+  needsAttentionCount = signal<number>(0);
 
-  clientsWithStats = signal<ClientWithStats[]>([]);
-  /**
-   * Recent tasks across all client portfolios — used by the pending-
-   * by-client, recent-activity and totals widgets. Loaded once at
-   * mount and covers a rolling 30-day window; completed items outside
-   * that window drop off naturally.
-   */
-  recentTasks = signal<Task[]>([]);
-  todayBlocks = signal<TimeBlock[]>([]);
-  loading = signal(true);
-  loadingToday = signal(true);
-
-  Math = Math;
-
-  // --- Derived data ---------------------------------------------------------
-
-  totals = computed(() => {
-    const tasks = this.recentTasks();
-    let completed = 0;
-    let pending = 0;
-    let inProgress = 0;
-    let blocked = 0;
-    for (const t of tasks) {
-      if (t.status === 'pending') pending++;
-      else if (t.status === 'in_progress') inProgress++;
-      else if (t.status === 'blocked') blocked++;
-      else if (t.status === 'completed') completed++;
-    }
-    return { completed, pending, inProgress, blocked };
+  firstName = computed(() => {
+    const name = this.auth.user()?.name;
+    if (!name) return 'there';
+    return name.split(' ')[0] || 'there';
   });
 
-  pendingByClient = computed<PendingByClient[]>(() => {
-    const tasks = this.recentTasks();
-    const tasksByClient = new Map<string, { pending: number; inProgress: number; blocked: number }>();
-    for (const t of tasks) {
-      const id = typeof t.clientId === 'string' ? t.clientId : String(t.clientId);
-      const entry =
-        tasksByClient.get(id) || { pending: 0, inProgress: 0, blocked: 0 };
-      if (t.status === 'pending') entry.pending++;
-      else if (t.status === 'in_progress') entry.inProgress++;
-      else if (t.status === 'blocked') entry.blocked++;
-      tasksByClient.set(id, entry);
-    }
-    return this.clientsWithStats()
-      .map((c) => {
-        const id = String(c._id);
-        const t = tasksByClient.get(id) || { pending: 0, inProgress: 0, blocked: 0 };
-        return {
-          clientId: id,
-          name: c.name,
-          tier: c.tier,
-          logoUrl: c.logoUrl,
-          pending: t.pending,
-          inProgress: t.inProgress,
-          blocked: t.blocked,
-        };
-      })
-      .filter((p) => p.pending + p.inProgress + p.blocked > 0)
-      .sort((a, b) => {
-        // Blocked first, then pending, then in_progress
-        if (a.blocked !== b.blocked) return b.blocked - a.blocked;
-        const aOpen = a.pending + a.inProgress;
-        const bOpen = b.pending + b.inProgress;
-        return bOpen - aOpen;
-      });
+  userInitial = computed(() => {
+    const n = this.firstName();
+    return n.charAt(0).toUpperCase();
   });
 
-  recentActivity = computed<RecentActivity[]>(() => {
-    const clientMap = new Map<string, ClientWithStats>();
-    for (const c of this.clientsWithStats()) clientMap.set(String(c._id), c);
-    return this.recentTasks()
-      .filter((t) => t.status === 'completed' && (t.completedAt || t.updatedAt))
-      .sort((a, b) => {
-        const av = new Date(a.completedAt || a.updatedAt || 0).getTime();
-        const bv = new Date(b.completedAt || b.updatedAt || 0).getTime();
-        return bv - av;
-      })
-      .slice(0, 10)
-      .map((t) => {
-        const id = typeof t.clientId === 'string' ? t.clientId : String(t.clientId);
-        const c = clientMap.get(id);
-        return {
-          taskId: String(t._id),
-          title: t.title,
-          clientId: id,
-          clientName: c?.name || 'Unknown',
-          tier: c?.tier || 'C',
-          category: t.category,
-          when: String(t.completedAt || t.updatedAt || ''),
-        };
-      });
+  greetingPrefix = computed(() => {
+    const h = new Date().getHours();
+    if (h < 12) return 'Good morning';
+    if (h < 18) return 'Good afternoon';
+    return 'Good evening';
   });
 
-  // --- Lifecycle ------------------------------------------------------------
+  dateLabel = computed(() =>
+    new Date().toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+    }),
+  );
+
+  activeClientsDisplay = computed(() => {
+    const n = this.activeClientCount();
+    return n === null ? '—' : String(n);
+  });
+
+  openDealsDisplay = computed(() => {
+    const s = this.pipelineStats();
+    return s ? String(s.openLeads) : '—';
+  });
+
+  pipelineMrrDisplay = computed(() => {
+    const s = this.pipelineStats();
+    if (!s) return '—';
+    return this.formatCurrency(s.pipelineMrr);
+  });
+
+  comingSoonCards = [
+    {
+      title: 'Client report scheduler',
+      blurb:
+        'Queue monthly SEO + PPC recaps, auto-send on the right day, log the delivery.',
+      iconHtml:
+        '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+    },
+    {
+      title: 'Deliverables board',
+      blurb:
+        'A single kanban view of everything owed to clients this week, across service lines.',
+      iconHtml:
+        '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>',
+    },
+    {
+      title: 'Retention pulse',
+      blurb:
+        'Health signals per account — usage, comms cadence, results — before churn shows up in the P&L.',
+      iconHtml:
+        '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+    },
+  ];
 
   ngOnInit() {
-    this.loadPriorityQueue();
-    this.loadTodayBlocks();
-
-    // Load tasks completed within the last 30 days plus any currently
-    // open task the caller has access to. Feeds the pending-by-client,
-    // recent-activity, and portfolio-health widgets.
-    const to = new Date();
-    const from = new Date();
-    from.setDate(from.getDate() - 30);
-    this.tasksSvc
-      .list({
-        completedFrom: from.toISOString(),
-        completedTo: to.toISOString(),
-      })
-      .subscribe({
-        next: (completed) => {
-          // Second call: open tasks (pending / in_progress / blocked)
-          // — those don't carry a completedAt so the date filter would
-          // miss them. Merge and dedupe by _id.
-          this.tasksSvc.list({}).subscribe({
-            next: (all) => {
-              const openOnes = all.filter(
-                (t) => t.status !== 'completed',
-              );
-              const map = new Map<string, Task>();
-              for (const t of [...completed, ...openOnes]) {
-                if (t._id) map.set(t._id, t);
-              }
-              this.recentTasks.set(Array.from(map.values()));
-              this.loading.set(false);
-            },
-            error: () => this.loading.set(false),
-          });
-        },
-        error: () => this.loading.set(false),
-      });
-
-    this.clientsSvc.stats().subscribe((s) => {
-      this.stats.set(s.perTier);
-      this.totalHours.set(s.totalHoursPerCycle);
+    this.clientsSvc.list({ active: true }).subscribe({
+      next: (clients) => this.activeClientCount.set(clients.length),
+      error: () => this.activeClientCount.set(0),
     });
 
-    this.clientsSvc.listWithStats().subscribe((list) => {
-      this.clientsWithStats.set(list);
+    this.pipelineSvc.stats().subscribe({
+      next: (s) => this.pipelineStats.set(s),
+      // Pipeline endpoint may be forbidden for some roles — fail
+      // gracefully and leave the display as an em-dash placeholder.
+      error: () => this.pipelineStats.set(null),
     });
   }
 
-  // --- Today widget --------------------------------------------------------
-
-  /**
-   * Pulls the ranked priority queue and renders it at the top of the
-   * dashboard. First call of the day can take a few seconds because
-   * GSC momentum hasn't been cached yet; subsequent loads are instant.
-   */
-  private loadPriorityQueue() {
-    this.priorityLoading.set(true);
-    this.prioritySvc.get().subscribe({
-      next: (q) => {
-        this.priorityQueue.set(q);
-        this.priorityLoading.set(false);
-      },
-      error: () => this.priorityLoading.set(false),
-    });
+  turnIntoClientEmail() {
+    // Placeholder — will hook into the Comms / drafts module once the
+    // "Latest from Google" feed is wired up.
+    alert('coming soon');
   }
 
-  topPriorityItems(): PriorityQueueItem[] {
-    const q = this.priorityQueue();
-    if (!q) return [];
-    return q.items.filter((i) => i.score > 0).slice(0, 5);
-  }
-
-  tierClass(tier: string): string {
-    return 'tier-' + tier;
-  }
-
-  scoreClass(score: number): string {
-    if (score >= 60) return 'bg-danger-100 text-danger-700';
-    if (score >= 30) return 'bg-warning-100 text-warning-500';
-    return 'bg-positive-100 text-positive-500';
-  }
-
-  private loadTodayBlocks() {
-    const now = new Date();
-    const iso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    this.loadingToday.set(true);
-    this.blocksSvc.list({ date: iso }).subscribe({
-      next: (bs) => {
-        this.todayBlocks.set(bs.sort((a, b) => a.startTime.localeCompare(b.startTime)));
-        this.loadingToday.set(false);
-      },
-      error: () => this.loadingToday.set(false),
-    });
-  }
-
-  todayDateLabel(): string {
-    return new Date().toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'short',
-      day: 'numeric',
-    });
-  }
-
-  todayPlannedMinutes = computed(() =>
-    this.todayBlocks().reduce((acc, b) => acc + b.durationMinutes, 0),
-  );
-
-  todayCompletedMinutes = computed(() =>
-    this.todayBlocks()
-      .filter((b) => b.status === 'completed')
-      .reduce((acc, b) => acc + (b.actualMinutes ?? b.durationMinutes), 0),
-  );
-
-  clientName(b: TimeBlock): string {
-    if (b.kind === 'reporting') return '📊 Send client reports';
-    const ref = b.clientId as unknown;
-    if (ref && typeof ref === 'object' && 'name' in ref) {
-      return (ref as { name: string }).name;
+  private formatCurrency(value: number): string {
+    if (!Number.isFinite(value)) return '—';
+    if (value >= 1000) {
+      const k = value / 1000;
+      const s = k >= 10 ? k.toFixed(0) : k.toFixed(1);
+      return `$${s}k`;
     }
-    return '—';
-  }
-
-  clientTier(b: TimeBlock): string {
-    if (b.kind === 'reporting') return 'A';
-    const ref = b.clientId as unknown;
-    if (ref && typeof ref === 'object' && 'tier' in ref) {
-      return (ref as { tier: string }).tier;
-    }
-    return 'C';
-  }
-
-  taskTitle(b: TimeBlock): string | null {
-    const ref = b.taskId as unknown;
-    if (ref && typeof ref === 'object' && 'title' in ref) {
-      return (ref as { title: string }).title;
-    }
-    return null;
-  }
-
-  formatDuration(minutes: number): string {
-    if (minutes < 60) return `${minutes}m`;
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return m ? `${h}h ${m}m` : `${h}h`;
-  }
-
-  startBlock(b: TimeBlock) {
-    if (!b._id) return;
-    this.blocksSvc.start(b._id).subscribe({
-      next: () => this.loadTodayBlocks(),
-    });
-  }
-
-  completeBlock(b: TimeBlock) {
-    if (!b._id) return;
-    this.blocksSvc.complete(b._id).subscribe({
-      next: () => this.loadTodayBlocks(),
-    });
+    return `$${Math.round(value)}`;
   }
 }
