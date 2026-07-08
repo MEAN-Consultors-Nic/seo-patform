@@ -167,92 +167,122 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
           No tasks for this client yet. Click "+ New task" to add one.
         </div>
       } @else if (viewMode() === 'list') {
-        <!-- List view: one full-width row per task with title +
-             description always visible. Grouped by status so scanning
-             remains predictable across the same 4 buckets kanban uses. -->
-        <div class="space-y-5">
-          @for (col of kanbanColumns; track col.status) {
-            @if (kanbanTasksByStatus(col.status).length > 0) {
-              <section>
-                <header class="flex items-center gap-2 mb-2">
-                  <span class="w-2 h-2 rounded-full" [ngClass]="col.dot"></span>
-                  <h3 class="text-sm font-bold text-ink-900">{{ col.label }}</h3>
-                  <span class="text-xs font-semibold text-ink-500 bg-ink-100 rounded-full px-2 py-0.5">
-                    {{ kanbanTasksByStatus(col.status).length }}
-                  </span>
-                </header>
-                <div class="space-y-2">
-                  @for (t of kanbanTasksByStatus(col.status); track t._id) {
-                    <article class="relative rounded-lg border border-ink-200 shadow-card hover:shadow-elevated transition-all bg-white overflow-hidden">
-                      <div class="absolute top-0 left-0 bottom-0 w-1" [ngClass]="statusOf(t).bar"></div>
-                      <div class="pl-5 pr-4 py-3 flex flex-col gap-2">
-                        <div class="flex items-start justify-between gap-3">
-                          <div class="flex flex-wrap items-center gap-1.5 min-w-0">
-                            <span [class]="'inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded ' + statusOf(t).pill">
-                              <span class="w-1.5 h-1.5 rounded-full" [ngClass]="statusOf(t).dot"></span>
-                              {{ statusOf(t).label }}
-                            </span>
-                            <span class="badge-neutral text-[10px]">{{ t.category }}</span>
-                            <span [class]="'text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ' + priorityBadgeClass(t.priority)">
-                              {{ t.priority }}
-                            </span>
-                            @if (t.completedAt && t.status === 'completed') {
-                              <span class="text-[10px] text-ink-400">
-                                · Completed {{ t.completedAt | date: 'MMM d' }}
-                              </span>
-                            }
-                          </div>
-                          <ng-container *ngTemplateOutlet="taskMenu; context: { $implicit: t }"></ng-container>
-                        </div>
+        <!-- Structured list. Single sorted feed governed by the
+             KPI-card filter (Total / Pending / In progress / Completed)
+             + search input above. Blocked tasks surface under the All
+             filter and via search — the KPI cards deliberately don't
+             carve out a Blocked column because that state is rare and
+             deserves attention when it happens rather than a
+             persistent bucket. -->
+        <div class="bg-white border border-ink-200 rounded-lg overflow-hidden">
+          <!-- Header row for the table. Hidden on very narrow widths so
+               the row content re-flows without overlapping. -->
+          <div class="hidden md:grid grid-cols-[minmax(0,1fr)_120px_120px_44px] items-center gap-3 px-4 py-2 border-b border-ink-100 bg-ink-50/60 text-[10px] font-semibold uppercase tracking-wider text-ink-500">
+            <div>Task</div>
+            <div class="text-center">Hours</div>
+            <div class="text-center">Action</div>
+            <div></div>
+          </div>
 
-                        <h4 class="text-sm font-bold text-ink-900 leading-snug"
-                            [class.line-through]="t.status === 'completed'"
-                            [class.text-ink-400]="t.status === 'completed'">
-                          {{ t.title }}
-                        </h4>
+          <ul class="divide-y divide-ink-100">
+            @for (t of listRows(); track t._id) {
+              <li class="group grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_120px_120px_44px] items-center gap-3 px-4 py-3 hover:bg-ink-50 transition-colors relative">
+                <!-- Left accent bar mirrors the status color -->
+                <div class="absolute inset-y-0 left-0 w-1" [ngClass]="statusOf(t).bar"></div>
 
-                        @if (t.description) {
-                          <div class="text-xs text-ink-700 leading-relaxed">
-                            <div class="rich-content" [innerHTML]="sanitize(t.description)"></div>
-                          </div>
-                        } @else {
-                          <div class="text-[11px] text-ink-400 italic">
-                            No description
-                          </div>
-                        }
+                <!-- Content: chips row + title -->
+                <div class="min-w-0 pl-2">
+                  <!-- Metadata chips -->
+                  <div class="flex flex-wrap items-center gap-1.5 mb-1">
+                    <span [class]="'inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded ' + statusOf(t).pill">
+                      <span class="w-1.5 h-1.5 rounded-full" [ngClass]="statusOf(t).dot"></span>
+                      {{ statusOf(t).label }}
+                    </span>
+                    <span class="badge-neutral text-[10px]">{{ t.category }}</span>
+                    <span [class]="'text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ' + priorityBadgeClass(t.priority)">
+                      {{ t.priority }}
+                    </span>
+                    @if (t.attachments?.length) {
+                      <button type="button" (click)="openDetailModal(t)"
+                              class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-ink-100 text-ink-700 hover:bg-ink-200"
+                              [title]="(t.attachments || []).length + ' attachment(s)'">
+                        📎 {{ (t.attachments || []).length }}
+                      </button>
+                    }
+                    @if (t.subtasks?.length) {
+                      <span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-ink-100 text-ink-700"
+                            [title]="subtaskProgressLabel(t)">
+                        ☑ {{ subtaskProgressLabel(t) }}
+                      </span>
+                    }
+                    @if (t.completedAt && t.status === 'completed') {
+                      <span class="text-[10px] text-ink-400">
+                        · {{ t.completedAt | date: 'MMM d' }}
+                      </span>
+                    }
+                  </div>
 
-                        <div class="flex items-center justify-between gap-4 pt-2 border-t border-ink-100 text-xs">
-                          <div class="flex items-center gap-3">
-                            <button type="button"
-                                    (click)="openDetailModal(t)"
-                                    class="text-xs font-semibold text-brand-500 hover:text-brand-600 inline-flex items-center gap-1">
-                              View details
-                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5">
-                                <path d="M3 1h6v6M9 1L3.5 6.5" stroke-linecap="round" stroke-linejoin="round" />
-                              </svg>
-                            </button>
-                          </div>
-                          <div class="flex items-center gap-4">
-                            <div>
-                              <span class="text-ink-400 uppercase tracking-wider text-[10px] font-semibold mr-1">Est.</span>
-                              <span class="font-semibold text-ink-900">{{ t.estimatedHours || 0 }}h</span>
-                            </div>
-                            <div class="flex items-center gap-1.5">
-                              <span class="text-ink-400 uppercase tracking-wider text-[10px] font-semibold">Actual</span>
-                              <input type="number" class="input input-sm w-20 text-right"
-                                     [ngModel]="t.actualHours" (ngModelChange)="updateHours(t, $event)"
-                                     step="0.25" min="0" />
-                              <span class="text-ink-500">h</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </article>
+                  <!-- Title (click → details modal) -->
+                  <button type="button"
+                          (click)="openDetailModal(t)"
+                          class="text-left w-full text-sm font-semibold text-ink-900 leading-snug hover:text-brand-500 truncate"
+                          [class.line-through]="t.status === 'completed'"
+                          [class.text-ink-400]="t.status === 'completed'"
+                          [title]="t.title">
+                    {{ t.title }}
+                  </button>
+
+                  @if (t.description) {
+                    <div class="text-[11px] text-ink-500 mt-0.5 line-clamp-1"
+                         [title]="stripHtml(t.description)">
+                      {{ stripHtml(t.description) }}
+                    </div>
                   }
                 </div>
-              </section>
+
+                <!-- Hours: est + actual inline editor -->
+                <div class="flex items-center gap-2 justify-center text-xs">
+                  <div class="text-center">
+                    <div class="text-[9px] font-semibold uppercase tracking-wider text-ink-400">Est</div>
+                    <div class="font-semibold text-ink-900">{{ t.estimatedHours || 0 }}h</div>
+                  </div>
+                  <div class="text-center">
+                    <div class="text-[9px] font-semibold uppercase tracking-wider text-ink-400">Actual</div>
+                    <input type="number"
+                           class="w-14 text-center text-xs border border-ink-200 rounded px-1 py-0.5 bg-white"
+                           [ngModel]="t.actualHours"
+                           (ngModelChange)="updateHours(t, $event)"
+                           step="0.25" min="0" />
+                  </div>
+                </div>
+
+                <!-- Primary action button — label changes per status. -->
+                <div class="flex justify-center">
+                  <button type="button"
+                          class="text-xs font-semibold px-3 py-1.5 rounded-md whitespace-nowrap transition-colors"
+                          [class]="listPrimaryActionClass(t)"
+                          (click)="listPrimaryAction(t)"
+                          [title]="listPrimaryActionLabel(t)">
+                    {{ listPrimaryActionLabel(t) }}
+                  </button>
+                </div>
+
+                <!-- Kebab menu (existing template) -->
+                <div class="flex justify-end">
+                  <ng-container *ngTemplateOutlet="taskMenu; context: { $implicit: t }"></ng-container>
+                </div>
+              </li>
             }
-          }
+            @if (listRows().length === 0) {
+              <li class="px-6 py-12 text-center text-sm text-ink-400 italic">
+                @if (statusFilter() === 'all' && !searchQuery()) {
+                  No tasks yet. Click "+ New task" to add one.
+                } @else {
+                  No tasks match the current filter.
+                }
+              </li>
+            }
+          </ul>
         </div>
       } @else {
         <!-- Columns intentionally do NOT cap their height or scroll
@@ -1020,9 +1050,11 @@ export class ClientTasksTab implements OnChanges {
   private readViewMode(): 'kanban' | 'list' {
     try {
       const v = localStorage.getItem('tasks-view-mode');
-      return v === 'list' ? 'list' : 'kanban';
+      // List is the new default — kanban stayed as an opt-in mode after
+      // the redesign because it doesn't scale past a handful of tasks.
+      return v === 'kanban' ? 'kanban' : 'list';
     } catch {
-      return 'kanban';
+      return 'list';
     }
   }
   setViewMode(mode: 'kanban' | 'list') {
@@ -1149,6 +1181,101 @@ export class ClientTasksTab implements OnChanges {
       return true;
     });
   });
+
+  /**
+   * List-view row source — same filter as filteredTasks but sorted so
+   * pending/in-progress rise to the top, then priority, then most
+   * recently updated. Completed rows sink to the bottom of the "all"
+   * view.
+   */
+  listRows = computed<Task[]>(() => {
+    const statusRank: Record<string, number> = {
+      in_progress: 0,
+      pending: 1,
+      blocked: 2,
+      completed: 3,
+    };
+    const priorityRank: Record<string, number> = {
+      high: 0,
+      medium: 1,
+      low: 2,
+    };
+    return [...this.filteredTasks()].sort((a, b) => {
+      const sd = (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9);
+      if (sd !== 0) return sd;
+      const pd = (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9);
+      if (pd !== 0) return pd;
+      const at = new Date(a.updatedAt ?? 0).getTime();
+      const bt = new Date(b.updatedAt ?? 0).getTime();
+      return bt - at;
+    });
+  });
+
+  /** Cheap text-preview for the list row — stripped of HTML so it
+   *  renders correctly inside a truncated text container. */
+  stripHtml(html?: string): string {
+    if (!html) return '';
+    return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  subtaskProgressLabel(t: Task): string {
+    const total = t.subtasks?.length ?? 0;
+    if (!total) return '';
+    const done = t.subtasks?.filter((s) => s.done).length ?? 0;
+    return `${done}/${total}`;
+  }
+
+  listPrimaryActionLabel(t: Task): string {
+    switch (t.status) {
+      case 'pending':
+        return 'Start';
+      case 'in_progress':
+        return 'Complete';
+      case 'blocked':
+        return 'Unblock';
+      case 'completed':
+        return 'Reopen';
+      default:
+        return 'Update';
+    }
+  }
+
+  listPrimaryActionClass(t: Task): string {
+    const base = 'border';
+    if (t.status === 'completed') {
+      return `${base} bg-white border-ink-200 text-ink-600 hover:bg-ink-100`;
+    }
+    if (t.status === 'blocked') {
+      return `${base} bg-white border-ink-200 text-ink-700 hover:bg-ink-100`;
+    }
+    if (t.status === 'in_progress') {
+      return `${base} bg-positive-500 border-positive-500 text-white hover:bg-positive-500/90`;
+    }
+    return `${base} bg-brand-500 border-brand-500 text-white hover:bg-brand-500/90`;
+  }
+
+  /**
+   * List-view primary action: rotates status forward through the
+   * common workflow. Reuses the existing setStatus() helper so the
+   * confirmation modal / audit log flow stays consistent with the
+   * kanban view.
+   */
+  listPrimaryAction(t: Task) {
+    switch (t.status) {
+      case 'pending':
+        this.setStatus(t, 'in_progress');
+        return;
+      case 'in_progress':
+        this.setStatus(t, 'completed');
+        return;
+      case 'blocked':
+        this.setStatus(t, 'in_progress');
+        return;
+      case 'completed':
+        this.setStatus(t, 'in_progress');
+        return;
+    }
+  }
 
   /**
    * Kanban column definitions in the order the user wants them
