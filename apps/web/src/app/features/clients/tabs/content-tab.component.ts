@@ -63,7 +63,10 @@ import { FileDropDirective } from '../../../shared/file-drop.directive';
       <!-- Filter tabs + list. Single scrollable list with a status
            filter on top; the counts help the reader decide where to
            focus without loading three columns worth of empty state. -->
-      <div class="bg-white border border-ink-200 rounded-lg overflow-hidden">
+      <!-- overflow-visible so the kebab menu dropdown on each row can
+           escape the container's rounded corners; ancestor
+           overflow-hidden clips absolute-positioned descendants. -->
+      <div class="bg-white border border-ink-200 rounded-lg">
         <div class="flex items-center gap-1 px-3 pt-3 pb-0 border-b border-ink-100 flex-wrap">
           @for (tab of filterTabs; track tab.key) {
             <button type="button"
