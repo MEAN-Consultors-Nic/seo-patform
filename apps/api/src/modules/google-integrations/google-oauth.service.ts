@@ -170,7 +170,7 @@ export class GoogleOAuthService {
       details: { googleEmail },
     });
 
-    const returnTo = payload.returnTo || '/settings/integrations';
+    const returnTo = payload.returnTo || '/profile/integrations';
     return { redirectUrl: `${this.webBase()}${returnTo}?google_connected=1` };
   }
 

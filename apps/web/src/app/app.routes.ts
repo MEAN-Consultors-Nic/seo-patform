@@ -118,11 +118,18 @@ export const appRoutes: Route[] = [
           ),
       },
       {
-        path: 'settings/integrations',
+        path: 'profile/integrations',
         loadComponent: () =>
-          import('./features/settings/integrations.component').then(
-            (m) => m.IntegrationsSettingsComponent,
+          import('./features/profile/profile-integrations.component').then(
+            (m) => m.ProfileIntegrationsComponent,
           ),
+      },
+      // Backwards-compat: old bookmarks + the OAuth callback that still
+      // encodes the old path in its state land on the new page.
+      {
+        path: 'settings/integrations',
+        redirectTo: 'profile/integrations',
+        pathMatch: 'full',
       },
       {
         path: 'settings/report-layout',

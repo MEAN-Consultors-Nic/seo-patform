@@ -46,7 +46,7 @@ export class GoogleIntegrationsController {
   ) {
     if (error) {
       return res.redirect(
-        `${process.env.PUBLIC_WEB_URL || 'http://localhost:4200'}/settings/integrations?google_error=${encodeURIComponent(error)}`,
+        `${process.env.PUBLIC_WEB_URL || 'http://localhost:4200'}/profile/integrations?google_error=${encodeURIComponent(error)}`,
       );
     }
     if (!code) throw new BadRequestException('Missing code');

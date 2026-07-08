@@ -28,7 +28,7 @@ function daysAgoIso(days: number): string {
           <p class="text-xs text-ink-500 mt-0.5">
             Live breakdowns from Google Search Console: top pages, device split,
             country share, and sitemap health.
-            <a routerLink="/settings/integrations"
+            <a routerLink="/profile/integrations"
                class="text-brand-500 hover:underline">Manage connection.</a>
           </p>
         </div>

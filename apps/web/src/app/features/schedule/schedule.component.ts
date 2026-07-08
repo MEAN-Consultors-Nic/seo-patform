@@ -306,7 +306,7 @@ function weekdayLabel(iso: string): { weekday: string; label: string } {
           <div class="font-semibold text-ink-900 mb-1">Pull failed</div>
           <div class="text-xs text-ink-600">{{ e }}</div>
           @if (e.includes('Calendar') || e.includes('Google')) {
-            <a routerLink="/settings/integrations" class="text-xs text-brand-600 underline mt-2 inline-block">
+            <a routerLink="/profile/integrations" class="text-xs text-brand-600 underline mt-2 inline-block">
               Connect Google Calendar →
             </a>
           }

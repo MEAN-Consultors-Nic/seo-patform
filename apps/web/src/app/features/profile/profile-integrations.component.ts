@@ -2,38 +2,35 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink, RouterLinkActive } from '@angular/router';
 import { GoogleConnectionStatus } from '@seo/shared';
+import { AuthService } from '../../core/auth.service';
 import { GoogleIntegrationsService } from '../../core/google-integrations.service';
 
+/**
+ * Personal integrations page. Lives under /profile/* because each user
+ * connects their own Google account — nothing here is platform-wide.
+ * The tab bar is scoped to Profile so future personal-only pages
+ * (password, notifications, API keys) can slot in beside Integrations.
+ */
 @Component({
-  selector: 'app-integrations-settings',
+  selector: 'app-profile-integrations',
   standalone: true,
   imports: [CommonModule, RouterLink, RouterLinkActive, DatePipe],
   template: `
     <div class="page-container max-w-3xl">
       <header class="page-header">
         <div>
-          <h1 class="page-title">Settings</h1>
+          <div class="text-[10px] font-semibold text-ink-400 uppercase tracking-wider">
+            {{ userName() }}
+          </div>
+          <h1 class="page-title">My Profile</h1>
         </div>
       </header>
 
       <nav class="tab-bar mb-6">
         <div class="tab-bar-scroll flex-1 min-w-0">
-          <a routerLink="/settings/working-hours" routerLinkActive="tab-active" class="tab">
-            Working hours
+          <a routerLink="/profile/integrations" routerLinkActive="tab-active" class="tab">
+            Integrations
           </a>
-          <a routerLink="/settings/integrations" routerLinkActive="tab-active" class="tab">
-            My Integrations
-          </a>
-          <a routerLink="/settings/report-layout" routerLinkActive="tab-active" class="tab">
-            Report layout
-          </a>
-          <a routerLink="/settings/packages" routerLinkActive="tab-active" class="tab">
-            Packages
-          </a>
-          <a routerLink="/settings/onboarding" routerLinkActive="tab-active" class="tab">
-            Onboarding
-          </a>
-          <a routerLink="/settings/activity-log" routerLinkActive="tab-active" class="tab">Activity Log</a>
         </div>
       </nav>
 
@@ -253,15 +250,18 @@ import { GoogleIntegrationsService } from '../../core/google-integrations.servic
     </div>
   `,
 })
-export class IntegrationsSettingsComponent implements OnInit {
+export class ProfileIntegrationsComponent implements OnInit {
   private svc = inject(GoogleIntegrationsService);
   private route = inject(ActivatedRoute);
+  private auth = inject(AuthService);
 
   status = signal<GoogleConnectionStatus | null>(null);
   loading = signal(true);
   working = signal(false);
   justConnected = signal(false);
   errorMsg = signal<string | null>(null);
+
+  userName = () => this.auth.user()?.name || 'You';
 
   ngOnInit() {
     const params = this.route.snapshot.queryParamMap;
@@ -293,7 +293,7 @@ export class IntegrationsSettingsComponent implements OnInit {
   connect() {
     this.working.set(true);
     this.errorMsg.set(null);
-    this.svc.authUrl('/settings/integrations').subscribe({
+    this.svc.authUrl('/profile/integrations').subscribe({
       next: ({ url }) => {
         window.location.href = url;
       },
@@ -317,5 +317,4 @@ export class IntegrationsSettingsComponent implements OnInit {
       },
     });
   }
-
 }

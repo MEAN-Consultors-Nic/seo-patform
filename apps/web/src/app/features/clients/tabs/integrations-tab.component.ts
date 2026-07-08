@@ -20,7 +20,7 @@ import {
         <p class="text-xs text-ink-500 mt-0.5">
           Configure how this client connects to Google Search Console and
           Google Analytics so we can pull KPIs automatically.
-          <a routerLink="/settings/integrations"
+          <a routerLink="/profile/integrations"
              class="text-brand-500 hover:underline">Manage connection.</a>
         </p>
       </div>

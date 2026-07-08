@@ -190,7 +190,9 @@ interface NavSection {
         }
       </nav>
 
-      <!-- FOOTER: user identity + quick actions. -->
+      <!-- FOOTER: user identity + quick actions. The avatar + name area
+           is a link to the personal profile page — that's where each
+           user connects their own integrations. -->
       <div
         class="border-t border-ink-200 flex-shrink-0"
         [class.p-2]="collapsed"
@@ -201,20 +203,43 @@ interface NavSection {
           [class.justify-center]="collapsed"
           [class.flex-col]="collapsed"
         >
-          <div
-            class="w-9 h-9 rounded-full bg-ink-200 text-ink-700 flex items-center justify-center text-xs font-bold flex-shrink-0"
-            [title]="collapsed ? userName() + ' — ' + roleLabel() : ''"
+          <a
+            routerLink="/profile/integrations"
+            routerLinkActive
+            #profileRla="routerLinkActive"
+            class="flex items-center gap-2 min-w-0 flex-1 rounded-md transition-colors"
+            [class.hover:bg-ink-100]="!profileRla.isActive"
+            [class.bg-brand-500]="profileRla.isActive"
+            [class.text-white]="profileRla.isActive"
+            [class.p-1]="!collapsed"
+            [class.flex-col]="collapsed"
+            [class.gap-0]="collapsed"
+            [title]="collapsed ? userName() + ' — ' + roleLabel() : 'My profile'"
           >
-            {{ initials() }}
-          </div>
-          @if (!collapsed) {
-            <div class="leading-tight min-w-0 flex-1">
-              <div class="text-xs font-semibold text-ink-900 truncate">
-                {{ userName() }}
-              </div>
-              <div class="text-[10px] text-ink-500 truncate">{{ roleLabel() }}</div>
+            <div
+              class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+              [class.bg-ink-200]="!profileRla.isActive"
+              [class.text-ink-700]="!profileRla.isActive"
+              [class.bg-white/20]="profileRla.isActive"
+              [class.text-white]="profileRla.isActive"
+            >
+              {{ initials() }}
             </div>
-          }
+            @if (!collapsed) {
+              <div class="leading-tight min-w-0 flex-1">
+                <div class="text-xs font-semibold truncate"
+                     [class.text-ink-900]="!profileRla.isActive"
+                     [class.text-white]="profileRla.isActive">
+                  {{ userName() }}
+                </div>
+                <div class="text-[10px] truncate"
+                     [class.text-ink-500]="!profileRla.isActive"
+                     [class.text-white/80]="profileRla.isActive">
+                  {{ roleLabel() }}
+                </div>
+              </div>
+            }
+          </a>
           <div
             class="flex items-center gap-0.5"
             [class.flex-col]="collapsed"
@@ -224,8 +249,8 @@ interface NavSection {
               type="button"
               routerLink="/settings/working-hours"
               class="w-7 h-7 rounded-md text-ink-500 hover:bg-ink-100 hover:text-ink-800 flex items-center justify-center transition-colors"
-              title="Settings"
-              aria-label="Settings"
+              title="Platform settings"
+              aria-label="Platform settings"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -326,7 +351,6 @@ export class SidebarComponent {
       label: 'SETTINGS',
       items: [
         { route: '/settings/working-hours', label: 'Working hours', icon: 'clock' },
-        { route: '/settings/integrations', label: 'My Integrations', icon: 'plug' },
         { route: '/settings/report-layout', label: 'Report layout', icon: 'layout' },
         { route: '/settings/packages', label: 'Packages', icon: 'box' },
         { route: '/settings/onboarding', label: 'Onboarding', icon: 'check-list' },
