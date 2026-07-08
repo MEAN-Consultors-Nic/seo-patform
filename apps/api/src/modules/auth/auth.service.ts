@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Injectable,
   Logger,
-  OnApplicationBootstrap,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -15,12 +14,10 @@ import { ActivityLogService } from '../activity-log/activity-log.service';
 import { MailService } from '../mail/mail.service';
 import { UserInvitesService } from '../user-invites/user-invites.service';
 
-const SEED_EMAIL = 'joseph.o@mediaspearhead.com';
-const SEED_PASSWORD = 'spearhead2026';
 const PASSWORD_RESET_TTL_HOURS = 2;
 
 @Injectable()
-export class AuthService implements OnApplicationBootstrap {
+export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
@@ -36,26 +33,6 @@ export class AuthService implements OnApplicationBootstrap {
     return (
       this.config.get<string>('PUBLIC_WEB_URL') || 'http://localhost:4200'
     ).replace(/\/$/, '');
-  }
-
-  async onApplicationBootstrap() {
-    // Ensure the seed user exists and is promoted to root.
-    const existing = await this.userModel.findOne({ email: SEED_EMAIL }).exec();
-    if (!existing) {
-      const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
-      await this.userModel.create({
-        email: SEED_EMAIL,
-        passwordHash,
-        name: 'Joseph O.',
-        role: 'root',
-        onboardingCompleted: true,
-      });
-      this.logger.log(`Seed user created: ${SEED_EMAIL} / ${SEED_PASSWORD}`);
-    } else if (existing.role !== 'root') {
-      existing.role = 'root';
-      await existing.save();
-      this.logger.log(`Seed user promoted to root: ${SEED_EMAIL}`);
-    }
   }
 
   async validate(email: string, password: string) {
