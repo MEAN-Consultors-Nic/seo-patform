@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import {
   Client,
   Cycle,
+  DEFAULT_WORKING_HOURS,
   Task,
   TimeBlock,
   WorkingHoursConfig,
@@ -17,7 +18,6 @@ import {
   TimeBlocksService,
   WeeklyPlan,
 } from '../../core/time-blocks.service';
-import { WorkingHoursService } from '../../core/working-hours.service';
 
 interface DayColumn {
   date: string;
@@ -113,7 +113,6 @@ function weekdayLabel(iso: string): { weekday: string; label: string } {
           </p>
         </div>
         <div class="flex items-center gap-2">
-          <a routerLink="/settings/working-hours" class="btn-secondary">⚙ Working hours</a>
           <button class="btn-primary"
                   (click)="runPullFromCalendar()"
                   [disabled]="!cycle() || pulling()"
@@ -506,12 +505,18 @@ export class ScheduleComponent implements OnInit {
   private clientsSvc = inject(ClientsService);
   private tasksSvc = inject(TasksService);
   private blocksSvc = inject(TimeBlocksService);
-  private workingHoursSvc = inject(WorkingHoursService);
 
   cycle = signal<Cycle | null>(null);
   clients = signal<Client[]>([]);
   tasks = signal<Task[]>([]);
-  workingHours = signal<WorkingHoursConfig | null>(null);
+  // Working-hours feature retired. The schedule grid still needs a
+  // work-window config to render, so we use the shared defaults
+  // baseline (M-F, 7-12 + 13-17, cap 8h). If per-user hours ever
+  // come back, this signal is where they'd land.
+  workingHours = signal<WorkingHoursConfig | null>({
+    userId: 'defaults',
+    ...DEFAULT_WORKING_HOURS,
+  });
   blocks = signal<TimeBlock[]>([]);
   loading = signal(true);
 
@@ -682,10 +687,9 @@ export class ScheduleComponent implements OnInit {
   // --- Lifecycle ------------------------------------------------------------
 
   ngOnInit() {
-    this.workingHoursSvc.me().subscribe({
-      next: (wh) => this.workingHours.set(wh),
-      error: () => null,
-    });
+    // workingHours() already seeded with DEFAULT_WORKING_HOURS in the
+    // field initializer above; no fetch needed since the feature was
+    // retired.
 
     this.cyclesSvc.current().subscribe({
       next: (c) => {

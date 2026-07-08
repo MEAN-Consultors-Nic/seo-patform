@@ -6,7 +6,6 @@ import { TimeBlocksController } from './time-blocks.controller';
 import { ClientsModule } from '../clients/clients.module';
 import { CyclesModule } from '../cycles/cycles.module';
 import { TasksModule } from '../tasks/tasks.module';
-import { WorkingHoursModule } from '../working-hours/working-hours.module';
 import { GoogleIntegrationsModule } from '../google-integrations/google-integrations.module';
 
 @Module({
@@ -17,7 +16,6 @@ import { GoogleIntegrationsModule } from '../google-integrations/google-integrat
     ClientsModule,
     CyclesModule,
     TasksModule,
-    WorkingHoursModule,
     GoogleIntegrationsModule,
   ],
   controllers: [TimeBlocksController],

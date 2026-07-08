@@ -1,6 +1,7 @@
 import { CommonModule, DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink, RouterLinkActive } from '@angular/router';
 import { USER_ROLE_LABELS, User, UserRole } from '@seo/shared';
 import { AuthService } from '../../core/auth.service';
 import { UsersService } from '../../core/users.service';
@@ -10,16 +11,25 @@ type FormMode = 'create' | 'edit' | 'reset' | null;
 @Component({
   selector: 'app-users-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe],
+  imports: [CommonModule, FormsModule, DatePipe, RouterLink, RouterLinkActive],
   template: `
     <div class="page-container">
       <header class="page-header">
         <div>
+          <div class="text-[10px] font-semibold text-ink-400 uppercase tracking-wider">Core</div>
           <h1 class="page-title">Users</h1>
           <p class="page-subtitle">Manage who has access to the platform.</p>
         </div>
         <button class="btn-primary" (click)="openCreate()">+ New user</button>
       </header>
+
+      <nav class="tab-bar mb-6">
+        <div class="tab-bar-scroll flex-1 min-w-0">
+          <a routerLink="/core/services" routerLinkActive="tab-active" class="tab">Services</a>
+          <a routerLink="/core/packages" routerLinkActive="tab-active" class="tab">Packages</a>
+          <a routerLink="/core/users" routerLinkActive="tab-active" class="tab">Users</a>
+        </div>
+      </nav>
 
       <div class="card-flush">
         <table class="table">

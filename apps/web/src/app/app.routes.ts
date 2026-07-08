@@ -142,13 +142,6 @@ export const appRoutes: Route[] = [
           ),
       },
       {
-        path: 'settings/working-hours',
-        loadComponent: () =>
-          import('./features/settings/working-hours-settings.component').then(
-            (m) => m.WorkingHoursSettingsComponent,
-          ),
-      },
-      {
         path: 'profile/integrations',
         loadComponent: () =>
           import('./features/profile/profile-integrations.component').then(
@@ -169,19 +162,46 @@ export const appRoutes: Route[] = [
             (m) => m.ReportLayoutSettingsComponent,
           ),
       },
+      // Core: org-wide admin catalogs. Moved out of /settings/* because
+      // Services / Packages / Users are administrative and global to
+      // the platform, not per-operator config.
       {
-        path: 'settings/packages',
+        path: 'core/packages',
+        canActivate: [roleGuard('root', 'owner', 'admin')],
         loadComponent: () =>
           import('./features/settings/packages-settings.component').then(
             (m) => m.PackagesSettingsComponent,
           ),
       },
       {
-        path: 'settings/services',
+        path: 'core/services',
+        canActivate: [roleGuard('root', 'owner', 'admin')],
         loadComponent: () =>
           import('./features/settings/services-settings.component').then(
             (m) => m.ServicesSettingsComponent,
           ),
+      },
+      {
+        path: 'core/users',
+        canActivate: [roleGuard('root', 'owner', 'admin')],
+        loadComponent: () =>
+          import('./features/users/users-list.component').then((m) => m.UsersListComponent),
+      },
+      // Backwards-compat redirects for old bookmarks + prior UI links.
+      {
+        path: 'settings/packages',
+        redirectTo: 'core/packages',
+        pathMatch: 'full',
+      },
+      {
+        path: 'settings/services',
+        redirectTo: 'core/services',
+        pathMatch: 'full',
+      },
+      {
+        path: 'users',
+        redirectTo: 'core/users',
+        pathMatch: 'full',
       },
       {
         path: 'settings/onboarding',
@@ -197,12 +217,6 @@ export const appRoutes: Route[] = [
           import('./features/settings/activity-log-settings.component').then(
             (m) => m.ActivityLogSettingsComponent,
           ),
-      },
-      {
-        path: 'users',
-        canActivate: [roleGuard('root', 'owner', 'admin')],
-        loadComponent: () =>
-          import('./features/users/users-list.component').then((m) => m.UsersListComponent),
       },
     ],
   },

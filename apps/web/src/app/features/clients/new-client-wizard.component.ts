@@ -106,7 +106,7 @@ interface WizardStep {
                   }
                 </select>
                 <p class="text-[10px] text-ink-500 mt-1">
-                  <a routerLink="/settings/packages" class="text-brand-500 hover:underline">
+                  <a routerLink="/core/packages" class="text-brand-500 hover:underline">
                     Manage packages
                   </a>
                   @if (selectedPackage(); as p) {

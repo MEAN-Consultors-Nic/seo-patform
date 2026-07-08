@@ -10,7 +10,6 @@ import { TimeBlock, TimeBlockDocument } from './time-block.schema';
 import { Client, ClientDocument } from '../clients/client.schema';
 import { Cycle, CycleDocument } from '../cycles/cycle.schema';
 import { Task, TaskDocument } from '../tasks/task.schema';
-import { WorkingHoursService } from '../working-hours/working-hours.service';
 import { ClientsService } from '../clients/clients.service';
 import { CalendarService } from '../google-integrations/calendar.service';
 import { AuthenticatedUser } from '../auth/roles.guard';
@@ -44,7 +43,6 @@ export class TimeBlocksService {
     @InjectModel(Client.name) private readonly clientModel: Model<ClientDocument>,
     @InjectModel(Cycle.name) private readonly cycleModel: Model<CycleDocument>,
     @InjectModel(Task.name) private readonly taskModel: Model<TaskDocument>,
-    private readonly workingHoursSvc: WorkingHoursService,
     private readonly clientsSvc: ClientsService,
     private readonly calendarSvc: CalendarService,
   ) {}

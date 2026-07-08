@@ -52,18 +52,16 @@ const FREQUENCIES: DeliverableFrequency[] = [
     <div class="page-container max-w-5xl">
       <header class="page-header">
         <div>
-          <h1 class="page-title">Settings</h1>
+          <div class="text-[10px] font-semibold text-ink-400 uppercase tracking-wider">Core</div>
+          <h1 class="page-title">Administration</h1>
         </div>
       </header>
 
       <nav class="tab-bar mb-6">
         <div class="tab-bar-scroll flex-1 min-w-0">
-          <a routerLink="/settings/working-hours" routerLinkActive="tab-active" class="tab">Working hours</a>
-          <a routerLink="/settings/services" routerLinkActive="tab-active" class="tab">Services</a>
-          <a routerLink="/settings/packages" routerLinkActive="tab-active" class="tab">Packages</a>
-          <a routerLink="/settings/report-layout" routerLinkActive="tab-active" class="tab">Report layout</a>
-          <a routerLink="/settings/onboarding" routerLinkActive="tab-active" class="tab">Onboarding</a>
-          <a routerLink="/settings/activity-log" routerLinkActive="tab-active" class="tab">Activity Log</a>
+          <a routerLink="/core/services" routerLinkActive="tab-active" class="tab">Services</a>
+          <a routerLink="/core/packages" routerLinkActive="tab-active" class="tab">Packages</a>
+          <a routerLink="/core/users" routerLinkActive="tab-active" class="tab">Users</a>
         </div>
       </nav>
 

@@ -247,7 +247,7 @@ interface NavSection {
           >
             <button
               type="button"
-              routerLink="/settings/working-hours"
+              routerLink="/settings/report-layout"
               class="w-7 h-7 rounded-md text-ink-500 hover:bg-ink-100 hover:text-ink-800 flex items-center justify-center transition-colors"
               title="Platform settings"
               aria-label="Platform settings"
@@ -350,9 +350,6 @@ export class SidebarComponent {
     {
       label: 'SETTINGS',
       items: [
-        { route: '/settings/working-hours', label: 'Working hours', icon: 'clock' },
-        { route: '/settings/services', label: 'Services', icon: 'kanban' },
-        { route: '/settings/packages', label: 'Packages', icon: 'box' },
         { route: '/settings/report-layout', label: 'Report layout', icon: 'layout' },
         { route: '/settings/onboarding', label: 'Onboarding', icon: 'check-list' },
         {
@@ -364,10 +361,14 @@ export class SidebarComponent {
       ],
     },
     {
-      label: 'PLATFORM ADMIN',
+      // Org-wide administrative catalogs — deliberately kept separate
+      // from operational Settings. Only admins can touch these.
+      label: 'CORE',
       roles: ['root', 'owner', 'admin'],
       items: [
-        { route: '/users', label: 'Users', icon: 'user-circle' },
+        { route: '/core/services', label: 'Services', icon: 'kanban' },
+        { route: '/core/packages', label: 'Packages', icon: 'box' },
+        { route: '/core/users', label: 'Users', icon: 'user-circle' },
       ],
     },
   ];

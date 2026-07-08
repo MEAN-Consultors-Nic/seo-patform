@@ -36,9 +36,6 @@ interface ActivityLogRow {
 
       <nav class="tab-bar mb-6">
         <div class="tab-bar-scroll flex-1 min-w-0">
-          <a routerLink="/settings/working-hours" routerLinkActive="tab-active" class="tab">Working hours</a>
-          <a routerLink="/settings/services" routerLinkActive="tab-active" class="tab">Services</a>
-          <a routerLink="/settings/packages" routerLinkActive="tab-active" class="tab">Packages</a>
           <a routerLink="/settings/report-layout" routerLinkActive="tab-active" class="tab">Report layout</a>
           <a routerLink="/settings/onboarding" routerLinkActive="tab-active" class="tab">Onboarding</a>
           <a routerLink="/settings/activity-log" routerLinkActive="tab-active" class="tab">Activity Log</a>
