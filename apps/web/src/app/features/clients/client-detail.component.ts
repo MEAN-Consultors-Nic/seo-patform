@@ -32,10 +32,16 @@ import { ClientShopifyTab } from './tabs/shopify-tab.component';
 import { ClientWordpressTab } from './tabs/wordpress-tab.component';
 import { ClientOnboardingTabComponent } from './tabs/onboarding-tab.component';
 import { ClientEmailsTabComponent } from './tabs/emails-tab.component';
+import { ClientOverviewTabComponent } from './tabs/overview-tab.component';
+import {
+  ClientPpcCampaignsTabComponent,
+  ClientWebOpsTabComponent,
+} from './tabs/service-placeholders.component';
 import { DomainInfoButtonComponent } from './domain-info-button.component';
 import { SchemaModelerButtonComponent } from './schema-modeler-button.component';
 
 type TabKey =
+  | 'overview'
   | 'access'
   | 'contacts'
   | 'knowledge'
@@ -53,11 +59,13 @@ type TabKey =
   | 'indexing'
   | 'cannibalization'
   | 'service-areas'
+  | 'ppc-campaigns'
+  | 'web-ops'
   | 'ecommerce'
   | 'shopify'
   | 'wordpress';
 
-type TabGroupKey = 'work' | 'performance' | 'health' | 'platform' | 'setup';
+type TabGroupKey = 'overview' | 'work' | 'seo' | 'ppc' | 'web' | 'setup';
 
 interface TabDef {
   key: TabKey;
@@ -70,11 +78,19 @@ interface GroupDef {
   label: string;
 }
 
+/**
+ * Sidebar section catalog. `overview` and `work` are always visible.
+ * The service groups (`seo` / `ppc` / `web`) are conditional — only
+ * rendered when the client has that service line configured (or, as a
+ * migration fallback, when the client has no serviceLines set at all
+ * we show SEO so pre-migration clients keep working).
+ */
 const GROUPS: GroupDef[] = [
+  { key: 'overview', label: 'Overview' },
   { key: 'work', label: 'Work' },
-  { key: 'performance', label: 'Performance' },
-  { key: 'health', label: 'SEO Health' },
-  { key: 'platform', label: 'Platform' },
+  { key: 'seo', label: 'SEO' },
+  { key: 'ppc', label: 'PPC' },
+  { key: 'web', label: 'Website' },
   { key: 'setup', label: 'Setup' },
 ];
 
@@ -105,6 +121,9 @@ const GROUPS: GroupDef[] = [
     ClientWordpressTab,
     ClientOnboardingTabComponent,
     ClientEmailsTabComponent,
+    ClientOverviewTabComponent,
+    ClientPpcCampaignsTabComponent,
+    ClientWebOpsTabComponent,
     DomainInfoButtonComponent,
     SchemaModelerButtonComponent,
   ],
@@ -249,6 +268,17 @@ const GROUPS: GroupDef[] = [
 
           <main class="flex-1 min-w-0">
             @switch (activeTab()) {
+          @case ('overview') {
+            <app-client-overview-tab
+              [client]="c"
+              (jumpToTab)="selectTab($any($event))" />
+          }
+          @case ('ppc-campaigns') {
+            <app-client-ppc-campaigns-tab />
+          }
+          @case ('web-ops') {
+            <app-client-web-ops-tab [clientId]="c._id!" />
+          }
           @case ('access') {
             <app-client-access-tab [client]="c" (changed)="reload()" />
           }
@@ -470,8 +500,34 @@ export class ClientDetailComponent implements OnInit {
 
   packages = signal<Package[]>([]);
   client = signal<Client | null>(null);
-  activeTab = signal<TabKey>('tasks');
+  activeTab = signal<TabKey>('overview');
   logoPreviewOk = signal<boolean | null>(null);
+
+  /**
+   * Which service groups the client is subscribed to. When the client
+   * has no serviceLines configured we fall back to showing SEO so
+   * pre-migration clients keep every SEO tab visible (they were
+   * built as SEO-only originally). Website is auto-enabled when the
+   * client has any websitePlatform / ecommerce metadata even if the
+   * classifier wasn't set explicitly.
+   */
+  activeServiceLines = computed<Set<ClientServiceLine>>(() => {
+    const c = this.client();
+    const explicit = new Set<ClientServiceLine>(
+      (c?.serviceLines as ClientServiceLine[]) ?? [],
+    );
+    if (explicit.size === 0) {
+      // Legacy client — default to SEO so nothing disappears from view.
+      explicit.add('seo');
+    }
+    // Any client that has a website platform or ecommerce flag implicitly
+    // gets the Website module so the Shopify / WordPress / Ecommerce
+    // legacy tabs stay reachable regardless of the serviceLines value.
+    if (c?.websitePlatform || c?.isEcommerce) {
+      explicit.add('website');
+    }
+    return explicit;
+  });
 
   /**
    * Full tab catalog with each entry annotated by its functional group.
@@ -480,22 +536,27 @@ export class ClientDetailComponent implements OnInit {
    */
   allTabs = computed<TabDef[]>(() => {
     const tabs: TabDef[] = [
+      { key: 'overview', label: 'Overview', group: 'overview' },
+
       { key: 'onboarding', label: 'Onboarding', group: 'work' },
       { key: 'tasks', label: 'Tasks', group: 'work' },
       { key: 'content', label: 'Content', group: 'work' },
       { key: 'emails', label: 'Emails', group: 'work' },
 
-      { key: 'keywords', label: 'Keywords', group: 'performance' },
-      { key: 'positions', label: 'Position Tracker', group: 'performance' },
-      { key: 'competitors', label: 'Competitors', group: 'performance' },
-      { key: 'backlinks', label: 'Backlinks', group: 'performance' },
-      { key: 'kpis', label: 'KPI History', group: 'performance' },
+      { key: 'keywords', label: 'Keywords', group: 'seo' },
+      { key: 'positions', label: 'Position Tracker', group: 'seo' },
+      { key: 'competitors', label: 'Competitors', group: 'seo' },
+      { key: 'backlinks', label: 'Backlinks', group: 'seo' },
+      { key: 'kpis', label: 'KPI History', group: 'seo' },
+      { key: 'gsc-insights', label: 'GSC Insights', group: 'seo' },
+      { key: 'indexing', label: 'Indexing', group: 'seo' },
+      { key: 'cannibalization', label: 'Cannibalization', group: 'seo' },
+      { key: 'service-areas', label: 'Service Areas', group: 'seo' },
 
-      { key: 'gsc-insights', label: 'GSC Insights', group: 'health' },
-      { key: 'indexing', label: 'Indexing', group: 'health' },
-      { key: 'cannibalization', label: 'Cannibalization', group: 'health' },
+      { key: 'ppc-campaigns', label: 'Campaigns', group: 'ppc' },
 
-      { key: 'service-areas', label: 'Service Areas', group: 'setup' },
+      { key: 'web-ops', label: 'Site ops', group: 'web' },
+
       { key: 'knowledge', label: 'Knowledge', group: 'setup' },
       { key: 'contacts', label: 'Contacts', group: 'setup' },
       { key: 'access', label: 'Credentials', group: 'setup' },
@@ -503,7 +564,7 @@ export class ClientDetailComponent implements OnInit {
     ];
     const c = this.client();
     if (c?.isEcommerce) {
-      tabs.push({ key: 'ecommerce', label: '🛒 Ecommerce', group: 'platform' });
+      tabs.push({ key: 'ecommerce', label: '🛒 Ecommerce', group: 'web' });
     }
     // Platform-specific tab follows the websitePlatform field. We also fall
     // back to the legacy `isEcommerce` flag so existing ecommerce clients
@@ -512,21 +573,35 @@ export class ClientDetailComponent implements OnInit {
       c?.websitePlatform === 'shopify' ||
       (!c?.websitePlatform && c?.isEcommerce)
     ) {
-      tabs.push({ key: 'shopify', label: '🛍️ Shopify', group: 'platform' });
+      tabs.push({ key: 'shopify', label: '🛍️ Shopify', group: 'web' });
     } else if (c?.websitePlatform === 'wordpress') {
       tabs.push({
         key: 'wordpress',
         label: '📝 WordPress',
-        group: 'platform',
+        group: 'web',
       });
     }
     return tabs;
   });
 
-  /** Only groups that have at least one visible tab end up in the top nav. */
+  /**
+   * Only groups the client actually needs end up in the sidebar. Overview,
+   * Work, and Setup are always shown; SEO / PPC / Web are gated on the
+   * activeServiceLines set.
+   */
   visibleGroups = computed<GroupDef[]>(() => {
+    const lines = this.activeServiceLines();
     const tabs = this.allTabs();
-    return GROUPS.filter((g) => tabs.some((t) => t.group === g.key));
+    return GROUPS.filter((g) => {
+      // Groups without any tabs are always hidden.
+      if (!tabs.some((t) => t.group === g.key)) return false;
+      // Service-scoped groups gate on the client's classifier.
+      if (g.key === 'seo') return lines.has('seo');
+      if (g.key === 'ppc') return lines.has('ppc');
+      if (g.key === 'web') return lines.has('website');
+      // overview / work / setup are always visible.
+      return true;
+    });
   });
 
   /** Group key that contains the currently active tab. */
@@ -754,6 +829,14 @@ export class ClientDetailComponent implements OnInit {
       this.form.isEcommerce = !!c.isEcommerce;
       this.form.websitePlatform = (c.websitePlatform as '' | 'shopify' | 'wordpress' | 'custom') || '';
       this.form.serviceLines = ((c.serviceLines as ClientServiceLine[]) ?? []).slice();
+      // If the active tab lives in a group this client no longer needs
+      // (say ?tab=keywords for a PPC-only client) bounce them back to
+      // Overview so the sidebar and the content stay in sync.
+      const activeDef = this.allTabs().find((t) => t.key === this.activeTab());
+      const visibleKeys = new Set(this.visibleGroups().map((g) => g.key));
+      if (activeDef && !visibleKeys.has(activeDef.group)) {
+        this.activeTab.set('overview');
+      }
     });
   }
 
