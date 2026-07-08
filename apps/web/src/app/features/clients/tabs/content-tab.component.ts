@@ -158,13 +158,13 @@ import { TasksService } from '../../../core/tasks.service';
                                     (click)="openDraftLinkModal(p)">
                               {{ p.briefUrl ? 'Edit draft link' : 'Add draft link' }}
                             </button>
-                            <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900 disabled:opacity-50"
-                                    [disabled]="!cloudinary.isConfigured() || uploadingFor() === p._id"
-                                    [title]="cloudinary.isConfigured() ? '' : 'Cloudinary not configured'"
-                                    (click)="triggerAttachFile(p)">
-                              {{ uploadingFor() === p._id ? 'Uploading…' : 'Attach file' }}
-                            </button>
                           }
+                          <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900 disabled:opacity-50"
+                                  [disabled]="!cloudinary.isConfigured() || uploadingFor() === p._id"
+                                  [title]="cloudinary.isConfigured() ? '' : 'Cloudinary not configured'"
+                                  (click)="triggerAttachFile(p)">
+                            {{ uploadingFor() === p._id ? 'Uploading…' : 'Attach file' }}
+                          </button>
                           <div class="my-1 border-t border-ink-100"></div>
                           <button class="block w-full text-left px-3 py-1.5 hover:bg-danger-100 text-danger-500 hover:text-danger-700"
                                   (click)="confirmRemove(p)">
