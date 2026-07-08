@@ -60,136 +60,186 @@ import { FileDropDirective } from '../../../shared/file-drop.directive';
         </div>
       }
 
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        @for (status of statuses; track status) {
-          <div class="bg-white border border-ink-200 rounded-lg p-4 min-h-[260px]">
-            <div class="flex items-center justify-between mb-3 pb-2 border-b border-ink-100">
-              <span class="text-[11px] font-bold uppercase tracking-wider"
-                    [class.text-ink-700]="status !== 'published'"
-                    [class.text-positive-500]="status === 'published'">
-                {{ status }}
+      <!-- Filter tabs + list. Single scrollable list with a status
+           filter on top; the counts help the reader decide where to
+           focus without loading three columns worth of empty state. -->
+      <div class="bg-white border border-ink-200 rounded-lg overflow-hidden">
+        <div class="flex items-center gap-1 px-3 pt-3 pb-0 border-b border-ink-100 flex-wrap">
+          @for (tab of filterTabs; track tab.key) {
+            <button type="button"
+                    class="text-xs font-semibold px-3 py-1.5 rounded-t-md border-b-2 transition-colors"
+                    [class.text-brand-500]="filter() === tab.key"
+                    [class.border-brand-500]="filter() === tab.key"
+                    [class.text-ink-500]="filter() !== tab.key"
+                    [class.border-transparent]="filter() !== tab.key"
+                    [class.hover:text-ink-900]="filter() !== tab.key"
+                    (click)="filter.set(tab.key)">
+              {{ tab.label }}
+              <span class="ml-1 text-[10px] font-bold text-ink-500 bg-ink-100 rounded-full px-1.5 py-0.5">
+                {{ countFor(tab.key) }}
               </span>
-              <span class="text-xs font-bold text-ink-500 bg-ink-100 rounded-full px-2 py-0.5">
-                {{ byStatus()[status]?.length || 0 }}
+            </button>
+          }
+        </div>
+
+        <ul class="divide-y divide-ink-100">
+          @for (p of visiblePieces(); track p._id) {
+            <li class="relative flex items-start gap-3 px-4 py-3 hover:bg-ink-50 transition-colors"
+                [appFileDrop]="cloudinary.isConfigured() && uploadingFor() !== p._id"
+                #drop="fileDrop"
+                (filesDropped)="onFilesDropped(p, $event)">
+              <div class="absolute inset-0 z-10 border-2 border-dashed border-brand-500 bg-brand-500/10 pointer-events-none flex items-center justify-center text-xs font-bold uppercase tracking-wider text-brand-500 opacity-0 transition-opacity"
+                   [class.opacity-100]="drop.active">
+                📎 Drop to attach
+              </div>
+
+              <!-- Type chip -->
+              <span class="mt-0.5 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded shrink-0 w-14 text-center"
+                    [class]="typeChipClass(p.contentType)">
+                {{ p.contentType || 'post' }}
               </span>
-            </div>
-            <div class="space-y-2">
-              @for (p of byStatus()[status] || []; track p._id) {
-                <div class="relative bg-ink-50 rounded-md p-2.5 border border-ink-200 text-sm hover:border-brand-500 hover:shadow-sm transition-all"
-                     [appFileDrop]="cloudinary.isConfigured() && uploadingFor() !== p._id"
-                     #drop="fileDrop"
-                     (filesDropped)="onFilesDropped(p, $event)">
-                  <!-- Hovering-drag overlay. Only visible while the user
-                       is actively dragging a file over the card — drop
-                       target isn't discoverable otherwise. -->
-                  <div class="absolute inset-0 z-10 rounded-md border-2 border-dashed border-brand-500 bg-brand-500/10 pointer-events-none flex items-center justify-center text-[10px] font-bold uppercase tracking-wider text-brand-500 opacity-0 transition-opacity"
-                       [class.opacity-100]="drop.active">
-                    📎 Drop to attach
-                  </div>
-                  <div class="flex items-start justify-between gap-2">
-                    <div class="font-medium text-ink-900 leading-tight text-xs flex-1">{{ p.title }}</div>
-                    <span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0"
-                          [class]="typeChipClass(p.contentType)">
-                      {{ p.contentType || 'post' }}
-                    </span>
-                  </div>
-                  @if (p.targetKeyword) {
-                    <div class="text-[10px] text-brand-600 mt-1 font-medium">🎯 {{ p.targetKeyword }}</div>
-                  }
-                  @if (p.briefUrl) {
-                    <a [href]="p.briefUrl" target="_blank" rel="noopener"
-                       class="block text-[10px] text-sky-600 hover:underline mt-1 font-medium truncate"
-                       [title]="p.briefUrl">
-                      📝 {{ p.briefUrl }}
-                    </a>
-                  }
-                  @if (p.publishedUrl) {
-                    <a [href]="p.publishedUrl" target="_blank" rel="noopener"
-                       class="block text-[10px] text-positive-500 hover:underline mt-1 font-medium truncate"
-                       [title]="p.publishedUrl">
-                      ↗ {{ p.publishedUrl }}
-                    </a>
-                  }
-                  @if (p.attachments?.length) {
-                    <div class="mt-1.5 space-y-1">
-                      @for (a of p.attachments || []; track a.publicId) {
-                        <div class="flex items-center gap-1.5 text-[10px] bg-white border border-ink-200 rounded px-1.5 py-1">
-                          <a [href]="a.url" target="_blank" rel="noopener"
-                             class="flex-1 text-ink-700 hover:text-brand-500 truncate font-medium"
-                             [title]="a.originalFilename || a.publicId">
-                            📎 {{ a.originalFilename || 'attachment' }}
-                          </a>
-                          <button type="button" class="text-ink-400 hover:text-danger-500 leading-none px-0.5"
-                                  (click)="removeAttachment(p, a)"
-                                  title="Remove attachment">×</button>
-                        </div>
-                      }
-                    </div>
-                  }
-                  @if (uploadingFor() === p._id) {
-                    <div class="text-[10px] text-brand-500 mt-1 font-medium">
-                      Uploading {{ uploadProgress() }}%…
-                    </div>
-                  }
-                  <div class="flex items-center justify-between mt-2 gap-1">
-                    <select class="text-[10px] border border-ink-200 rounded px-1 py-0.5 bg-white flex-1"
-                            [ngModel]="p.status"
-                            (ngModelChange)="changeStatus(p, $event)">
-                      @for (s of statuses; track s) {
-                        <option [value]="s">{{ s }}</option>
-                      }
-                    </select>
-                    @if (p.status === 'published') {
-                      <button class="text-[10px] text-ink-500 hover:text-brand-500 px-1 leading-none"
-                              (click)="openPublishModal(p)"
-                              title="Edit published URL">
-                        ✎
-                      </button>
-                    }
-                    <!-- Contextual menu. The button toggles a small dropdown
-                         anchored to the piece card. Keep actions discoverable
-                         here as we add more over time. -->
-                    <div class="relative">
-                      <button class="text-ink-400 hover:text-ink-900 text-sm leading-none px-1"
-                              (click)="toggleMenu(p, $event)"
-                              [attr.aria-expanded]="menuOpenId() === p._id"
-                              title="More actions">⋮</button>
-                      @if (menuOpenId() === p._id) {
-                        <div class="absolute right-0 top-full mt-1 z-20 w-44 bg-white border border-ink-200 rounded-md shadow-lg py-1 text-xs"
-                             (click)="$event.stopPropagation()">
-                          @if (p.status === 'idea') {
-                            <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900"
-                                    [disabled]="creatingTaskFor() === p._id"
-                                    (click)="createTaskForPiece(p)">
-                              {{ creatingTaskFor() === p._id ? 'Creating…' : 'Create task' }}
-                            </button>
-                          }
-                          @if (p.status === 'draft') {
-                            <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900"
-                                    (click)="openDraftLinkModal(p)">
-                              {{ p.briefUrl ? 'Edit draft link' : 'Add draft link' }}
-                            </button>
-                          }
-                          <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900 disabled:opacity-50"
-                                  [disabled]="!cloudinary.isConfigured() || uploadingFor() === p._id"
-                                  [title]="cloudinary.isConfigured() ? '' : 'Cloudinary not configured'"
-                                  (click)="triggerAttachFile(p)">
-                            {{ uploadingFor() === p._id ? 'Uploading…' : 'Attach file' }}
-                          </button>
-                          <div class="my-1 border-t border-ink-100"></div>
-                          <button class="block w-full text-left px-3 py-1.5 hover:bg-danger-100 text-danger-500 hover:text-danger-700"
-                                  (click)="confirmRemove(p)">
-                            Delete piece
-                          </button>
-                        </div>
-                      }
-                    </div>
-                  </div>
+
+              <!-- Content -->
+              <div class="flex-1 min-w-0">
+                <div class="font-semibold text-ink-900 leading-tight text-sm">
+                  {{ p.title }}
                 </div>
+                @if (p.targetKeyword) {
+                  <div class="text-xs text-ink-500 mt-0.5">
+                    <span class="text-brand-600 font-medium">🎯 {{ p.targetKeyword }}</span>
+                  </div>
+                }
+                @if (p.notes) {
+                  <div class="text-xs text-ink-500 mt-0.5 line-clamp-2">
+                    {{ p.notes }}
+                  </div>
+                }
+
+                <!-- Links + attachments row -->
+                @if (p.briefUrl || p.publishedUrl || p.attachments?.length) {
+                  <div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                    @if (p.briefUrl) {
+                      <a [href]="p.briefUrl" target="_blank" rel="noopener"
+                         class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky-50 border border-sky-100 text-sky-700 hover:bg-sky-100 max-w-xs truncate"
+                         [title]="p.briefUrl">
+                        📝 Draft link
+                      </a>
+                    }
+                    @if (p.publishedUrl) {
+                      <a [href]="p.publishedUrl" target="_blank" rel="noopener"
+                         class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-positive-100/70 border border-positive-500/30 text-positive-500 hover:bg-positive-100 max-w-xs truncate"
+                         [title]="p.publishedUrl">
+                        ↗ Live
+                      </a>
+                    }
+                    @for (a of p.attachments || []; track a.publicId) {
+                      <span class="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded bg-white border border-ink-200 text-ink-700 max-w-xs">
+                        <a [href]="a.url" target="_blank" rel="noopener"
+                           class="hover:text-brand-500 truncate"
+                           [title]="a.originalFilename || a.publicId">
+                          📎 {{ a.originalFilename || 'attachment' }}
+                        </a>
+                        <button type="button" class="text-ink-400 hover:text-danger-500 leading-none px-0.5"
+                                (click)="removeAttachment(p, a)"
+                                title="Remove attachment">×</button>
+                      </span>
+                    }
+                  </div>
+                }
+                @if (uploadingFor() === p._id) {
+                  <div class="text-[11px] text-brand-500 mt-1 font-medium">
+                    Uploading {{ uploadProgress() }}%…
+                  </div>
+                }
+              </div>
+
+              <!-- Right side: status + primary action + menu -->
+              <div class="flex items-center gap-2 shrink-0">
+                <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded"
+                      [class]="statusChipClass(p.status)">
+                  {{ p.status }}
+                </span>
+
+                <button type="button"
+                        class="text-xs font-semibold px-3 py-1.5 rounded-md transition-colors whitespace-nowrap"
+                        [class]="primaryActionClass(p.status)"
+                        [disabled]="creatingTaskFor() === p._id"
+                        (click)="primaryAction(p)">
+                  {{ primaryActionLabel(p) }}
+                </button>
+
+                <div class="relative">
+                  <button type="button"
+                          class="w-7 h-7 rounded-md text-ink-400 hover:text-ink-900 hover:bg-ink-100 flex items-center justify-center text-lg leading-none"
+                          (click)="toggleMenu(p, $event)"
+                          [attr.aria-expanded]="menuOpenId() === p._id"
+                          title="More actions">⋮</button>
+                  @if (menuOpenId() === p._id) {
+                    <div class="absolute right-0 top-full mt-1 z-20 w-48 bg-white border border-ink-200 rounded-md shadow-lg py-1 text-xs"
+                         (click)="$event.stopPropagation()">
+                      @if (p.status !== 'idea') {
+                        <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900"
+                                (click)="setStatus(p, 'idea')">
+                          Move to Idea
+                        </button>
+                      }
+                      @if (p.status !== 'draft') {
+                        <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900"
+                                (click)="setStatus(p, 'draft')">
+                          Move to Draft
+                        </button>
+                      }
+                      @if (p.status !== 'published') {
+                        <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900"
+                                (click)="setStatus(p, 'published')">
+                          Mark as Published
+                        </button>
+                      }
+                      <div class="my-1 border-t border-ink-100"></div>
+                      @if (p.status === 'draft' || p.briefUrl) {
+                        <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900"
+                                (click)="openDraftLinkModal(p)">
+                          {{ p.briefUrl ? 'Edit draft link' : 'Add draft link' }}
+                        </button>
+                      }
+                      @if (p.status === 'published') {
+                        <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900"
+                                (click)="openPublishModal(p)">
+                          {{ p.publishedUrl ? 'Edit published URL' : 'Add published URL' }}
+                        </button>
+                      }
+                      <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900 disabled:opacity-50"
+                              [disabled]="!cloudinary.isConfigured() || uploadingFor() === p._id"
+                              [title]="cloudinary.isConfigured() ? '' : 'Cloudinary not configured'"
+                              (click)="triggerAttachFile(p)">
+                        {{ uploadingFor() === p._id ? 'Uploading…' : 'Attach file' }}
+                      </button>
+                      <div class="my-1 border-t border-ink-100"></div>
+                      <button class="block w-full text-left px-3 py-1.5 hover:bg-danger-100 text-danger-500 hover:text-danger-700"
+                              (click)="confirmRemove(p)">
+                        Delete piece
+                      </button>
+                    </div>
+                  }
+                </div>
+
+                <button type="button"
+                        class="w-7 h-7 rounded-md text-ink-400 hover:text-danger-500 hover:bg-danger-100 flex items-center justify-center text-lg leading-none"
+                        (click)="confirmRemove(p)"
+                        title="Delete piece">×</button>
+              </div>
+            </li>
+          }
+          @if (visiblePieces().length === 0) {
+            <li class="px-6 py-12 text-center text-sm text-ink-400 italic">
+              @if (filter() === 'all') {
+                No content pieces yet. Add one above.
+              } @else {
+                No pieces in <strong>{{ filter() }}</strong>.
               }
-            </div>
-          </div>
-        }
+            </li>
+          }
+        </ul>
       </div>
     </div>
 
@@ -311,6 +361,17 @@ export class ClientContentTab implements OnChanges {
   statuses: ContentStatus[] = CONTENT_STATUSES;
   types: ContentPieceType[] = CONTENT_PIECE_TYPES;
 
+  // Active status filter for the list view. 'all' shows every piece;
+  // the specific values match ContentStatus one-to-one.
+  filter = signal<'all' | ContentStatus>('all');
+
+  readonly filterTabs: { key: 'all' | ContentStatus; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'idea', label: 'Idea' },
+    { key: 'draft', label: 'Draft' },
+    { key: 'published', label: 'Published' },
+  ];
+
   newPiece: Partial<ContentPiece> = {
     title: '',
     targetKeyword: '',
@@ -353,6 +414,34 @@ export class ClientContentTab implements OnChanges {
     return map;
   });
 
+  // Pieces to render in the list, filtered by the current tab. Sorted
+  // by status priority (idea → draft → published) then most-recent
+  // first so the top of the list is always where the reader's
+  // attention should be — WIP surfaces over completed work.
+  visiblePieces = computed<ContentPiece[]>(() => {
+    const f = this.filter();
+    const rank: Record<ContentStatus, number> = {
+      idea: 0,
+      draft: 1,
+      published: 2,
+    };
+    const list = f === 'all'
+      ? [...this.pieces()]
+      : this.pieces().filter((p) => p.status === f);
+    return list.sort((a, b) => {
+      const rankDiff = rank[a.status] - rank[b.status];
+      if (rankDiff !== 0) return rankDiff;
+      const aT = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const bT = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return bT - aT;
+    });
+  });
+
+  countFor(key: 'all' | ContentStatus): number {
+    if (key === 'all') return this.pieces().length;
+    return this.byStatus()[key]?.length || 0;
+  }
+
   ngOnChanges() {
     this.load();
   }
@@ -382,6 +471,74 @@ export class ClientContentTab implements OnChanges {
       default:
         return 'bg-sky-100 text-sky-700';
     }
+  }
+
+  statusChipClass(s: ContentStatus): string {
+    switch (s) {
+      case 'draft':
+        return 'bg-warning-100 text-warning-500';
+      case 'published':
+        return 'bg-positive-100 text-positive-500';
+      case 'idea':
+      default:
+        return 'bg-ink-100 text-ink-500';
+    }
+  }
+
+  primaryActionLabel(p: ContentPiece): string {
+    if (this.creatingTaskFor() === p._id) return 'Creating…';
+    switch (p.status) {
+      case 'idea':
+        return 'Write draft';
+      case 'draft':
+        return 'Mark published';
+      case 'published':
+        return 'Open';
+      default:
+        return '';
+    }
+  }
+
+  primaryActionClass(s: ContentStatus): string {
+    if (s === 'published') {
+      return 'bg-white border border-ink-200 text-ink-700 hover:bg-ink-100';
+    }
+    return 'bg-brand-500 text-white hover:bg-brand-600';
+  }
+
+  /**
+   * The list view collapses "advance workflow" into a single button
+   * whose action depends on where the piece is. Idea → creates a task
+   * and moves to draft (existing helper). Draft → opens the publish
+   * modal so the URL is captured in one step. Published → opens the
+   * live page in a new tab.
+   */
+  primaryAction(p: ContentPiece) {
+    switch (p.status) {
+      case 'idea':
+        this.createTaskForPiece(p);
+        return;
+      case 'draft':
+        this.openPublishModal(p);
+        return;
+      case 'published':
+        if (p.publishedUrl) {
+          window.open(p.publishedUrl, '_blank', 'noopener');
+        } else {
+          this.openPublishModal(p);
+        }
+        return;
+    }
+  }
+
+  /**
+   * Kebab-menu shortcut to change status without going through the
+   * primary action. Handles the idea→published intercept the same way
+   * as the old inline dropdown.
+   */
+  setStatus(p: ContentPiece, status: ContentStatus) {
+    this.menuOpenId.set(null);
+    this.changeStatus(p, status);
   }
 
   changeStatus(p: ContentPiece, status: ContentStatus) {
