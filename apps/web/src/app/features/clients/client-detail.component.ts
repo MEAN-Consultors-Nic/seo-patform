@@ -181,9 +181,10 @@ const GROUPS: GroupDef[] = [
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-2 sm:flex-shrink-0">
-            <button class="btn-secondary text-xs sm:text-sm" (click)="openEdit()">
+            <a [routerLink]="['/clients', c._id, 'edit']"
+               class="btn-secondary text-xs sm:text-sm">
               ✏ Edit client
-            </button>
+            </a>
             <a [routerLink]="['/clients', c._id, 'edit']" [queryParams]="{ tab: 'subscriptions' }"
                class="btn-secondary text-xs sm:text-sm">
               🧩 Subscriptions
@@ -348,152 +349,6 @@ const GROUPS: GroupDef[] = [
         </div>
       </div>
 
-      <!-- Edit client modal -->
-      @if (editOpen()) {
-        <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
-             (click)="closeEdit()">
-          <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto"
-               (click)="$event.stopPropagation()">
-            <div class="flex items-start justify-between mb-4">
-              <div>
-                <h2 class="text-lg font-bold text-ink-900">Edit client</h2>
-                <p class="text-xs text-ink-500 mt-0.5">{{ c.name }}</p>
-              </div>
-              <button type="button" (click)="closeEdit()"
-                      class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
-            </div>
-
-            <div class="space-y-3 text-sm">
-              <div>
-                <label class="label">Client name</label>
-                <input class="input" [(ngModel)]="form.name" placeholder="Company name" />
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label class="label">Package</label>
-                  <select class="input" [ngModel]="form.packageId"
-                          (ngModelChange)="onPackageChange($event)">
-                    <option value="">— None —</option>
-                    @for (p of packages(); track p._id) {
-                      <option [value]="p._id">{{ p.name }}</option>
-                    }
-                  </select>
-                </div>
-                <div>
-                  <label class="label">Hours / cycle</label>
-                  <input type="number" class="input" min="0" step="0.5" [(ngModel)]="form.hoursPerCycle" />
-                </div>
-                <div>
-                  <label class="label">Status</label>
-                  <select class="input" [(ngModel)]="form.active">
-                    <option [ngValue]="true">Active</option>
-                    <option [ngValue]="false">Inactive</option>
-                  </select>
-                </div>
-                <div class="md:col-span-3">
-                  <label class="label">Service lines</label>
-                  <div class="flex flex-wrap gap-1.5">
-                    @for (s of serviceLineOptions; track s) {
-                      <label class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border cursor-pointer transition"
-                             [class.bg-ink-900]="form.serviceLines.includes(s)"
-                             [class.text-white]="form.serviceLines.includes(s)"
-                             [class.border-ink-900]="form.serviceLines.includes(s)"
-                             [class.text-ink-700]="!form.serviceLines.includes(s)"
-                             [class.border-ink-200]="!form.serviceLines.includes(s)"
-                             [class.hover:bg-ink-50]="!form.serviceLines.includes(s)">
-                        <input type="checkbox" class="sr-only"
-                               [checked]="form.serviceLines.includes(s)"
-                               (change)="toggleServiceLine(s)" />
-                        {{ serviceLineLabels[s] }}
-                      </label>
-                    }
-                  </div>
-                  <p class="text-[10px] text-ink-500 mt-1">
-                    Which services your agency provides to this client. Drives the roster filters + At-risk / Expansion counts.
-                  </p>
-                </div>
-                <div>
-                  <label class="label">Ending date</label>
-                  <input type="date" class="input"
-                         [(ngModel)]="form.endingDate"
-                         placeholder="(no end set)" />
-                  <p class="text-[10px] text-ink-500 mt-1 leading-tight">
-                    Last day of the engagement. Leave blank for open-ended.
-                  </p>
-                </div>
-              </div>
-              <div>
-                <label class="label">URL</label>
-                <input class="input" [(ngModel)]="form.url" placeholder="https://example.com" />
-              </div>
-              <div>
-                <label class="label">Calendar aliases</label>
-                <input class="input"
-                       [ngModel]="calendarAliasesText()"
-                       (ngModelChange)="setCalendarAliases($event)"
-                       placeholder="MB Global Logistics, Buck Waste" />
-                <p class="text-[11px] text-ink-500 mt-1">
-                  Comma-separated alternative names. The Calendar sync also matches event titles
-                  containing any of these — handy when your Google events use a different
-                  spelling than the client's canonical name.
-                </p>
-              </div>
-              <div>
-                <label class="label">Logo (URL)</label>
-                <input class="input" [(ngModel)]="form.logoUrl" placeholder="https://..." />
-                @if (form.logoUrl) {
-                  <div class="mt-2 flex items-center gap-2">
-                    <img [src]="form.logoUrl" class="max-h-16 max-w-[160px] object-contain border border-ink-200 rounded p-1 bg-white" alt="preview"
-                         (load)="logoPreviewOk.set(true)"
-                         (error)="logoPreviewOk.set(false)" />
-                    @if (logoPreviewOk() === false) {
-                      <span class="text-xs text-warning-500">⚠ The URL did not load as an image (it will still be saved)</span>
-                    }
-                  </div>
-                }
-              </div>
-              <div>
-                <label class="label">Industry</label>
-                <input class="input" [(ngModel)]="form.industry" placeholder="e.g. Storage, Logistics" />
-              </div>
-              <div>
-                <label class="label">Website platform</label>
-                <select class="input" [(ngModel)]="form.websitePlatform">
-                  <option value="">— Unspecified —</option>
-                  <option value="shopify">🛍️ Shopify</option>
-                  <option value="wordpress">📝 WordPress</option>
-                  <option value="custom">⚙️ Custom / Other</option>
-                </select>
-                <p class="text-[11px] text-ink-400 mt-1">
-                  Enables the platform-specific tab (Shopify or WordPress) with
-                  page browsing and bulk meta tag updates. "Custom / Other" is
-                  informational only.
-                </p>
-              </div>
-              <label class="inline-flex items-center gap-2 text-sm text-ink-700 cursor-pointer select-none pt-1">
-                <input type="checkbox" class="rounded border-ink-300 text-brand-500 focus:ring-brand-500"
-                       [(ngModel)]="form.isEcommerce" />
-                <span>🛒 <strong>Ecommerce client</strong></span>
-                <span class="text-xs text-ink-400">— enables the Ecommerce performance tab and the Google Merchant Center field in Integrations</span>
-              </label>
-
-              @if (dataError()) {
-                <div class="text-xs text-danger-500">{{ dataError() }}</div>
-              }
-              @if (dataSaved()) {
-                <div class="text-xs text-positive-500">✓ Saved</div>
-              }
-            </div>
-
-            <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-ink-100">
-              <button class="btn-secondary" (click)="closeEdit()">Cancel</button>
-              <button class="btn-primary" (click)="saveData()" [disabled]="savingData()">
-                {{ savingData() ? 'Saving…' : 'Save changes' }}
-              </button>
-            </div>
-          </div>
-        </div>
-      }
     }
   `,
 })
@@ -505,8 +360,6 @@ export class ClientDetailComponent implements OnInit {
   packages = signal<Package[]>([]);
   client = signal<Client | null>(null);
   activeTab = signal<TabKey>('overview');
-  logoPreviewOk = signal<boolean | null>(null);
-
   /**
    * Which service groups the client is subscribed to. When the client
    * has no serviceLines configured we fall back to showing SEO so
@@ -688,53 +541,6 @@ export class ClientDetailComponent implements OnInit {
     this.sidebarOpen.set(false);
   }
 
-  form: {
-    name: string;
-    tier?: 'A' | 'B' | 'C';
-    packageId?: string;
-    url: string;
-    logoUrl: string;
-    industry: string;
-    hoursPerCycle: number;
-    active: boolean;
-    endingDate: string;
-    isEcommerce: boolean;
-    websitePlatform: '' | 'shopify' | 'wordpress' | 'custom';
-    calendarAliases: string[];
-    serviceLines: ClientServiceLine[];
-  } = {
-    name: '',
-    tier: 'C',
-    url: '',
-    logoUrl: '',
-    industry: '',
-    hoursPerCycle: 0,
-    active: true,
-    endingDate: '',
-    isEcommerce: false,
-    websitePlatform: '',
-    calendarAliases: [],
-    serviceLines: [],
-  };
-
-  readonly serviceLineOptions: ClientServiceLine[] = [
-    'seo',
-    'ppc',
-    'website',
-    'other',
-  ];
-  readonly serviceLineLabels = CLIENT_SERVICE_LABELS;
-
-  toggleServiceLine(s: ClientServiceLine) {
-    this.form.serviceLines = this.form.serviceLines.includes(s)
-      ? this.form.serviceLines.filter((x) => x !== s)
-      : [...this.form.serviceLines, s];
-  }
-  editOpen = signal(false);
-  savingData = signal(false);
-  dataError = signal<string | null>(null);
-  dataSaved = signal(false);
-
   ngOnInit() {
     this.reload();
     this.packagesSvc.list().subscribe({
@@ -747,14 +553,6 @@ export class ClientDetailComponent implements OnInit {
     const requested = this.route.snapshot.queryParamMap.get('tab');
     if (requested && this.allTabs().some((t) => t.key === requested)) {
       this.activeTab.set(requested as TabKey);
-    }
-  }
-
-  onPackageChange(packageId: string) {
-    this.form.packageId = packageId;
-    const pkg = this.packages().find((p) => p._id === packageId);
-    if (pkg?.hoursPerPeriod !== undefined) {
-      this.form.hoursPerCycle = pkg.hoursPerPeriod;
     }
   }
 
@@ -776,63 +574,10 @@ export class ClientDetailComponent implements OnInit {
   }
 
   /** "alias1, alias2, alias3" representation for the comma-separated input. */
-  calendarAliasesText(): string {
-    return (this.form.calendarAliases || []).join(', ');
-  }
-
-  setCalendarAliases(raw: string) {
-    this.form.calendarAliases = raw
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-
-  openEdit() {
-    const c = this.client();
-    if (!c) return;
-    // Re-hydrate the form from the latest client doc so any external edits
-    // (e.g. through Integrations or Service Areas) are reflected.
-    this.form.name = c.name;
-    this.form.tier = c.tier;
-    this.form.packageId = c.packageId || c.package?._id || '';
-    this.form.url = c.url;
-    this.form.logoUrl = c.logoUrl || '';
-    this.form.industry = c.industry || '';
-    this.form.hoursPerCycle = c.hoursPerCycle ?? 0;
-    this.form.active = c.active ?? true;
-    this.form.isEcommerce = !!c.isEcommerce;
-    this.form.websitePlatform = (c.websitePlatform as '' | 'shopify' | 'wordpress' | 'custom') || '';
-    this.form.calendarAliases = (c.calendarAliases ?? []).slice();
-    this.form.serviceLines = ((c.serviceLines as ClientServiceLine[]) ?? []).slice();
-    this.form.endingDate = c.endingDate
-      ? new Date(c.endingDate).toISOString().slice(0, 10)
-      : '';
-    this.dataError.set(null);
-    this.dataSaved.set(false);
-    this.editOpen.set(true);
-  }
-
-  closeEdit() {
-    if (this.savingData()) return;
-    this.editOpen.set(false);
-    this.dataError.set(null);
-  }
-
   reload() {
     const id = this.route.snapshot.paramMap.get('id')!;
     this.svc.get(id).subscribe((c) => {
       this.client.set(c);
-      this.form.name = c.name;
-      this.form.tier = c.tier;
-      this.form.packageId = c.packageId || c.package?._id || '';
-      this.form.url = c.url;
-      this.form.logoUrl = c.logoUrl || '';
-      this.form.industry = c.industry || '';
-      this.form.hoursPerCycle = c.hoursPerCycle ?? 0;
-      this.form.active = c.active ?? true;
-      this.form.isEcommerce = !!c.isEcommerce;
-      this.form.websitePlatform = (c.websitePlatform as '' | 'shopify' | 'wordpress' | 'custom') || '';
-      this.form.serviceLines = ((c.serviceLines as ClientServiceLine[]) ?? []).slice();
       // If the active tab lives in a group this client no longer needs
       // (say ?tab=keywords for a PPC-only client) bounce them back to
       // Overview so the sidebar and the content stay in sync.
@@ -844,58 +589,4 @@ export class ClientDetailComponent implements OnInit {
     });
   }
 
-  saveData() {
-    const c = this.client();
-    if (!c?._id) return;
-    const name = this.form.name?.trim();
-    if (!name) {
-      this.dataError.set('Client name is required.');
-      return;
-    }
-    this.dataError.set(null);
-    this.dataSaved.set(false);
-    this.savingData.set(true);
-    const trimmedLogo = this.form.logoUrl?.trim();
-    this.svc
-      .update(c._id, {
-        name,
-        packageId: this.form.packageId || undefined,
-        url: this.form.url?.trim(),
-        logoUrl: trimmedLogo || undefined,
-        industry: this.form.industry?.trim() || undefined,
-        hoursPerCycle: Number(this.form.hoursPerCycle) || 0,
-        active: !!this.form.active,
-        isEcommerce: !!this.form.isEcommerce,
-        websitePlatform: this.form.websitePlatform || undefined,
-        calendarAliases: this.form.calendarAliases.filter((a) => a.trim()),
-        serviceLines: this.form.serviceLines.length
-          ? this.form.serviceLines
-          : undefined,
-        // Send null (not undefined) when cleared so Mongoose actually
-        // wipes the field instead of leaving the old date in place.
-        endingDate: this.form.endingDate
-          ? (new Date(`${this.form.endingDate}T00:00:00Z`) as unknown as Date)
-          : (null as unknown as Date | undefined),
-      })
-      .subscribe({
-        next: (u) => {
-          this.client.set(u);
-          this.form.logoUrl = u.logoUrl || '';
-          this.savingData.set(false);
-          this.dataSaved.set(true);
-          // Close the modal shortly after the user sees the confirmation
-          setTimeout(() => {
-            this.dataSaved.set(false);
-            this.editOpen.set(false);
-          }, 1000);
-        },
-        error: (err) => {
-          this.savingData.set(false);
-          const msg = err?.error?.message;
-          this.dataError.set(
-            Array.isArray(msg) ? msg.join(', ') : msg || 'Could not save the client.',
-          );
-        },
-      });
-  }
 }

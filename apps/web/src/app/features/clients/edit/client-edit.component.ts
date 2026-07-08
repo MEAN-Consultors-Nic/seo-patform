@@ -76,36 +76,84 @@ interface SubscriptionRow extends ClientSubscription {
             <div class="card">
               <h2 class="text-lg font-bold text-ink-900 mb-1">General details</h2>
               <p class="text-sm text-ink-500 mb-4">
-                Name, URL, hours, industry, integrations, branding…
+                Client-level fields only. Package, hours, and end dates
+                are per-service — manage them in the Subscriptions tab.
               </p>
-              <dl class="grid grid-cols-2 gap-3 text-sm mb-6">
+
+              <div class="space-y-3">
                 <div>
-                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-ink-500">Name</dt>
-                  <dd class="text-ink-900 mt-0.5">{{ c.name }}</dd>
+                  <label class="label">Client name</label>
+                  <input class="input" [(ngModel)]="genForm.name" placeholder="Company name" />
                 </div>
                 <div>
-                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-ink-500">URL</dt>
-                  <dd class="text-ink-900 mt-0.5">{{ c.url }}</dd>
+                  <label class="label">Status</label>
+                  <select class="input" [(ngModel)]="genForm.active">
+                    <option [ngValue]="true">Active</option>
+                    <option [ngValue]="false">Inactive</option>
+                  </select>
                 </div>
                 <div>
-                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-ink-500">Industry</dt>
-                  <dd class="text-ink-900 mt-0.5">{{ c.industry || '—' }}</dd>
+                  <label class="label">URL</label>
+                  <input class="input" [(ngModel)]="genForm.url" placeholder="https://example.com" />
                 </div>
                 <div>
-                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-ink-500">Ending date</dt>
-                  <dd class="text-ink-900 mt-0.5">
-                    {{ c.endingDate ? (c.endingDate | date: 'mediumDate') : 'Open-ended' }}
-                  </dd>
+                  <label class="label">Calendar aliases</label>
+                  <input class="input"
+                         [ngModel]="calendarAliasesText()"
+                         (ngModelChange)="setCalendarAliases($event)"
+                         placeholder="MB Global Logistics, Buck Waste" />
+                  <p class="text-[11px] text-ink-500 mt-1">
+                    Comma-separated alt names for the Calendar sync to match.
+                  </p>
                 </div>
-              </dl>
-              <a [routerLink]="['/clients', c._id]"
-                 class="btn-primary">
-                Open detail page to edit these fields
-              </a>
-              <p class="text-[11px] text-ink-400 mt-3">
-                Follow-up: this tab will host the full edit form directly. For now, the
-                existing "Edit client" button on the detail page handles these fields.
-              </p>
+                <div>
+                  <label class="label">Logo (URL)</label>
+                  <input class="input" [(ngModel)]="genForm.logoUrl" placeholder="https://..." />
+                  @if (genForm.logoUrl) {
+                    <div class="mt-2 flex items-center gap-2">
+                      <img [src]="genForm.logoUrl"
+                           class="max-h-16 max-w-[160px] object-contain border border-ink-200 rounded p-1 bg-white"
+                           alt="preview" />
+                    </div>
+                  }
+                </div>
+                <div>
+                  <label class="label">Industry</label>
+                  <input class="input" [(ngModel)]="genForm.industry" placeholder="e.g. Storage, Logistics" />
+                </div>
+                <div>
+                  <label class="label">Website platform</label>
+                  <select class="input" [(ngModel)]="genForm.websitePlatform">
+                    <option value="">— Unspecified —</option>
+                    <option value="shopify">🛍️ Shopify</option>
+                    <option value="wordpress">📝 WordPress</option>
+                    <option value="custom">⚙️ Custom / Other</option>
+                  </select>
+                  <p class="text-[11px] text-ink-400 mt-1">
+                    Enables the platform-specific tab (Shopify or WordPress) with page
+                    browsing and bulk meta tag updates.
+                  </p>
+                </div>
+                <label class="inline-flex items-center gap-2 text-sm text-ink-700 cursor-pointer select-none pt-1">
+                  <input type="checkbox" [(ngModel)]="genForm.isEcommerce" />
+                  <span>🛒 <strong>Ecommerce client</strong></span>
+                  <span class="text-xs text-ink-400">— enables the Ecommerce performance tab</span>
+                </label>
+              </div>
+
+              @if (genError()) {
+                <div class="text-xs text-danger-500 mt-3">{{ genError() }}</div>
+              }
+              @if (genSaved()) {
+                <div class="text-xs text-positive-500 mt-3">✓ Saved</div>
+              }
+
+              <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-ink-100">
+                <a [routerLink]="['/clients', c._id]" class="btn-secondary">Cancel</a>
+                <button class="btn-primary" (click)="saveGeneral()" [disabled]="genSaving()">
+                  {{ genSaving() ? 'Saving…' : 'Save changes' }}
+                </button>
+              </div>
             </div>
           }
           @case ('subscriptions') {
@@ -286,6 +334,31 @@ export class ClientEditComponent implements OnInit {
   loading = signal(true);
   tab = signal<TabKey>('subscriptions');
 
+  // General-tab form state. Kept as a plain object so ngModel two-way
+  // binding handles the re-render — no signal wrapper needed.
+  genForm: {
+    name: string;
+    url: string;
+    logoUrl: string;
+    industry: string;
+    active: boolean;
+    isEcommerce: boolean;
+    websitePlatform: '' | 'shopify' | 'wordpress' | 'custom';
+    calendarAliases: string[];
+  } = {
+    name: '',
+    url: '',
+    logoUrl: '',
+    industry: '',
+    active: true,
+    isEcommerce: false,
+    websitePlatform: '',
+    calendarAliases: [],
+  };
+  genSaving = signal(false);
+  genError = signal<string | null>(null);
+  genSaved = signal(false);
+
   subModal = signal(false);
   subSaving = signal(false);
   subError = signal<string | null>(null);
@@ -355,6 +428,15 @@ export class ClientEditComponent implements OnInit {
       this.loading.set(false);
       return;
     }
+    // Deep-link support: ?tab=subscriptions from the client detail
+    // header lands the user on the Subscriptions tab. Anything else
+    // falls back to General.
+    const requestedTab = this.route.snapshot.queryParamMap.get('tab');
+    if (requestedTab === 'subscriptions') {
+      this.tab.set('subscriptions');
+    } else {
+      this.tab.set('general');
+    }
     this.reload();
   }
 
@@ -375,10 +457,72 @@ export class ClientEditComponent implements OnInit {
         this.client.set(c);
         this.services.set(s);
         this.packages.set(p);
+        this.hydrateGenForm(c);
         this.loading.set(false);
       },
       () => this.loading.set(false),
     );
+  }
+
+  private hydrateGenForm(c: Client) {
+    this.genForm = {
+      name: c.name,
+      url: c.url,
+      logoUrl: c.logoUrl || '',
+      industry: c.industry || '',
+      active: c.active ?? true,
+      isEcommerce: !!c.isEcommerce,
+      websitePlatform: (c.websitePlatform as '' | 'shopify' | 'wordpress' | 'custom') || '',
+      calendarAliases: (c.calendarAliases ?? []).slice(),
+    };
+  }
+
+  calendarAliasesText(): string {
+    return (this.genForm.calendarAliases || []).join(', ');
+  }
+
+  setCalendarAliases(raw: string) {
+    this.genForm.calendarAliases = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  saveGeneral() {
+    const name = this.genForm.name?.trim();
+    if (!name) {
+      this.genError.set('Client name is required.');
+      return;
+    }
+    this.genError.set(null);
+    this.genSaved.set(false);
+    this.genSaving.set(true);
+    const patch: Partial<Client> = {
+      name,
+      url: this.genForm.url?.trim(),
+      logoUrl: this.genForm.logoUrl?.trim() || undefined,
+      industry: this.genForm.industry?.trim() || undefined,
+      active: !!this.genForm.active,
+      isEcommerce: !!this.genForm.isEcommerce,
+      websitePlatform: this.genForm.websitePlatform || undefined,
+      calendarAliases: this.genForm.calendarAliases.filter((a) => a.trim()),
+    };
+    this.clientsSvc.update(this.clientId, patch).subscribe({
+      next: (updated) => {
+        this.client.set(updated);
+        this.hydrateGenForm(updated);
+        this.genSaving.set(false);
+        this.genSaved.set(true);
+        setTimeout(() => this.genSaved.set(false), 1500);
+      },
+      error: (err) => {
+        this.genSaving.set(false);
+        const msg = err?.error?.message;
+        this.genError.set(
+          Array.isArray(msg) ? msg.join(', ') : msg || 'Could not save.',
+        );
+      },
+    });
   }
 
   serviceChip(color?: PackageColor): string {
