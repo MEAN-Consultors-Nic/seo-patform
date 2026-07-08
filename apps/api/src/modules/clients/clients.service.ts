@@ -2,7 +2,12 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { startOfDay } from 'date-fns';
-import { HOURS_PER_TIER } from '@seo/shared';
+import {
+  ClientHealthStatus,
+  ClientRosterStats,
+  ClientServiceLine,
+  HOURS_PER_TIER,
+} from '@seo/shared';
 import { Client, ClientDocument } from './client.schema';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
@@ -11,6 +16,7 @@ import { Task, TaskDocument } from '../tasks/task.schema';
 import { Cycle, CycleDocument } from '../cycles/cycle.schema';
 import { Backlink, BacklinkDocument } from '../backlinks/backlink.schema';
 import { User, UserDocument } from '../auth/user.schema';
+import { SentEmail } from '../comms/sent-email.schema';
 import {
   AuthenticatedUser,
   canManageTeam,
@@ -28,6 +34,8 @@ export class ClientsService {
     @InjectModel(Cycle.name) private readonly cycleModel: Model<CycleDocument>,
     @InjectModel(Backlink.name) private readonly backlinkModel: Model<BacklinkDocument>,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    @InjectModel(SentEmail.name)
+    private readonly sentEmailModel: Model<SentEmail & { createdAt: Date }>,
     private readonly audit: ActivityLogService,
   ) {}
 
@@ -266,7 +274,7 @@ export class ClientsService {
 
     return Promise.all(
       clients.map(async (c) => {
-        const [keywords, tasks, liveBacklinks] = await Promise.all([
+        const [keywords, tasks, liveBacklinks, lastEmail] = await Promise.all([
           this.keywordModel.find({ clientId: c._id }).lean().exec(),
           currentCycle
             ? this.taskModel
@@ -278,6 +286,12 @@ export class ClientsService {
             clientId: c._id,
             status: 'live',
           }),
+          this.sentEmailModel
+            .findOne({ clientId: c._id, ok: true })
+            .sort({ createdAt: -1 })
+            .select({ createdAt: 1, kind: 1 })
+            .lean()
+            .exec(),
         ]);
 
         const rankedKeywords = keywords.filter(
@@ -316,6 +330,27 @@ export class ClientsService {
           0,
         );
 
+        // Roster health (MVP): penalize days-since-last-email + open
+        // tasks. Score 0-100, buckets: healthy >=70, watch 50-69,
+        // at-risk <50. Sent-email lookup limits to ok:true so a failed
+        // send doesn't count as "touched".
+        const lastEmailAt = (lastEmail as { createdAt?: Date } | null)
+          ?.createdAt;
+        const daysSinceLastEmail = lastEmailAt
+          ? Math.floor((Date.now() - new Date(lastEmailAt).getTime()) / 86400000)
+          : null;
+        const openTasks = tasks.length - completedTasks;
+        const healthScore = this.computeHealthScore(
+          daysSinceLastEmail,
+          openTasks,
+        );
+        const healthStatus: ClientHealthStatus =
+          healthScore >= 70
+            ? 'healthy'
+            : healthScore >= 50
+              ? 'watch'
+              : 'at-risk';
+
         return {
           ...c,
           stats: {
@@ -341,9 +376,86 @@ export class ClientsService {
                   : 0,
             },
             backlinks: liveBacklinks,
+            lastEmailAt,
+            daysSinceLastEmail,
+            healthScore,
+            healthStatus,
           },
         };
       }),
     );
+  }
+
+  /**
+   * MVP roster-health formula.
+   *  Base: 100
+   *  Penalty: 1 pt per day since last outbound email (max 60).
+   *  Penalty: 5 pt per open task on the current cycle.
+   *  Clients that have never been emailed start at 60 (neither healthy
+   *  nor at-risk) so a brand-new client doesn't false-flag on day 1.
+   */
+  private computeHealthScore(
+    daysSinceLastEmail: number | null,
+    openTasks: number,
+  ): number {
+    let score = 100;
+    if (daysSinceLastEmail === null) {
+      score = 60;
+    } else {
+      score -= Math.min(60, daysSinceLastEmail);
+    }
+    score -= Math.min(50, Math.max(0, openTasks) * 5);
+    return Math.max(0, Math.min(100, Math.round(score)));
+  }
+
+  /**
+   * Roster-level KPI tiles for the Clients page. Aggregates across
+   * every client in the caller's scope: totals, per-service counts,
+   * and status buckets (at-risk / expansion / canceled).
+   */
+  async rosterStats(user: AuthenticatedUser): Promise<ClientRosterStats> {
+    const scope = await this.ownerScopeFilter(user);
+    const clients = await this.model
+      .find({ ...scope })
+      .select({ active: 1, serviceLines: 1, _id: 1 })
+      .lean()
+      .exec();
+    const rows = clients as unknown as Array<{
+      _id: Types.ObjectId;
+      active?: boolean;
+      serviceLines?: string[];
+    }>;
+    const active = rows.filter((c) => c.active !== false);
+    const inactive = rows.filter((c) => c.active === false);
+
+    const perService = { seo: 0, ppc: 0, website: 0, other: 0, combo: 0 };
+    for (const c of active) {
+      const lines = (c.serviceLines ?? []).filter(Boolean);
+      const set = new Set(lines);
+      if (set.has('seo')) perService.seo++;
+      if (set.has('ppc')) perService.ppc++;
+      if (set.has('website')) perService.website++;
+      if (set.has('other') || set.size === 0) perService.other++;
+      if (set.size > 1) perService.combo++;
+    }
+
+    // At-risk count needs the full per-client health signal — pull the
+    // full stats snapshot in scope and count the at-risk bucket. This
+    // is O(N) over the roster; fine for the tens-to-hundreds of clients
+    // an agency will realistically manage.
+    const withStats = await this.findAllWithStats({ active: true }, user);
+    const atRisk = withStats.filter(
+      (c) =>
+        (c as unknown as { stats?: { healthStatus?: string } }).stats
+          ?.healthStatus === 'at-risk',
+    ).length;
+
+    return {
+      totalActive: active.length,
+      atRisk,
+      expansion: perService.combo,
+      canceled: inactive.length,
+      perService,
+    };
   }
 }

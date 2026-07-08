@@ -8,6 +8,7 @@ import { Task, TaskSchema } from '../tasks/task.schema';
 import { Cycle, CycleSchema } from '../cycles/cycle.schema';
 import { Backlink, BacklinkSchema } from '../backlinks/backlink.schema';
 import { User, UserSchema } from '../auth/user.schema';
+import { SentEmail, SentEmailSchema } from '../comms/sent-email.schema';
 
 @Module({
   imports: [
@@ -21,6 +22,10 @@ import { User, UserSchema } from '../auth/user.schema';
       // scope. Injected as a Model, not the UsersService, to avoid a
       // circular module dep with the users module.
       { name: User.name, schema: UserSchema },
+      // Read-only access to the sent-mail archive for the roster health
+      // signal (days since last outbound email). Same pattern — model
+      // only, no cross-module service dep.
+      { name: SentEmail.name, schema: SentEmailSchema },
     ]),
   ],
   controllers: [ClientsController],

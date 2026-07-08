@@ -1,7 +1,12 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { Client, ClientTier } from '@seo/shared';
+import {
+  Client,
+  ClientHealthStatus,
+  ClientRosterStats,
+  ClientTier,
+} from '@seo/shared';
 import { API_BASE_URL } from './api.config';
 
 @Injectable({ providedIn: 'root' })
@@ -42,6 +47,15 @@ export class ClientsService {
     if (typeof filters.active === 'boolean') qs.set('active', String(filters.active));
     return this.http.get<ClientWithStats[]>(`${this.base}/clients/with-stats?${qs.toString()}`);
   }
+
+  /**
+   * Roster-level KPI tiles for the Clients page. Aggregates totals,
+   * per-service counts, and status buckets (at-risk / expansion /
+   * canceled) across the caller's client scope.
+   */
+  rosterStats(): Observable<ClientRosterStats> {
+    return this.http.get<ClientRosterStats>(`${this.base}/clients/roster-stats`);
+  }
 }
 
 export interface ClientWithStats extends Client {
@@ -65,5 +79,13 @@ export interface ClientWithStats extends Client {
       pct: number;
     };
     backlinks: number;
+    /** ISO date or null when the client has never received an outbound. */
+    lastEmailAt?: string | Date | null;
+    /** Whole days since the last outbound email; null when never. */
+    daysSinceLastEmail?: number | null;
+    /** 0-100 rollup used to bucket the health status. */
+    healthScore?: number;
+    /** Bucketed rollup used by the Clients page badges + filters. */
+    healthStatus?: ClientHealthStatus;
   };
 }

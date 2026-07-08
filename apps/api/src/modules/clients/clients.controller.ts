@@ -34,6 +34,17 @@ export class ClientsController {
     return this.clients.stats(user);
   }
 
+  /**
+   * Roster-level tiles for the Clients page: total active, per-service
+   * counts (SEO / PPC / Website / combo), at-risk count, expansion
+   * count (multi-service clients), canceled count. Scoped to the
+   * caller.
+   */
+  @Get('roster-stats')
+  rosterStats(@CurrentUser() user: AuthenticatedUser) {
+    return this.clients.rosterStats(user);
+  }
+
   @Get('with-stats')
   findAllWithStats(
     @CurrentUser() user: AuthenticatedUser,

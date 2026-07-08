@@ -2,7 +2,14 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { Client, PACKAGE_COLOR_PALETTE, Package, PackageColor } from '@seo/shared';
+import {
+  CLIENT_SERVICE_LABELS,
+  Client,
+  ClientServiceLine,
+  PACKAGE_COLOR_PALETTE,
+  Package,
+  PackageColor,
+} from '@seo/shared';
 import { ClientsService } from '../../core/clients.service';
 import { PackagesService } from '../../core/packages.service';
 import { ClientKeywordsTab } from './tabs/keywords-tab.component';
@@ -349,6 +356,28 @@ const GROUPS: GroupDef[] = [
                     <option [ngValue]="false">Inactive</option>
                   </select>
                 </div>
+                <div class="md:col-span-3">
+                  <label class="label">Service lines</label>
+                  <div class="flex flex-wrap gap-1.5">
+                    @for (s of serviceLineOptions; track s) {
+                      <label class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border cursor-pointer transition"
+                             [class.bg-ink-900]="form.serviceLines.includes(s)"
+                             [class.text-white]="form.serviceLines.includes(s)"
+                             [class.border-ink-900]="form.serviceLines.includes(s)"
+                             [class.text-ink-700]="!form.serviceLines.includes(s)"
+                             [class.border-ink-200]="!form.serviceLines.includes(s)"
+                             [class.hover:bg-ink-50]="!form.serviceLines.includes(s)">
+                        <input type="checkbox" class="sr-only"
+                               [checked]="form.serviceLines.includes(s)"
+                               (change)="toggleServiceLine(s)" />
+                        {{ serviceLineLabels[s] }}
+                      </label>
+                    }
+                  </div>
+                  <p class="text-[10px] text-ink-500 mt-1">
+                    Which services your agency provides to this client. Drives the roster filters + At-risk / Expansion counts.
+                  </p>
+                </div>
                 <div>
                   <label class="label">Ending date</label>
                   <input type="date" class="input"
@@ -593,6 +622,7 @@ export class ClientDetailComponent implements OnInit {
     isEcommerce: boolean;
     websitePlatform: '' | 'shopify' | 'wordpress' | 'custom';
     calendarAliases: string[];
+    serviceLines: ClientServiceLine[];
   } = {
     name: '',
     tier: 'C',
@@ -605,7 +635,22 @@ export class ClientDetailComponent implements OnInit {
     isEcommerce: false,
     websitePlatform: '',
     calendarAliases: [],
+    serviceLines: [],
   };
+
+  readonly serviceLineOptions: ClientServiceLine[] = [
+    'seo',
+    'ppc',
+    'website',
+    'other',
+  ];
+  readonly serviceLineLabels = CLIENT_SERVICE_LABELS;
+
+  toggleServiceLine(s: ClientServiceLine) {
+    this.form.serviceLines = this.form.serviceLines.includes(s)
+      ? this.form.serviceLines.filter((x) => x !== s)
+      : [...this.form.serviceLines, s];
+  }
   editOpen = signal(false);
   savingData = signal(false);
   dataError = signal<string | null>(null);
@@ -679,6 +724,7 @@ export class ClientDetailComponent implements OnInit {
     this.form.isEcommerce = !!c.isEcommerce;
     this.form.websitePlatform = (c.websitePlatform as '' | 'shopify' | 'wordpress' | 'custom') || '';
     this.form.calendarAliases = (c.calendarAliases ?? []).slice();
+    this.form.serviceLines = ((c.serviceLines as ClientServiceLine[]) ?? []).slice();
     this.form.endingDate = c.endingDate
       ? new Date(c.endingDate).toISOString().slice(0, 10)
       : '';
@@ -707,6 +753,7 @@ export class ClientDetailComponent implements OnInit {
       this.form.active = c.active ?? true;
       this.form.isEcommerce = !!c.isEcommerce;
       this.form.websitePlatform = (c.websitePlatform as '' | 'shopify' | 'wordpress' | 'custom') || '';
+      this.form.serviceLines = ((c.serviceLines as ClientServiceLine[]) ?? []).slice();
     });
   }
 
@@ -734,6 +781,9 @@ export class ClientDetailComponent implements OnInit {
         isEcommerce: !!this.form.isEcommerce,
         websitePlatform: this.form.websitePlatform || undefined,
         calendarAliases: this.form.calendarAliases.filter((a) => a.trim()),
+        serviceLines: this.form.serviceLines.length
+          ? this.form.serviceLines
+          : undefined,
         // Send null (not undefined) when cleared so Mongoose actually
         // wipes the field instead of leaving the old date in place.
         endingDate: this.form.endingDate

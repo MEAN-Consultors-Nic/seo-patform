@@ -166,4 +166,6 @@ export class CreateClientDto {
   @IsOptional() @IsArray() @IsString({ each: true }) socialLinks?: string[];
   @IsOptional() @IsString() reviewsUrl?: string;
   @IsOptional() @IsString() photosUrl?: string;
+  /** Agency service lines: seo / ppc / website / other. Multi-select. */
+  @IsOptional() @IsArray() @IsString({ each: true }) serviceLines?: string[];
 }

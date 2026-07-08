@@ -273,6 +273,15 @@ export class Client {
   @Prop() photosUrl?: string;
 
   /**
+   * Agency-side service classifier. Multi-select: any combination of
+   * 'seo' / 'ppc' / 'website' / 'other'. Drives the Clients page
+   * filter pills + At-risk / Expansion tiles. Nullable while legacy
+   * clients haven't been classified yet.
+   */
+  @Prop({ type: [String], default: undefined })
+  serviceLines?: string[];
+
+  /**
    * External client-portal users linked to this Client (Core Slice 1.5).
    * Populated by whichever workflow onboards a client-portal account
    * later; empty by default. The portal UI itself lands in Phase 6+.

@@ -1,719 +1,549 @@
-import { CommonModule, DecimalPipe } from '@angular/common';
-import { Component, HostListener, OnInit, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import {
-  ClientTier,
-  PACKAGE_COLOR_PALETTE,
-  Package,
-  PackageColor,
-  ReportKpis,
+  CLIENT_SERVICE_LABELS,
+  ClientHealthStatus,
+  ClientRosterStats,
+  ClientServiceLine,
 } from '@seo/shared';
 import { ClientsService, ClientWithStats } from '../../core/clients.service';
-import { AuthService } from '../../core/auth.service';
-import { PackagesService } from '../../core/packages.service';
-import { GoogleIntegrationsService } from '../../core/google-integrations.service';
 
-function todayIso(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+/**
+ * Re-export the roster row shape under the historical name so any
+ * downstream code that imported `Client` from this module keeps
+ * compiling. The rest of the page treats each row as a
+ * `ClientWithStats` internally.
+ */
+export type Client = ClientWithStats;
 
-function daysAgoIso(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+type RosterFilter =
+  | 'all'
+  | 'ppc'
+  | 'seo'
+  | 'combo'
+  | 'at-risk'
+  | 'expansion'
+  | 'canceled';
 
-type KpiFieldKey = keyof ReportKpis;
-
-interface KpiField {
-  key: KpiFieldKey;
-  label: string;
-  hint?: string;
-  step?: number;
-}
+/**
+ * MVP zero-value roster stats. Used as a safe fallback while the
+ * roster-stats request is in flight or when it fails — keeps the
+ * template arithmetic simple (no null-guards on every field).
+ */
+const EMPTY_ROSTER_STATS: ClientRosterStats = {
+  totalActive: 0,
+  atRisk: 0,
+  expansion: 0,
+  canceled: 0,
+  perService: { seo: 0, ppc: 0, website: 0, other: 0, combo: 0 },
+};
 
 @Component({
   selector: 'app-clients-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, DecimalPipe, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
-    <div class="page-container">
-      <header class="page-header">
-        <div>
-          <h1 class="page-title">Clients</h1>
-          <p class="page-subtitle">{{ clients().length }} {{ activeFilter() ? 'active' : 'inactive' }} accounts</p>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <!-- Active / Inactive switch. Two segments so the user always
-               knows which list they're looking at, and 'Set Inactive'
-               from a card simply moves it across instead of deleting it. -->
-          <div class="flex bg-white border border-ink-200 rounded-md p-0.5">
-            <button (click)="setActiveFilter(true)"
-                    [class]="'px-2.5 sm:px-3 py-1 text-xs font-semibold rounded transition ' +
-                      (activeFilter() ? 'bg-ink-900 text-white' : 'text-ink-600 hover:text-ink-900')">
-              Active
-            </button>
-            <button (click)="setActiveFilter(false)"
-                    [class]="'px-2.5 sm:px-3 py-1 text-xs font-semibold rounded transition ' +
-                      (!activeFilter() ? 'bg-ink-900 text-white' : 'text-ink-600 hover:text-ink-900')">
-              Inactive
-            </button>
-          </div>
-          <div class="flex bg-white border border-ink-200 rounded-md p-0.5">
-            @for (t of tierOptions; track t.value) {
-              <button
-                (click)="setTier(t.value)"
-                [class]="'px-2.5 sm:px-3 py-1 text-xs font-semibold rounded transition ' +
-                  (tierFilter() === t.value ? 'bg-ink-900 text-white' : 'text-ink-600 hover:text-ink-900')">
-                {{ t.label }}
-              </button>
-            }
-          </div>
-          <a routerLink="/clients/new" class="btn-primary text-xs sm:text-sm">+ New client</a>
-        </div>
+    <div class="page-container space-y-6">
+      <!-- 1. Header block -->
+      <header>
+        <h1 class="text-2xl font-bold text-ink-900">Clients</h1>
+        <p class="text-sm text-ink-500 mt-1">
+          Everyone you manage — what they pay, how they're doing, and when you
+          last touched them.
+        </p>
       </header>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        @for (c of clients(); track c._id) {
-          <article (click)="open(c._id!)"
-                   class="bg-white rounded-lg border border-ink-200 shadow-card hover:shadow-elevated hover:border-brand-500/30 transition-all cursor-pointer overflow-hidden group">
-            <!-- Header -->
-            <div class="p-4 border-b border-ink-100">
-              <div class="flex items-start justify-between gap-3">
-                <div class="flex items-center gap-3 flex-1 min-w-0">
-                  @if (c.logoUrl) {
-                    <img [src]="c.logoUrl" [alt]="c.name"
-                         class="w-10 h-10 rounded-md object-contain bg-white border border-ink-200 flex-shrink-0" />
-                  } @else {
-                    <div class="w-10 h-10 rounded-md bg-ink-100 border border-ink-200 flex items-center justify-center text-sm font-bold text-ink-500 flex-shrink-0">
-                      {{ c.name.charAt(0) }}
-                    </div>
-                  }
-                  <div class="min-w-0 flex-1">
-                    <h3 class="font-semibold text-ink-900 truncate group-hover:text-brand-600 transition-colors">
-                      {{ c.name }}
-                    </h3>
-                    <a [href]="c.url" target="_blank" (click)="$event.stopPropagation()"
-                       class="text-xs text-ink-500 truncate block hover:text-sky-500 hover:underline">
-                      {{ shortUrl(c.url) }}
-                    </a>
-                  </div>
-                </div>
-                <div class="flex items-center gap-1.5 flex-shrink-0">
-                  @if (packageForClient(c); as pkg) {
-                    <span [class]="packageBadgeClass(pkg.color) + ' text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded'">
-                      {{ pkg.name }}
-                    </span>
-                  } @else if (c.tier) {
-                    <span [class]="'tier-' + c.tier">{{ c.tier }}</span>
-                  }
-                  <div class="relative">
-                    <button type="button"
-                            (click)="toggleMenu(c._id!, $event)"
-                            [class.bg-ink-100]="menuOpenId() === c._id"
-                            class="w-7 h-7 rounded-md flex items-center justify-center text-ink-500 hover:bg-ink-100 hover:text-ink-900 transition"
-                            aria-label="Client options">
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                        <circle cx="8" cy="3" r="1.5" />
-                        <circle cx="8" cy="8" r="1.5" />
-                        <circle cx="8" cy="13" r="1.5" />
-                      </svg>
-                    </button>
-                    @if (menuOpenId() === c._id) {
-                      <div (click)="$event.stopPropagation()"
-                           class="absolute right-0 top-8 z-20 w-52 bg-white border border-ink-200 rounded-md shadow-elevated py-1 text-sm">
-                        <button type="button"
-                                (click)="openKpisModal(c)"
-                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 flex items-center gap-2">
-                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <path d="M2 13V8M6 13V4M10 13V9M14 13V6" stroke-linecap="round" />
-                          </svg>
-                          Set Initial KPIs
-                        </button>
-                        <a [routerLink]="['/reports']"
-                           [queryParams]="{ clientId: c._id }"
-                           (click)="closeMenuOnly($event)"
-                           class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 flex items-center gap-2">
-                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <path d="M3 2h7l3 3v9H3V2z" />
-                            <path d="M10 2v3h3M5 8h6M5 11h6" stroke-linecap="round" />
-                          </svg>
-                          Generate report
-                        </a>
-                        <div class="my-1 border-t border-ink-100"></div>
-                        <button type="button"
-                                (click)="toggleActive(c)"
-                                class="w-full text-left px-3 py-2 hover:bg-ink-50 text-ink-700 flex items-center gap-2">
-                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <path d="M3 8a5 5 0 1 0 10 0 5 5 0 0 0-10 0Z" />
-                            <path d="M8 5v3M8 11.01" stroke-linecap="round" />
-                          </svg>
-                          {{ c.active === false ? 'Set Active' : 'Set Inactive' }}
-                        </button>
+      <!-- 2. Utility button row -->
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="button" (click)="comingSoon('Client Health')" class="util-pill">
+          Client Health
+        </button>
+        <button type="button" (click)="comingSoon('Delivery')" class="util-pill">
+          Delivery
+        </button>
+        <button
+          type="button"
+          (click)="comingSoon('Sync roles from ClickUp')"
+          class="util-pill"
+        >
+          Sync roles from ClickUp
+        </button>
+        <button
+          type="button"
+          (click)="comingSoon('Revenue to verify')"
+          class="util-pill"
+        >
+          Revenue to verify
+        </button>
+        <button
+          type="button"
+          (click)="comingSoon('Sync live data')"
+          class="util-pill"
+        >
+          Sync live data
+        </button>
+        <button type="button" (click)="reload()" class="util-pill">
+          Refresh
+        </button>
+        <div class="flex-1"></div>
+        <a
+          routerLink="/clients/new"
+          class="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-md bg-ink-900 text-white text-sm font-semibold hover:bg-ink-800 transition"
+        >
+          + Add client
+        </a>
+      </div>
+
+      <!-- 3. KPI tiles row -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div class="kpi-tile">
+          <div class="kpi-value">{{ stats().totalActive }}</div>
+          <div class="kpi-label">
+            <span class="w-2 h-2 rounded-full bg-ink-900"></span>
+            Active clients
+          </div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-value">{{ stats().perService.ppc }}</div>
+          <div class="kpi-label">
+            <span class="w-2 h-2 rounded-full bg-sky-500"></span>
+            PPC
+          </div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-value">{{ stats().perService.seo }}</div>
+          <div class="kpi-label">
+            <span class="w-2 h-2 rounded-full bg-positive-500"></span>
+            SEO
+          </div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-value">{{ stats().perService.combo }}</div>
+          <div class="kpi-label">
+            <span class="w-2 h-2 rounded-full bg-brand-500"></span>
+            PPC + SEO
+          </div>
+        </div>
+        <div class="kpi-tile bg-danger-100/60 border-danger-100">
+          <div class="kpi-value text-danger-500">{{ stats().atRisk }}</div>
+          <div class="kpi-label">
+            <span class="w-2 h-2 rounded-full bg-danger-500"></span>
+            At risk
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. At-risk banner -->
+      @if (stats().atRisk > 0) {
+        <div
+          class="flex flex-wrap items-center gap-3 rounded-lg border border-danger-100 bg-danger-100/40 p-4"
+        >
+          <div class="text-danger-500 text-lg leading-none">⚠</div>
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-ink-900">
+              {{ stats().atRisk }} clients at high risk of churning ·
+              {{ watchCount() }} to watch
+            </div>
+            <div class="text-xs text-ink-500 mt-0.5">
+              Reach out before they cancel.
+            </div>
+          </div>
+          <button
+            type="button"
+            (click)="setFilter('at-risk')"
+            class="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-md bg-danger-500 text-white text-xs font-semibold hover:bg-danger-500/90 transition"
+          >
+            Open save list →
+          </button>
+        </div>
+      }
+
+      <!-- 5. Search + filter row -->
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="relative flex-1 min-w-[240px]">
+          <span
+            class="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 pointer-events-none"
+            aria-hidden="true"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <circle cx="7" cy="7" r="4.5" />
+              <path d="M10.5 10.5L14 14" stroke-linecap="round" />
+            </svg>
+          </span>
+          <input
+            type="search"
+            [ngModel]="search()"
+            (ngModelChange)="search.set($event)"
+            placeholder="Search by business, contact, or email…"
+            class="w-full h-9 pl-9 pr-3 rounded-md border border-ink-200 bg-white text-sm placeholder-ink-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
+          />
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          @for (p of filterPills(); track p.value) {
+            <button
+              type="button"
+              (click)="setFilter(p.value)"
+              [class]="pillClass(p.value)"
+            >
+              {{ p.label }}
+              <span class="ml-1 text-[11px] opacity-80">{{ p.count }}</span>
+            </button>
+          }
+        </div>
+      </div>
+
+      <!-- 6. Roster table -->
+      <div class="bg-white rounded-lg border border-ink-200 shadow-card overflow-hidden">
+        @if (visibleRows().length) {
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-ink-50/50">
+                <tr class="text-left text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+                  <th class="px-4 py-3 w-[32%]">Client</th>
+                  <th class="px-4 py-3 w-[28%]">Email</th>
+                  <th class="px-4 py-3 w-[18%]">Service</th>
+                  <th class="px-4 py-3 w-[22%]">Health &amp; activity</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-ink-100">
+                @for (c of visibleRows(); track c._id) {
+                  <tr
+                    (click)="open(c._id!)"
+                    [class]="'cursor-pointer transition-colors hover:bg-ink-50 ' + borderColor(healthStatusFor(c))"
+                  >
+                    <td class="px-4 py-3">
+                      <div class="flex items-center gap-3 min-w-0">
+                        @if (c.logoUrl) {
+                          <img
+                            [src]="c.logoUrl"
+                            [alt]="c.name"
+                            class="w-8 h-8 rounded-md object-contain bg-white border border-ink-200 flex-shrink-0"
+                          />
+                        } @else {
+                          <div
+                            class="w-8 h-8 rounded-md bg-ink-100 border border-ink-200 flex items-center justify-center text-xs font-bold text-ink-500 flex-shrink-0"
+                          >
+                            {{ c.name.charAt(0) }}
+                          </div>
+                        }
+                        <div class="min-w-0">
+                          <div class="font-semibold text-ink-900 truncate">
+                            {{ c.name }}
+                          </div>
+                          @if (primaryContactName(c); as cn) {
+                            <div class="text-xs text-ink-400 truncate">
+                              {{ cn }}
+                            </div>
+                          }
+                        </div>
                       </div>
-                    }
-                  </div>
-                </div>
-              </div>
-              @if (auth.isManager() && ownerName(c); as on) {
-                <div class="mt-2.5 flex items-center gap-1.5 text-[10px] text-ink-500">
-                  <span class="w-4 h-4 rounded-full bg-ink-100 flex items-center justify-center text-[8px] font-bold text-ink-600">
-                    {{ on.charAt(0).toUpperCase() }}
-                  </span>
-                  <span>Owner: <span class="font-semibold text-ink-700">{{ on }}</span></span>
-                </div>
-              }
-              @if (endingInfo(c); as ei) {
-                <div [class]="'mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-semibold ' + ei.cls">
-                  <span>⏳</span>
-                  <span>{{ ei.label }}</span>
-                </div>
-              }
-              @if (c.googleDocId || c.googleSheetId) {
-                <div class="mt-2 flex flex-wrap items-center gap-1.5">
-                  @if (c.googleDocId) {
-                    <a [href]="'https://docs.google.com/document/d/' + c.googleDocId + '/edit'"
-                       target="_blank" rel="noopener"
-                       (click)="$event.stopPropagation()"
-                       class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-sky-100 text-sky-700 hover:bg-sky-200 text-[10px] font-semibold transition"
-                       title="Open the working Google Doc linked to this client">
-                      <span>📄</span>
-                      <span>Doc</span>
-                    </a>
-                  }
-                  @if (c.googleSheetId) {
-                    <a [href]="'https://docs.google.com/spreadsheets/d/' + c.googleSheetId + '/edit'"
-                       target="_blank" rel="noopener"
-                       (click)="$event.stopPropagation()"
-                       class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-positive-100 text-positive-500 hover:bg-positive-100/70 text-[10px] font-semibold transition"
-                       title="Open the Google Sheet linked to this client">
-                      <span>📊</span>
-                      <span>Sheet</span>
-                    </a>
-                  }
-                </div>
-              }
-            </div>
-
-            <!-- KPI grid -->
-            <div class="grid grid-cols-4 divide-x divide-ink-100 border-b border-ink-100">
-              <div class="px-3 py-2.5 text-center">
-                <div class="text-[10px] font-medium text-ink-500 uppercase tracking-wider">Keywords</div>
-                <div class="text-base font-bold text-ink-900 mt-0.5">{{ c.stats.keywords.total }}</div>
-              </div>
-              <div class="px-3 py-2.5 text-center">
-                <div class="text-[10px] font-medium text-ink-500 uppercase tracking-wider">Top 10</div>
-                <div class="text-base font-bold text-positive-500 mt-0.5">{{ c.stats.keywords.top10 }}</div>
-              </div>
-              <div class="px-3 py-2.5 text-center">
-                <div class="text-[10px] font-medium text-ink-500 uppercase tracking-wider">Avg pos.</div>
-                <div class="text-base font-bold text-ink-900 mt-0.5">
-                  {{ c.stats.keywords.avgPosition !== null ? (c.stats.keywords.avgPosition | number: '1.1-1') : '—' }}
-                </div>
-              </div>
-              <div class="px-3 py-2.5 text-center">
-                <div class="text-[10px] font-medium text-ink-500 uppercase tracking-wider">Backlinks</div>
-                <div class="text-base font-bold text-ink-900 mt-0.5">{{ c.stats.backlinks }}</div>
-              </div>
-            </div>
-
-            <!-- Movements -->
-            @if (c.stats.keywords.gainers || c.stats.keywords.losers) {
-              <div class="px-4 py-2 border-b border-ink-100 flex items-center gap-3 text-xs">
-                <span class="text-positive-500 font-semibold">▲ {{ c.stats.keywords.gainers }}</span>
-                <span class="text-danger-500 font-semibold">▼ {{ c.stats.keywords.losers }}</span>
-                <span class="text-ink-400">position changes this cycle</span>
-              </div>
-            }
-
-            <!-- Cycle progress -->
-            <div class="p-4">
-              <div class="flex items-center justify-between mb-1.5">
-                <div class="text-[10px] font-semibold text-ink-500 uppercase tracking-wider">
-                  Current cycle
-                </div>
-                <div class="text-xs">
-                  <span class="font-bold" [ngClass]="hoursTextColor(c.stats.currentCycleHours.pct)">
-                    {{ c.stats.currentCycleHours.actual }} / {{ c.stats.currentCycleHours.assigned }}h
-                  </span>
-                  <span class="text-ink-400 ml-1">({{ c.stats.currentCycleHours.pct }}%)</span>
-                </div>
-              </div>
-              <div class="h-1.5 bg-ink-100 rounded-full overflow-hidden mb-3">
-                <div class="h-full rounded-full transition-all"
-                     [ngClass]="hoursBarColor(c.stats.currentCycleHours.pct)"
-                     [style.width.%]="Math.min(c.stats.currentCycleHours.pct, 100)"></div>
-              </div>
-              <div class="flex items-center justify-between text-xs">
-                <div class="text-ink-500">
-                  <span class="font-semibold text-ink-900">{{ c.stats.currentCycleTasks.completed }}</span>
-                  /
-                  <span>{{ c.stats.currentCycleTasks.total }}</span>
-                  tasks completed
-                </div>
-                <span class="text-brand-500 font-medium group-hover:translate-x-0.5 transition-transform">
-                  Open →
-                </span>
-              </div>
-            </div>
-          </article>
-        }
-        @if (!clients().length) {
-          <div class="col-span-full card text-center py-12 text-ink-400 italic">
-            No clients to display
+                    </td>
+                    <td class="px-4 py-3 text-ink-600 truncate">
+                      {{ primaryContactEmail(c) || '—' }}
+                    </td>
+                    <td class="px-4 py-3">
+                      <div class="flex flex-wrap gap-1">
+                        @if (serviceLinesFor(c).length) {
+                          @for (s of serviceLinesFor(c); track s) {
+                            <span [class]="serviceChipClass(s)">
+                              {{ serviceLabel(s) }}
+                            </span>
+                          }
+                        } @else {
+                          <span class="text-xs text-ink-400">—</span>
+                        }
+                      </div>
+                    </td>
+                    <td class="px-4 py-3">
+                      <div class="flex flex-col gap-0.5">
+                        <span
+                          [class]="
+                            'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold w-fit ' +
+                            healthBadgeClass(healthStatusFor(c))
+                          "
+                        >
+                          {{ healthLabel(healthStatusFor(c)) }} ·
+                          {{ c.stats.healthScore ?? '—' }}
+                        </span>
+                        <span class="text-[11px] text-ink-400">
+                          {{ activityLine(c) }}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <!-- 7. Empty state -->
+          <div class="text-center py-16 text-ink-400 italic text-sm">
+            No clients match this filter.
           </div>
         }
       </div>
-
-      <!-- Set Initial KPIs modal -->
-      @if (kpisModalClient(); as kc) {
-        <div class="fixed inset-0 z-50 bg-ink-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
-             (click)="closeKpisModal()">
-          <div class="bg-white sm:rounded-lg rounded-t-xl shadow-xl w-full max-w-2xl p-4 sm:p-6 max-h-[95vh] overflow-y-auto"
-               (click)="$event.stopPropagation()">
-            <div class="flex items-start justify-between mb-1">
-              <div>
-                <h2 class="text-lg font-bold text-ink-900">Set Initial KPIs</h2>
-                <p class="text-xs text-ink-500 mt-0.5">
-                  Baseline metrics for <span class="font-semibold text-ink-700">{{ kc.name }}</span>.
-                  Used as the comparison point for future reports.
-                </p>
-              </div>
-              <button type="button" (click)="closeKpisModal()"
-                      class="w-8 h-8 rounded-md text-ink-500 hover:bg-ink-100 hover:text-ink-900 transition flex items-center justify-center"
-                      aria-label="Close">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round" />
-                </svg>
-              </button>
-            </div>
-
-            <!-- Auto-fetch from Google -->
-            <div class="mt-4 p-3 rounded-md border border-ink-200 bg-ink-50/50">
-              <div class="flex items-start justify-between gap-3 flex-wrap">
-                <div class="min-w-0">
-                  <div class="text-xs font-semibold text-ink-900">
-                    ⚡ Auto-fetch from Google
-                  </div>
-                  <p class="text-[11px] text-ink-500 mt-0.5">
-                    Pull GSC + GA4 metrics for the chosen range. GBP fields
-                    stay manual.
-                  </p>
-                </div>
-                <div class="flex items-end gap-2 flex-wrap">
-                  <select class="input input-sm text-xs" [ngModel]="autoFetchPreset()"
-                          (ngModelChange)="setAutoFetchPreset($event)">
-                    <option value="last28">Last 28 days</option>
-                    <option value="last90">Last 90 days</option>
-                    <option value="last180">Last 180 days</option>
-                    <option value="last365">Last 365 days</option>
-                    <option value="custom">Custom</option>
-                  </select>
-                  @if (autoFetchPreset() === 'custom') {
-                    <input type="date" class="input input-sm text-xs" [(ngModel)]="autoFetchFrom" />
-                    <input type="date" class="input input-sm text-xs" [(ngModel)]="autoFetchTo" />
-                  }
-                  <button class="btn-primary text-xs"
-                          (click)="fetchBaselineFromGoogle()"
-                          [disabled]="autoFetching()">
-                    {{ autoFetching() ? 'Fetching…' : '⚡ Fetch' }}
-                  </button>
-                </div>
-              </div>
-              @if (autoFetchWarnings().length) {
-                <div class="mt-2 text-[11px] text-warning-500">
-                  @for (w of autoFetchWarnings(); track w) {
-                    <div>⚠ {{ w }}</div>
-                  }
-                </div>
-              }
-              @if (autoFetchSummary()) {
-                <div class="mt-2 text-[11px] text-positive-500">
-                  ✓ {{ autoFetchSummary() }}
-                </div>
-              }
-            </div>
-
-            <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 max-h-[55vh] overflow-y-auto pr-1">
-              @for (f of kpiFields; track f.key) {
-                <div>
-                  <label class="label flex items-center justify-between">
-                    <span>{{ f.label }}</span>
-                    @if (f.hint) {
-                      <span class="text-[10px] font-normal text-ink-400">{{ f.hint }}</span>
-                    }
-                  </label>
-                  <input class="input"
-                         type="number"
-                         [step]="f.step ?? 1"
-                         min="0"
-                         [(ngModel)]="kpisForm[f.key]"
-                         [placeholder]="'0'" />
-                </div>
-              }
-            </div>
-
-            @if (kpisError()) {
-              <div class="mt-3 text-xs text-danger-500">{{ kpisError() }}</div>
-            }
-
-            <div class="flex items-center justify-between mt-6 pt-4 border-t border-ink-100">
-              <p class="text-[11px] text-ink-400">
-                Leave a field empty to keep it unset.
-              </p>
-              <div class="flex gap-2">
-                <button class="btn-secondary" (click)="closeKpisModal()">Cancel</button>
-                <button class="btn-primary" (click)="saveKpis()" [disabled]="kpisSubmitting()">
-                  {{ kpisSubmitting() ? 'Saving…' : 'Save baseline' }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      }
     </div>
   `,
+  styles: [
+    `
+      .util-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.375rem 0.875rem;
+        border-radius: 9999px;
+        background-color: #ffffff;
+        border: 1px solid #e4e7eb;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #334155;
+        transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+      }
+      .util-pill:hover {
+        background-color: #f7f8fa;
+        color: #0f172a;
+      }
+      .kpi-tile {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        padding: 1rem 1.125rem;
+        background-color: #ffffff;
+        border: 1px solid #e4e7eb;
+        border-radius: 0.5rem;
+      }
+      .kpi-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: #0f172a;
+        line-height: 1;
+      }
+      .kpi-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #475569;
+      }
+    `,
+  ],
 })
 export class ClientsListComponent implements OnInit {
   private svc = inject(ClientsService);
   private router = inject(Router);
-  protected auth = inject(AuthService);
 
-  clients = signal<ClientWithStats[]>([]);
-  tierFilter = signal<ClientTier | ''>('');
-  /**
-   * Active/Inactive switch. Default is Active because that's the
-   * everyday list; Inactive is a parking lot for paused engagements
-   * the user keeps around for history but doesn't want to scan past
-   * every time they open the page.
-   */
-  activeFilter = signal<boolean>(true);
-  menuOpenId = signal<string | null>(null);
-  kpisModalClient = signal<ClientWithStats | null>(null);
-  kpisForm: Partial<Record<KpiFieldKey, number | null>> = {};
-  kpisSubmitting = signal(false);
-  kpisError = signal<string | null>(null);
-
-  // Auto-fetch from Google state
-  private google = inject(GoogleIntegrationsService);
-  autoFetchPreset = signal<'last28' | 'last90' | 'last180' | 'last365' | 'custom'>('last90');
-  autoFetchFrom = daysAgoIso(90);
-  autoFetchTo = todayIso();
-  autoFetching = signal(false);
-  autoFetchWarnings = signal<string[]>([]);
-  autoFetchSummary = signal<string | null>(null);
-  Math = Math;
-
-  kpiFields: KpiField[] = [
-    { key: 'organicSessions', label: 'Organic sessions', hint: 'GA4' },
-    { key: 'newUsers', label: 'New users', hint: 'GA4' },
-    { key: 'engagementRate', label: 'Engagement rate (%)', hint: 'GA4', step: 0.01 },
-    { key: 'avgEngagementTime', label: 'Avg engagement time (s)', hint: 'GA4', step: 0.1 },
-    { key: 'conversionRate', label: 'Conversion rate (%)', hint: 'GA4', step: 0.01 },
-    { key: 'impressions', label: 'Impressions', hint: 'GSC' },
-    { key: 'clicks', label: 'Clicks', hint: 'GSC' },
-    { key: 'ctr', label: 'CTR (%)', hint: 'GSC', step: 0.01 },
-    { key: 'avgPosition', label: 'Avg. position', hint: 'GSC', step: 0.1 },
-    { key: 'conversions', label: 'Conversions', hint: 'GA4' },
-    { key: 'indexedPages', label: 'Indexed pages' },
-    { key: 'nonIndexedPages', label: 'Non-indexed pages' },
-    { key: 'gbpSearches', label: 'GBP searches' },
-    { key: 'gbpCalls', label: 'GBP calls' },
-    { key: 'gbpDirections', label: 'GBP direction requests' },
-    { key: 'gbpWebsiteClicks', label: 'GBP website clicks' },
-    { key: 'gbpReviews', label: 'GBP reviews' },
-  ];
-
-  ownerName(c: ClientWithStats): string | null {
-    const o = c.ownerId;
-    if (!o) return null;
-    if (typeof o === 'object' && 'name' in o) return o.name;
-    return null;
+  // --- Health rollup styling helpers (kept at the top of the class for
+  // easy tuning if the tailwind palette shifts). ---
+  healthBadgeClass(status: ClientHealthStatus | 'unknown'): string {
+    switch (status) {
+      case 'healthy':
+        return 'bg-positive-100 text-positive-500';
+      case 'watch':
+        return 'bg-amber-50 text-amber-600';
+      case 'at-risk':
+        return 'bg-danger-100 text-danger-500';
+      default:
+        return 'bg-ink-100 text-ink-500';
+    }
   }
 
-  tierOptions: Array<{ value: ClientTier | ''; label: string }> = [
-    { value: '', label: 'All' },
-    { value: 'A', label: 'A' },
-    { value: 'B', label: 'B' },
-    { value: 'C', label: 'C' },
-  ];
+  borderColor(status: ClientHealthStatus | 'unknown'): string {
+    switch (status) {
+      case 'healthy':
+        return 'border-l-4 border-l-positive-500';
+      case 'watch':
+        return 'border-l-4 border-l-sky-500';
+      case 'at-risk':
+        return 'border-l-4 border-l-danger-500';
+      default:
+        return 'border-l-4 border-l-ink-200';
+    }
+  }
 
-  private packagesSvc = inject(PackagesService);
-  packages = signal<Package[]>([]);
+  serviceChipClass(service: ClientServiceLine): string {
+    const base =
+      'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold';
+    switch (service) {
+      case 'seo':
+        return `${base} bg-positive-100 text-positive-500`;
+      case 'ppc':
+        return `${base} bg-sky-100 text-sky-600`;
+      case 'website':
+        return `${base} bg-amber-50 text-amber-600`;
+      default:
+        return `${base} bg-ink-100 text-ink-600`;
+    }
+  }
 
-  ngOnInit() {
-    this.load();
-    this.packagesSvc.list().subscribe({
-      next: (list) => this.packages.set(list),
-      error: () => this.packages.set([]),
+  // --- Signals + reactive state ---
+  active = signal<ClientWithStats[]>([]);
+  inactive = signal<ClientWithStats[]>([]);
+  stats = signal<ClientRosterStats>(EMPTY_ROSTER_STATS);
+  filter = signal<RosterFilter>('all');
+  search = signal<string>('');
+
+  /**
+   * Clients whose health is "watch" — surfaced in the at-risk banner
+   * copy so the user has a full picture of imminent + softening
+   * accounts without opening the save list.
+   */
+  watchCount = computed(
+    () =>
+      this.active().filter((c) => c.stats?.healthStatus === 'watch').length,
+  );
+
+  filterPills = computed(() => {
+    const s = this.stats();
+    return [
+      { value: 'all' as RosterFilter, label: 'All', count: s.totalActive },
+      { value: 'ppc' as RosterFilter, label: 'PPC', count: s.perService.ppc },
+      { value: 'seo' as RosterFilter, label: 'SEO', count: s.perService.seo },
+      {
+        value: 'combo' as RosterFilter,
+        label: 'PPC+SEO',
+        count: s.perService.combo,
+      },
+      { value: 'at-risk' as RosterFilter, label: 'At risk', count: s.atRisk },
+      {
+        value: 'expansion' as RosterFilter,
+        label: 'Expansion',
+        count: s.expansion,
+      },
+      {
+        value: 'canceled' as RosterFilter,
+        label: 'Canceled',
+        count: s.canceled,
+      },
+    ];
+  });
+
+  /**
+   * Filter the pre-fetched active + inactive rows in memory. Simpler
+   * than firing off a second request every time a pill flips, and the
+   * roster size (tens-to-hundreds) makes this cheap.
+   */
+  visibleRows = computed<ClientWithStats[]>(() => {
+    const f = this.filter();
+    const q = this.search().trim().toLowerCase();
+    let rows: ClientWithStats[];
+    if (f === 'canceled') {
+      rows = this.inactive();
+    } else {
+      rows = this.active().filter((c) => {
+        const lines = this.serviceLinesFor(c);
+        if (f === 'ppc') return lines.includes('ppc');
+        if (f === 'seo') return lines.includes('seo');
+        if (f === 'combo' || f === 'expansion') return lines.length > 1;
+        if (f === 'at-risk') return c.stats?.healthStatus === 'at-risk';
+        return true;
+      });
+    }
+    if (!q) return rows;
+    return rows.filter((c) => {
+      if (c.name?.toLowerCase().includes(q)) return true;
+      const contact = c.contacts?.[0];
+      if (contact?.name?.toLowerCase().includes(q)) return true;
+      if (contact?.email?.toLowerCase().includes(q)) return true;
+      return false;
+    });
+  });
+
+  ngOnInit(): void {
+    this.reload();
+  }
+
+  reload(): void {
+    // Fetch active + inactive in parallel so the "Canceled" pill lands
+    // instantly instead of triggering a second network round-trip.
+    this.svc.listWithStats({ active: true }).subscribe({
+      next: (rows) => this.active.set(rows),
+      error: () => this.active.set([]),
+    });
+    this.svc.listWithStats({ active: false }).subscribe({
+      next: (rows) => this.inactive.set(rows),
+      error: () => this.inactive.set([]),
+    });
+    this.svc.rosterStats().subscribe({
+      next: (s) => this.stats.set(s),
+      error: () => this.stats.set(EMPTY_ROSTER_STATS),
     });
   }
 
-  packageForClient(c: ClientWithStats): Package | null {
-    if (c.package) return c.package;
-    if (!c.packageId) return null;
-    return this.packages().find((p) => p._id === c.packageId) ?? null;
+  setFilter(f: RosterFilter): void {
+    this.filter.set(f);
   }
 
-  packageBadgeClass(color: PackageColor | undefined): string {
-    const palette = PACKAGE_COLOR_PALETTE[color || 'sky'];
-    return `${palette.bg} ${palette.text}`;
+  pillClass(value: RosterFilter): string {
+    const base =
+      'inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold transition border';
+    return this.filter() === value
+      ? `${base} bg-ink-900 text-white border-ink-900`
+      : `${base} bg-white text-ink-700 border-ink-200 hover:bg-ink-50`;
   }
 
-  setTier(t: ClientTier | '') {
-    this.tierFilter.set(t);
-    this.load();
-  }
-
-  setActiveFilter(active: boolean) {
-    if (this.activeFilter() === active) return;
-    this.activeFilter.set(active);
-    this.load();
-  }
-
-  load() {
-    const filters: { tier?: ClientTier; active?: boolean } = {
-      active: this.activeFilter(),
-    };
-    if (this.tierFilter()) filters.tier = this.tierFilter() as ClientTier;
-    this.svc.listWithStats(filters).subscribe((cs) => this.clients.set(cs));
-  }
-
-  /**
-   * Flips the client's active flag. Closes the menu and reloads so
-   * the card disappears from the current tab (moving to the other
-   * one) — feedback that the action took effect.
-   */
-  toggleActive(c: ClientWithStats) {
-    if (!c._id) return;
-    const nextActive = c.active === false ? true : false;
-    this.menuOpenId.set(null);
-    this.svc.update(c._id, { active: nextActive }).subscribe(() => this.load());
-  }
-
-  open(id: string) {
-    if (this.menuOpenId() || this.kpisModalClient()) return;
+  open(id: string): void {
     this.router.navigate(['/clients', id]);
   }
 
-  toggleMenu(id: string, event: MouseEvent) {
-    event.stopPropagation();
-    this.menuOpenId.set(this.menuOpenId() === id ? null : id);
+  comingSoon(label: string): void {
+    // Explicit placeholder — the user asked for this to be transparent
+    // while the underlying features are being built out.
+    alert(`${label}: coming soon`);
   }
 
-  @HostListener('document:click')
-  closeMenuOnOutsideClick() {
-    if (this.menuOpenId()) this.menuOpenId.set(null);
+  // --- Row-level accessors ---
+  serviceLinesFor(c: ClientWithStats): ClientServiceLine[] {
+    return (c.serviceLines ?? []) as ClientServiceLine[];
   }
 
-  @HostListener('document:keydown.escape')
-  closeOnEscape() {
-    if (this.kpisModalClient()) {
-      this.closeKpisModal();
-    } else if (this.menuOpenId()) {
-      this.menuOpenId.set(null);
+  healthStatusFor(c: ClientWithStats): ClientHealthStatus | 'unknown' {
+    return c.stats?.healthStatus ?? 'unknown';
+  }
+
+  healthLabel(status: ClientHealthStatus | 'unknown'): string {
+    switch (status) {
+      case 'healthy':
+        return 'Healthy';
+      case 'watch':
+        return 'Watch';
+      case 'at-risk':
+        return 'At risk';
+      default:
+        return 'Unknown';
     }
+  }
+
+  serviceLabel(s: ClientServiceLine): string {
+    return CLIENT_SERVICE_LABELS[s] ?? s;
+  }
+
+  primaryContactName(c: ClientWithStats): string | null {
+    return c.contacts?.[0]?.name || null;
+  }
+
+  primaryContactEmail(c: ClientWithStats): string | null {
+    return c.contacts?.[0]?.email || null;
   }
 
   /**
-   * Close the overflow menu while letting the routerLink complete its
-   * navigation. Used by menu entries that are <a routerLink> elements.
+   * Small caption under the health badge. Prefers a real
+   * days-since-last-email number; falls back to a "no opt yet" note
+   * so brand-new clients read as intentional rather than broken.
    */
-  closeMenuOnly(event: MouseEvent) {
-    event.stopPropagation();
-    this.menuOpenId.set(null);
-  }
-
-  openKpisModal(c: ClientWithStats) {
-    this.menuOpenId.set(null);
-    this.kpisError.set(null);
-    const baseline = (c.baselineKpis ?? {}) as ReportKpis;
-    this.kpisForm = {};
-    for (const f of this.kpiFields) {
-      const v = baseline[f.key];
-      this.kpisForm[f.key] = typeof v === 'number' ? v : null;
-    }
-    // Reset auto-fetch UI to defaults so it doesn't bleed across clients.
-    this.autoFetchPreset.set('last90');
-    this.autoFetchFrom = daysAgoIso(90);
-    this.autoFetchTo = todayIso();
-    this.autoFetchWarnings.set([]);
-    this.autoFetchSummary.set(null);
-    this.kpisModalClient.set(c);
-  }
-
-  setAutoFetchPreset(
-    p: 'last28' | 'last90' | 'last180' | 'last365' | 'custom',
-  ) {
-    this.autoFetchPreset.set(p);
-    if (p === 'last28') {
-      this.autoFetchFrom = daysAgoIso(28);
-      this.autoFetchTo = todayIso();
-    } else if (p === 'last90') {
-      this.autoFetchFrom = daysAgoIso(90);
-      this.autoFetchTo = todayIso();
-    } else if (p === 'last180') {
-      this.autoFetchFrom = daysAgoIso(180);
-      this.autoFetchTo = todayIso();
-    } else if (p === 'last365') {
-      this.autoFetchFrom = daysAgoIso(365);
-      this.autoFetchTo = todayIso();
-    }
-  }
-
-  fetchBaselineFromGoogle() {
-    const c = this.kpisModalClient();
-    if (!c?._id) return;
-    if (!this.autoFetchFrom || !this.autoFetchTo) {
-      this.autoFetchWarnings.set(['Pick a from and to date.']);
-      return;
-    }
-    this.autoFetching.set(true);
-    this.autoFetchWarnings.set([]);
-    this.autoFetchSummary.set(null);
-    this.google
-      .kpisForClient(c._id, this.autoFetchFrom, this.autoFetchTo)
-      .subscribe({
-        next: (r) => {
-          // Merge: keep manual GBP values, overwrite GSC+GA4 with fresh data
-          // even if the new value is 0 (so the user sees zeroed metrics).
-          const filled: string[] = [];
-          for (const f of this.kpiFields) {
-            const v = (r.kpis as Record<string, unknown>)[f.key];
-            if (typeof v === 'number') {
-              this.kpisForm[f.key] = v;
-              filled.push(f.label);
-            }
-          }
-          this.autoFetching.set(false);
-          this.autoFetchWarnings.set(r.sources?.warnings ?? []);
-          const src: string[] = [];
-          if (r.sources?.gsc) src.push('GSC');
-          if (r.sources?.ga4) src.push('GA4');
-          this.autoFetchSummary.set(
-            `Filled ${filled.length} fields from ${src.join(' + ') || 'no sources'} (${this.autoFetchFrom} → ${this.autoFetchTo}).`,
-          );
-        },
-        error: (err) => {
-          this.autoFetching.set(false);
-          const m = err?.error?.message;
-          this.autoFetchWarnings.set([
-            Array.isArray(m) ? m.join(', ') : m || 'Could not fetch KPIs.',
-          ]);
-        },
-      });
-  }
-
-  closeKpisModal() {
-    this.kpisModalClient.set(null);
-    this.kpisSubmitting.set(false);
-    this.kpisError.set(null);
-  }
-
-  saveKpis() {
-    const client = this.kpisModalClient();
-    if (!client) return;
-
-    const baselineKpis: ReportKpis = {};
-    for (const f of this.kpiFields) {
-      const raw = this.kpisForm[f.key];
-      if (raw === null || raw === undefined || (raw as unknown as string) === '') continue;
-      const n = Number(raw);
-      if (Number.isFinite(n)) baselineKpis[f.key] = n;
-    }
-
-    this.kpisSubmitting.set(true);
-    this.kpisError.set(null);
-    this.svc
-      .update(client._id!, {
-        baselineKpis,
-        baselineDate: new Date(),
-      })
-      .subscribe({
-        next: () => {
-          this.closeKpisModal();
-          this.load();
-        },
-        error: (err) => {
-          this.kpisSubmitting.set(false);
-          const msg = err?.error?.message;
-          this.kpisError.set(
-            Array.isArray(msg) ? msg.join(', ') : msg || 'Could not save baseline. Try again.',
-          );
-        },
-      });
-  }
-
-  shortUrl(url: string): string {
-    try {
-      return new URL(url).hostname.replace(/^www\./, '');
-    } catch {
-      return url;
-    }
-  }
-
-  hoursTextColor(pct: number) {
-    if (pct > 100) return 'text-danger-500';
-    if (pct >= 80) return 'text-warning-500';
-    if (pct >= 50) return 'text-positive-500';
-    return 'text-ink-700';
-  }
-
-  hoursBarColor(pct: number) {
-    if (pct > 100) return 'bg-danger-500';
-    if (pct >= 80) return 'bg-warning-500';
-    if (pct >= 50) return 'bg-positive-500';
-    return 'bg-ink-300';
-  }
-
-  /**
-   * Renders the "ends on" badge for the client card when an endingDate
-   * is set. Returns null otherwise so the card stays clean for
-   * open-ended engagements. Color-codes by urgency: red after the end
-   * date passed (probably should have been deactivated), red for <=7
-   * days out, orange for <=30, neutral grey for further out.
-   */
-  endingInfo(c: ClientWithStats): { label: string; cls: string } | null {
-    if (!c.endingDate) return null;
-    const end = new Date(c.endingDate);
-    if (isNaN(end.getTime())) return null;
-    const now = new Date();
-    const dayMs = 86_400_000;
-    const daysOut = Math.ceil((end.getTime() - now.getTime()) / dayMs);
-    const dateLabel = end.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      timeZone: 'UTC',
-    });
-    if (daysOut < 0) {
-      return {
-        label: `Ended ${dateLabel} (${Math.abs(daysOut)}d ago)`,
-        cls: 'bg-danger-100 text-danger-500',
-      };
-    }
-    if (daysOut === 0) {
-      return {
-        label: `Ends today (${dateLabel})`,
-        cls: 'bg-danger-100 text-danger-500',
-      };
-    }
-    if (daysOut <= 7) {
-      return {
-        label: `Ends ${dateLabel} · ${daysOut}d left`,
-        cls: 'bg-danger-100 text-danger-500',
-      };
-    }
-    if (daysOut <= 30) {
-      return {
-        label: `Ends ${dateLabel} · ${daysOut}d left`,
-        cls: 'bg-warning-100 text-warning-500',
-      };
-    }
-    return {
-      label: `Ends ${dateLabel}`,
-      cls: 'bg-ink-100 text-ink-600',
-    };
+  activityLine(c: ClientWithStats): string {
+    const days = c.stats?.daysSinceLastEmail;
+    if (days === null || days === undefined) return 'No opt yet';
+    if (days >= 60) return `Stale (${days}d)`;
+    return `Opt ${days}d ago`;
   }
 }

@@ -648,6 +648,40 @@ export interface ServiceAreaSnapshot {
   rangeTo: string;
 }
 
+/**
+ * Service lines a client can be signed up for. Multi-select — a
+ * client with SEO + PPC has both. Consumed by the Clients page
+ * filter pills (PPC / SEO / PPC+SEO / etc.).
+ */
+export type ClientServiceLine = 'seo' | 'ppc' | 'website' | 'other';
+
+export const CLIENT_SERVICE_LABELS: Record<ClientServiceLine, string> = {
+  seo: 'SEO',
+  ppc: 'PPC',
+  website: 'Website',
+  other: 'Other',
+};
+
+/**
+ * Rolled-up health signal derived server-side from the days-since-last
+ * outbound email and open-task percentage on the current cycle.
+ */
+export type ClientHealthStatus = 'healthy' | 'watch' | 'at-risk';
+
+export interface ClientRosterStats {
+  totalActive: number;
+  atRisk: number;
+  expansion: number;
+  canceled: number;
+  perService: {
+    seo: number;
+    ppc: number;
+    website: number;
+    other: number;
+    combo: number; // multi-service = clients with 2+ services
+  };
+}
+
 export interface Client {
   _id?: string;
   name: string;
@@ -705,10 +739,19 @@ export interface Client {
   address?: string;
   businessDescription?: string;
   categories?: string[];
+  /** Services the client offers to THEIR customers (business profile). */
   services?: string[];
   socialLinks?: string[];
   reviewsUrl?: string;
   photosUrl?: string;
+  /**
+   * Agency-side classifier: what services WE provide to this client.
+   * Powers the Clients page filter pills (PPC / SEO / PPC+SEO /
+   * Website), the At-risk + Expansion tabs (multi-service), and the
+   * per-service roster tiles. Different concept from `services`
+   * above.
+   */
+  serviceLines?: ClientServiceLine[];
   /**
    * External client-portal accounts linked to this Client. Portal UI is
    * deferred to Phase 6+; the field is reserved on the schema so the
