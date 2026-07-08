@@ -146,6 +146,35 @@ import { FileDropDirective } from '../../../shared/file-drop.directive';
                     }
                   </div>
                 }
+
+                <!-- Indexation strip. Only shown on published pieces so
+                     drafts/ideas don't get GSC actions they can't use. -->
+                @if (p.status === 'published' && p.publishedUrl) {
+                  <div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded"
+                          [class]="indexationChipClass(p)"
+                          [title]="indexationTooltip(p)">
+                      {{ indexationChipLabel(p) }}
+                    </span>
+                    <button type="button"
+                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-ink-200 text-ink-700 hover:bg-ink-100 disabled:opacity-50"
+                            [disabled]="indexationBusyId() === p._id"
+                            (click)="checkIndexation(p)">
+                      {{ indexationBusyId() === p._id ? '⟳ Checking…' : '⟳ Recheck' }}
+                    </button>
+                    <button type="button"
+                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-brand-500/10 border border-brand-500/30 text-brand-700 hover:bg-brand-500/20 disabled:opacity-50"
+                            [disabled]="indexingBusyId() === p._id"
+                            (click)="requestIndexing(p)">
+                      {{ indexingBusyId() === p._id ? '📤 Requesting…' : '📤 Request indexing' }}
+                    </button>
+                    <a [href]="richResultsUrl(p.publishedUrl)"
+                       target="_blank" rel="noopener"
+                       class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-warning-100 border border-warning-500/30 text-warning-500 hover:bg-warning-100/70">
+                      🔍 Rich Results
+                    </a>
+                  </div>
+                }
                 @if (uploadingFor() === p._id) {
                   <div class="text-[11px] text-brand-500 mt-1 font-medium">
                     Uploading {{ uploadProgress() }}%…
@@ -533,6 +562,12 @@ export class ClientContentTab implements OnChanges {
   editSaving = signal(false);
   editError = signal<string | null>(null);
 
+  // Per-piece "which action is in flight" signals so the row buttons
+  // can show spinners without a global "working" flag that would
+  // freeze every row at once.
+  indexationBusyId = signal<string | null>(null);
+  indexingBusyId = signal<string | null>(null);
+
   // Inline toast for transient errors / success messages around the
   // "Create task" + draft-link flows. The publish flow has its own
   // modal-scoped error display so it doesn't need this.
@@ -671,6 +706,91 @@ export class ClientContentTab implements OnChanges {
   setStatus(p: ContentPiece, status: ContentStatus) {
     this.menuOpenId.set(null);
     this.changeStatus(p, status);
+  }
+
+  // --- Indexation -------------------------------------------------------
+
+  /**
+   * Chip color/label reflect the last GSC verdict. Never-checked
+   * pieces show a neutral "not checked" tag so the reader knows they
+   * can trigger a check — vs. a definite "not indexed" verdict.
+   */
+  indexationChipClass(p: ContentPiece): string {
+    const v = p.indexation?.verdict;
+    if (!v) return 'bg-ink-100 text-ink-500 border border-ink-200';
+    if (v === 'PASS') return 'bg-positive-100 text-positive-500 border border-positive-500/30';
+    if (v === 'PARTIAL' || v === 'NEUTRAL')
+      return 'bg-warning-100 text-warning-500 border border-warning-500/30';
+    return 'bg-danger-100 text-danger-500 border border-danger-500/30';
+  }
+
+  indexationChipLabel(p: ContentPiece): string {
+    const idx = p.indexation;
+    if (!idx?.checkedAt) return 'Not checked';
+    const v = idx.verdict;
+    if (v === 'PASS') return `● Indexed`;
+    if (v === 'PARTIAL') return `◐ Partial`;
+    if (v === 'NEUTRAL') return `◑ Neutral`;
+    if (v === 'FAIL') return `● Not indexed`;
+    return idx.coverageState || 'Checked';
+  }
+
+  indexationTooltip(p: ContentPiece): string {
+    const idx = p.indexation;
+    if (!idx?.checkedAt) return 'No indexation check yet. Click Recheck to run one.';
+    const parts: string[] = [];
+    if (idx.coverageState) parts.push(idx.coverageState);
+    if (idx.indexingState) parts.push(`Indexing: ${idx.indexingState}`);
+    if (idx.lastCrawlTime) parts.push(`Last crawl: ${new Date(idx.lastCrawlTime).toLocaleString()}`);
+    parts.push(`Checked: ${new Date(idx.checkedAt).toLocaleString()}`);
+    if (idx.indexingRequestedAt) {
+      parts.push(`Indexing requested: ${new Date(idx.indexingRequestedAt).toLocaleString()}`);
+    }
+    return parts.join(' · ');
+  }
+
+  richResultsUrl(publishedUrl: string): string {
+    return `https://search.google.com/test/rich-results?url=${encodeURIComponent(publishedUrl)}`;
+  }
+
+  checkIndexation(p: ContentPiece) {
+    if (!p._id) return;
+    this.indexationBusyId.set(p._id);
+    this.svc.checkIndexation(p._id).subscribe({
+      next: () => {
+        this.indexationBusyId.set(null);
+        this.flashToast('success', 'Indexation status refreshed.');
+        this.load();
+      },
+      error: (err) => {
+        this.indexationBusyId.set(null);
+        const m = err?.error?.message;
+        this.flashToast(
+          'error',
+          `Indexation check failed: ${Array.isArray(m) ? m.join(', ') : m || 'unknown error'}`,
+        );
+      },
+    });
+  }
+
+  requestIndexing(p: ContentPiece) {
+    if (!p._id) return;
+    this.indexingBusyId.set(p._id);
+    this.svc.requestIndexing(p._id).subscribe({
+      next: () => {
+        this.indexingBusyId.set(null);
+        this.flashToast('success', 'Indexing request sent to Google.');
+        this.load();
+      },
+      error: (err) => {
+        this.indexingBusyId.set(null);
+        const m = err?.error?.message;
+        this.flashToast(
+          'error',
+          `Indexing request failed: ${Array.isArray(m) ? m.join(', ') : m || 'unknown error'}`,
+        );
+      },
+    });
   }
 
   changeStatus(p: ContentPiece, status: ContentStatus) {

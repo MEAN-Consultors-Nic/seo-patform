@@ -80,4 +80,20 @@ export class ContentController {
   ) {
     return this.svc.removeAttachment(id, body.publicId, user);
   }
+
+  @Post(':id/indexation/check')
+  checkIndexation(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.svc.checkIndexation(id, user);
+  }
+
+  @Post(':id/indexation/request')
+  requestIndexing(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.svc.requestIndexing(id, user);
+  }
 }

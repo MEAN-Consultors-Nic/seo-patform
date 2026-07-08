@@ -924,6 +924,29 @@ export interface ContentAttachment {
   uploadedAt: Date;
 }
 
+/**
+ * Snapshot of a published URL's indexation state, sourced from
+ * Google Search Console's URL Inspection API. Verdict is the top-line
+ * PASS / PARTIAL / FAIL from Google; the coverage state is the human
+ * label ("Submitted and indexed", "URL is not on Google", etc.) shown
+ * on the GSC dashboard.
+ */
+export interface ContentIndexationStatus {
+  verdict?: 'PASS' | 'PARTIAL' | 'FAIL' | 'NEUTRAL' | 'VERDICT_UNSPECIFIED';
+  coverageState?: string;
+  indexingState?: string;
+  robotsTxtState?: string;
+  lastCrawlTime?: Date;
+  pageFetchState?: string;
+  googleCanonical?: string;
+  userCanonical?: string;
+  checkedAt: Date;
+  /** Set when the caller hit the Indexing API to notify Google about
+   *  a change to the URL. Doesn't guarantee the page is indexed — just
+   *  that the request was accepted. */
+  indexingRequestedAt?: Date;
+}
+
 export interface ContentPiece {
   _id?: string;
   clientId: string;
@@ -940,6 +963,9 @@ export interface ContentPiece {
   wordCount?: number;
   notes?: string;
   attachments?: ContentAttachment[];
+  /** Latest indexation snapshot from Google Search Console. Only
+   *  populated for pieces with a publishedUrl after a check runs. */
+  indexation?: ContentIndexationStatus;
   createdAt?: Date;
   updatedAt?: Date;
 }

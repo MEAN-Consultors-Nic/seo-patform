@@ -42,4 +42,18 @@ export class ContentService {
       { body: { publicId } },
     );
   }
+
+  checkIndexation(id: string): Observable<ContentPiece> {
+    return this.http.post<ContentPiece>(
+      `${this.base}/content/${id}/indexation/check`,
+      {},
+    );
+  }
+
+  requestIndexing(id: string): Observable<ContentPiece> {
+    return this.http.post<ContentPiece>(
+      `${this.base}/content/${id}/indexation/request`,
+      {},
+    );
+  }
 }
