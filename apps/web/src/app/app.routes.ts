@@ -20,6 +20,13 @@ export const appRoutes: Route[] = [
       ),
   },
   {
+    path: 'q/:token',
+    loadComponent: () =>
+      import('./features/public/public-questionnaire.component').then(
+        (m) => m.PublicQuestionnaireComponent,
+      ),
+  },
+  {
     path: 'supervisor',
     loadChildren: () =>
       import('./features/supervisor/supervisor.routes').then(
@@ -87,6 +94,13 @@ export const appRoutes: Route[] = [
         loadComponent: () =>
           import('./features/sales/proposals.component').then(
             (m) => m.SalesProposalsComponent,
+          ),
+      },
+      {
+        path: 'intake-hub',
+        loadComponent: () =>
+          import('./features/questionnaires/intake-hub.component').then(
+            (m) => m.IntakeHubComponent,
           ),
       },
       {

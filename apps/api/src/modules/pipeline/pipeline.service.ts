@@ -2,9 +2,11 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model, Types } from 'mongoose';
 import { LeadStage, LEAD_STAGE_ORDER, PipelineStats } from '@seo/shared';
 import { Lead, LeadDocument } from './lead.schema';
@@ -20,12 +22,18 @@ import {
   isAdmin,
 } from '../auth/roles.guard';
 import { ActivityLogService } from '../activity-log/activity-log.service';
+import { CommsService } from '../comms/comms.service';
+import { AiWriterService } from '../comms/ai-writer.service';
 
 @Injectable()
 export class PipelineService {
+  private readonly logger = new Logger(PipelineService.name);
+
   constructor(
     @InjectModel(Lead.name) private readonly model: Model<LeadDocument>,
     private readonly audit: ActivityLogService,
+    private readonly comms: CommsService,
+    private readonly ai: AiWriterService,
   ) {}
 
   /**
@@ -266,5 +274,142 @@ export class PipelineService {
     if (ownerId !== user.userId) {
       throw new ForbiddenException('You do not have access to this lead.');
     }
+  }
+
+  // --- Reactivation cron (Slice 4.6) --------------------------------------
+
+  /**
+   * Weekly sweep of closed_lost leads that are 30+ days old with no
+   * reactivation attempt yet. For each, AI-drafts a personalized
+   * win-back email, sends it through the assigned owner's Gmail, then
+   * moves the lead back to 'new' so it re-enters the pipeline.
+   *
+   * Fires Mondays at 9am. Skips silently when ANTHROPIC_API_KEY isn't
+   * set — the drafter needs it. Any lead that already carries a
+   * "reactivation-attempted" activity entry is left alone so a single
+   * lead never gets re-engaged twice by this cron.
+   */
+  @Cron(CronExpression.EVERY_WEEK)
+  async reactivateStaleLostLeads(): Promise<void> {
+    if (!this.ai.isConfigured()) {
+      this.logger.debug(
+        'Reactivation cron skipped — ANTHROPIC_API_KEY not set.',
+      );
+      return;
+    }
+    try {
+      const cutoff = new Date(Date.now() - 30 * 86400 * 1000);
+      const candidates = await this.model
+        .find({
+          stage: 'closed_lost',
+          closedAt: { $lte: cutoff },
+        })
+        .populate('ownerId', 'email')
+        .exec();
+      const eligible = candidates.filter(
+        (l) =>
+          !(l.activity ?? []).some(
+            (a) => a.kind === 'note' && (a.text || '').includes('reactivation-attempted'),
+          ),
+      );
+      if (eligible.length === 0) return;
+      this.logger.log(
+        `Reactivating ${eligible.length} stale closed_lost lead(s).`,
+      );
+      for (const lead of eligible) {
+        await this.attemptReactivation(lead);
+      }
+    } catch (e) {
+      this.logger.error(
+        `Reactivation cron failed: ${(e as Error).message}`,
+        (e as Error).stack,
+      );
+    }
+  }
+
+  private async attemptReactivation(lead: LeadDocument): Promise<void> {
+    if (!lead.email) return;
+    const owner = lead.ownerId as unknown as {
+      _id?: Types.ObjectId;
+      email?: string;
+    } | null;
+    const ownerUserId = owner?._id?.toString();
+    if (!ownerUserId) return;
+
+    // Draft with Claude — reuse the SEO email prompt shape as a base.
+    // Reason-lost is captured on the closedReason field; feed it into
+    // notes so the AI can address it explicitly.
+    const daysSinceLost = Math.floor(
+      (Date.now() - new Date(lead.closedAt || Date.now()).getTime()) / 86400000,
+    );
+    let draft: { subject: string; htmlBody: string };
+    try {
+      draft = await this.ai.draftSeoEmail({
+        clientName: lead.businessName,
+        clientDomain: lead.website,
+        periodLabel: 'a light re-engagement',
+        kpis: {},
+        actionsCompleted: [],
+        notes: [
+          `This was a closed_lost lead ${daysSinceLost} days ago.`,
+          lead.closedReason ? `Reason lost: ${lead.closedReason}` : '',
+          'The email should be a warm, short win-back — NOT a proposal or a status update. Reference the reason politely if given. End with an easy no-pressure ask to reconnect.',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        signOff: 'Media Spearhead',
+      });
+    } catch (e) {
+      this.logger.warn(
+        `Reactivation draft failed for lead ${lead._id}: ${(e as Error).message}`,
+      );
+      return;
+    }
+
+    const { result } = await this.comms.send(
+      { userId: ownerUserId, email: owner?.email || '', role: 'strategist' },
+      {
+        kind: 'lead-reactivation',
+        to: [lead.email],
+        subject: draft.subject,
+        htmlBody: draft.htmlBody,
+      },
+    );
+    if (!result.ok) {
+      this.logger.warn(
+        `Reactivation send failed for lead ${lead._id}: ${result.error}`,
+      );
+      return;
+    }
+    // Move lead back to 'new' and record the attempt so this cron
+    // never touches it again.
+    lead.activity.push({
+      at: new Date(),
+      kind: 'note',
+      authorName: 'system',
+      text: 'reactivation-attempted (auto)',
+    } as never);
+    lead.activity.push({
+      at: new Date(),
+      kind: 'stage-change',
+      authorName: 'system',
+      fromStage: 'closed_lost',
+      toStage: 'new',
+      text: 'Auto-reactivated by weekly cron',
+    } as never);
+    lead.stage = 'new';
+    lead.closedAt = undefined;
+    lead.closedReason = undefined;
+    await lead.save();
+    await this.audit.log({
+      userId: ownerUserId,
+      action: 'lead.reactivated',
+      targetType: 'Lead',
+      targetId: String(lead._id),
+      details: {
+        businessName: lead.businessName,
+        daysSinceLost,
+      },
+    });
   }
 }

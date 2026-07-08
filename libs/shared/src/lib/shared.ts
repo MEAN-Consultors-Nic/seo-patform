@@ -360,6 +360,36 @@ export function computeProposalTotals(items: ProposalItem[]): ProposalTotals {
   return t;
 }
 
+// --- Questionnaires (client-facing intake forms) ---------------------------
+
+export type QuestionnaireKind = 'seo' | 'ppc' | 'website' | 'combo';
+
+export const QUESTIONNAIRE_KIND_LABELS: Record<QuestionnaireKind, string> = {
+  seo: 'SEO onboarding',
+  ppc: 'PPC onboarding',
+  website: 'Website onboarding',
+  combo: 'SEO + PPC combined',
+};
+
+export interface Questionnaire {
+  _id?: string;
+  kind: QuestionnaireKind;
+  /** Business name pre-fill (so the client sees their own name). */
+  businessName: string;
+  /** Contact email invited to fill the form. */
+  invitedEmail?: string;
+  leadId?: string;
+  clientId?: string;
+  shareToken?: string;
+  status: 'pending' | 'submitted';
+  /** Structured answers keyed by question id. */
+  answers?: Record<string, unknown>;
+  submittedAt?: Date | string;
+  invitedByUserId?: string;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+}
+
 // --- Onboarding ------------------------------------------------------------
 
 export type OnboardingSection =
