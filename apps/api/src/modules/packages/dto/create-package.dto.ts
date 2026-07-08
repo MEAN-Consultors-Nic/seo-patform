@@ -2,6 +2,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsIn,
+  IsMongoId,
   IsNumber,
   IsOptional,
   IsString,
@@ -59,6 +60,7 @@ export class CreatePackageDto {
   @IsString() name!: string;
   @IsOptional() @IsString() description?: string;
   @IsIn(PACKAGE_COLORS) color!: PackageColor;
+  @IsOptional() @IsMongoId() serviceId?: string;
   @IsOptional()
   @Transform(emptyToUndefined)
   @Type(() => Number)

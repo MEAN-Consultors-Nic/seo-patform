@@ -32,11 +32,12 @@ const WEEKDAYS = [
           <a routerLink="/settings/working-hours" routerLinkActive="tab-active" class="tab">
             Working hours
           </a>
-          <a routerLink="/settings/report-layout" routerLinkActive="tab-active" class="tab">
-            Report layout
-          </a>
+          <a routerLink="/settings/services" routerLinkActive="tab-active" class="tab">Services</a>
           <a routerLink="/settings/packages" routerLinkActive="tab-active" class="tab">
             Packages
+          </a>
+          <a routerLink="/settings/report-layout" routerLinkActive="tab-active" class="tab">
+            Report layout
           </a>
           <a routerLink="/settings/onboarding" routerLinkActive="tab-active" class="tab">
             Onboarding

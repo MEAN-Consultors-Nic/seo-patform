@@ -102,6 +102,13 @@ export const appRoutes: Route[] = [
           import('./features/clients/client-detail.component').then((m) => m.ClientDetailComponent),
       },
       {
+        path: 'clients/:id/edit',
+        loadComponent: () =>
+          import('./features/clients/edit/client-edit.component').then(
+            (m) => m.ClientEditComponent,
+          ),
+      },
+      {
         path: 'reports',
         loadComponent: () =>
           import('./features/reports/report-editor.component').then((m) => m.ReportEditorComponent),
@@ -167,6 +174,13 @@ export const appRoutes: Route[] = [
         loadComponent: () =>
           import('./features/settings/packages-settings.component').then(
             (m) => m.PackagesSettingsComponent,
+          ),
+      },
+      {
+        path: 'settings/services',
+        loadComponent: () =>
+          import('./features/settings/services-settings.component').then(
+            (m) => m.ServicesSettingsComponent,
           ),
       },
       {

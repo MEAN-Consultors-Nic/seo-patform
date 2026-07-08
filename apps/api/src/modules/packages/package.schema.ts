@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose';
 import { DeliverableFrequency, PackageColor, TaskCategory } from '@seo/shared';
 
 export type PackageDocument = HydratedDocument<Package>;
@@ -30,6 +30,14 @@ export class Package {
   deliverables!: DeliverableSubSchema[];
   /** Estimated hours per report period for scheduling defaults. */
   @Prop({ type: Number }) hoursPerPeriod?: number;
+
+  /**
+   * Service this package belongs to. Optional during the multi-service
+   * migration window; backfilled on boot to the SEO service for any
+   * pre-existing package. New packages must set this via the DTO.
+   */
+  @Prop({ type: Types.ObjectId, ref: 'Service', index: true })
+  serviceId?: Types.ObjectId;
 }
 
 export const PackageSchema = SchemaFactory.createForClass(Package);

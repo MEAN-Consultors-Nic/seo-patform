@@ -1,4 +1,11 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { startOfDay } from 'date-fns';
@@ -11,6 +18,10 @@ import {
 import { Client, ClientDocument } from './client.schema';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
+import {
+  CreateSubscriptionDto,
+  UpdateSubscriptionDto,
+} from './dto/subscription.dto';
 import { Keyword, KeywordDocument } from '../keywords/keyword.schema';
 import { Task, TaskDocument } from '../tasks/task.schema';
 import { Cycle, CycleDocument } from '../cycles/cycle.schema';
@@ -24,9 +35,12 @@ import {
   isManagerOrAbove,
 } from '../auth/roles.guard';
 import { ActivityLogService } from '../activity-log/activity-log.service';
+import { ServicesService } from '../services/services.service';
 
 @Injectable()
-export class ClientsService {
+export class ClientsService implements OnModuleInit {
+  private readonly logger = new Logger(ClientsService.name);
+
   constructor(
     @InjectModel(Client.name) private readonly model: Model<ClientDocument>,
     @InjectModel(Keyword.name) private readonly keywordModel: Model<KeywordDocument>,
@@ -37,7 +51,59 @@ export class ClientsService {
     @InjectModel(SentEmail.name)
     private readonly sentEmailModel: Model<SentEmail & { createdAt: Date }>,
     private readonly audit: ActivityLogService,
+    private readonly services: ServicesService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    try {
+      await this.backfillSubscriptions();
+    } catch (e) {
+      this.logger.error(
+        `Client subscription backfill failed: ${(e as Error).message}`,
+        (e as Error).stack,
+      );
+    }
+  }
+
+  /**
+   * For every client that predates the multi-service migration —
+   * identified by having no subscriptions[] but a legacy packageId —
+   * create a single SEO subscription synthesized from packageId +
+   * hoursPerCycle + endingDate. Idempotent: runs once per client.
+   */
+  private async backfillSubscriptions(): Promise<void> {
+    const seo = await this.services.findBySlug('seo');
+    if (!seo?._id) return;
+    let migrated = 0;
+    const cursor = this.model
+      .find({
+        $or: [
+          { subscriptions: { $exists: false } },
+          { subscriptions: { $size: 0 } },
+        ],
+        packageId: { $exists: true, $ne: null },
+      })
+      .cursor();
+    for await (const client of cursor) {
+      const sub = {
+        serviceId: seo._id as Types.ObjectId,
+        packageId: client.packageId,
+        hoursPerCycle: client.hoursPerCycle || undefined,
+        endingDate: client.endingDate,
+        active: client.active !== false,
+      };
+      await this.model.updateOne(
+        { _id: client._id },
+        { $set: { subscriptions: [sub] } },
+      );
+      migrated++;
+    }
+    if (migrated > 0) {
+      this.logger.log(
+        `Synthesized SEO subscription on ${migrated} legacy client(s).`,
+      );
+    }
+  }
 
   /**
    * Builds the Mongo filter that restricts a query to the clients a
@@ -457,5 +523,122 @@ export class ClientsService {
       canceled: inactive.length,
       perService,
     };
+  }
+
+  // --- Subscriptions -----------------------------------------------------
+
+  /**
+   * Adds a new subscription (service + package) to a client. Refuses a
+   * duplicate — one active subscription per service is enough, editing
+   * the existing one is the right path if the client changes package.
+   */
+  async addSubscription(
+    clientId: string,
+    dto: CreateSubscriptionDto,
+    user?: AuthenticatedUser,
+  ) {
+    if (user) await this.assertAccess(clientId, user);
+    const client = await this.model.findById(clientId).exec();
+    if (!client) throw new NotFoundException(`Client ${clientId} not found`);
+    const duplicate = (client.subscriptions ?? []).some(
+      (s) => s.serviceId?.toString() === dto.serviceId,
+    );
+    if (duplicate) {
+      throw new BadRequestException(
+        'That service is already on the client. Edit the existing subscription instead.',
+      );
+    }
+    const subscription = {
+      serviceId: new Types.ObjectId(dto.serviceId),
+      packageId: dto.packageId ? new Types.ObjectId(dto.packageId) : undefined,
+      hoursPerCycle: dto.hoursPerCycle,
+      startDate: dto.startDate ? new Date(dto.startDate) : undefined,
+      endingDate: dto.endingDate ? new Date(dto.endingDate) : undefined,
+      active: dto.active ?? true,
+      notes: dto.notes,
+    };
+    client.subscriptions = [...(client.subscriptions ?? []), subscription];
+    await client.save();
+    await this.audit.log({
+      userId: user?.userId,
+      userEmail: user?.email,
+      action: 'client.subscription.added',
+      targetType: 'Client',
+      targetId: clientId,
+      details: { serviceId: dto.serviceId, packageId: dto.packageId },
+    });
+    return this.model
+      .findById(clientId)
+      .populate('subscriptions.serviceId', 'name slug color icon')
+      .populate('subscriptions.packageId', 'name color hoursPerPeriod')
+      .lean()
+      .exec();
+  }
+
+  async updateSubscription(
+    clientId: string,
+    subId: string,
+    dto: UpdateSubscriptionDto,
+    user?: AuthenticatedUser,
+  ) {
+    if (user) await this.assertAccess(clientId, user);
+    const client = await this.model.findById(clientId).exec();
+    if (!client) throw new NotFoundException(`Client ${clientId} not found`);
+    const sub = (client.subscriptions ?? []).find(
+      (s) => s._id?.toString() === subId,
+    );
+    if (!sub) throw new NotFoundException(`Subscription ${subId} not found`);
+    if (dto.serviceId !== undefined) sub.serviceId = new Types.ObjectId(dto.serviceId);
+    if (dto.packageId !== undefined)
+      sub.packageId = dto.packageId ? new Types.ObjectId(dto.packageId) : undefined;
+    if (dto.hoursPerCycle !== undefined) sub.hoursPerCycle = dto.hoursPerCycle;
+    if (dto.startDate !== undefined)
+      sub.startDate = dto.startDate ? new Date(dto.startDate) : undefined;
+    if (dto.endingDate !== undefined)
+      sub.endingDate = dto.endingDate ? new Date(dto.endingDate) : undefined;
+    if (dto.active !== undefined) sub.active = dto.active;
+    if (dto.notes !== undefined) sub.notes = dto.notes;
+    await client.save();
+    await this.audit.log({
+      userId: user?.userId,
+      userEmail: user?.email,
+      action: 'client.subscription.updated',
+      targetType: 'Client',
+      targetId: clientId,
+      details: { subId, fields: Object.keys(dto) },
+    });
+    return this.model
+      .findById(clientId)
+      .populate('subscriptions.serviceId', 'name slug color icon')
+      .populate('subscriptions.packageId', 'name color hoursPerPeriod')
+      .lean()
+      .exec();
+  }
+
+  async removeSubscription(
+    clientId: string,
+    subId: string,
+    user?: AuthenticatedUser,
+  ) {
+    if (user) await this.assertAccess(clientId, user);
+    const client = await this.model.findById(clientId).exec();
+    if (!client) throw new NotFoundException(`Client ${clientId} not found`);
+    const before = (client.subscriptions ?? []).length;
+    client.subscriptions = (client.subscriptions ?? []).filter(
+      (s) => s._id?.toString() !== subId,
+    );
+    if (client.subscriptions.length === before) {
+      throw new NotFoundException(`Subscription ${subId} not found`);
+    }
+    await client.save();
+    await this.audit.log({
+      userId: user?.userId,
+      userEmail: user?.email,
+      action: 'client.subscription.removed',
+      targetType: 'Client',
+      targetId: clientId,
+      details: { subId },
+    });
+    return { deleted: true };
   }
 }

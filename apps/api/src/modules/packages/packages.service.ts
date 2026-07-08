@@ -12,6 +12,7 @@ import { CreatePackageDto } from './dto/create-package.dto';
 import { UpdatePackageDto } from './dto/update-package.dto';
 import { ClientTier, HOURS_PER_TIER, PackageColor } from '@seo/shared';
 import { ActivityLogService } from '../activity-log/activity-log.service';
+import { ServicesService } from '../services/services.service';
 
 /**
  * Package management + one-shot migration from the legacy ClientTier
@@ -38,6 +39,7 @@ export class PackagesService implements OnModuleInit {
       applicablePackageIds?: Types.ObjectId[];
     }>,
     private readonly audit: ActivityLogService,
+    private readonly services: ServicesService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -45,10 +47,32 @@ export class PackagesService implements OnModuleInit {
       await this.seedDefaultPackagesIfEmpty();
       await this.backfillClientPackages();
       await this.backfillTaskTemplatePackages();
+      await this.backfillPackageServiceId();
     } catch (e) {
       this.logger.error(
         `Package migration failed: ${(e as Error).message}`,
         (e as Error).stack,
+      );
+    }
+  }
+
+  /**
+   * One-shot: assign the SEO service to any package that doesn't have
+   * one yet. All packages predate the multi-service catalog and were
+   * de-facto SEO. Admin can rebalance after via Settings → Packages.
+   */
+  private async backfillPackageServiceId(): Promise<void> {
+    const seo = await this.services.findBySlug('seo');
+    if (!seo?._id) return;
+    const res = await this.model
+      .updateMany(
+        { serviceId: { $exists: false } },
+        { $set: { serviceId: seo._id } },
+      )
+      .exec();
+    if (res.modifiedCount > 0) {
+      this.logger.log(
+        `Assigned SEO serviceId to ${res.modifiedCount} package(s) missing one.`,
       );
     }
   }
@@ -208,6 +232,7 @@ export class PackagesService implements OnModuleInit {
         color: dto.color,
         hoursPerPeriod: dto.hoursPerPeriod,
         deliverables: deliverables as unknown as Package['deliverables'],
+        serviceId: dto.serviceId ? new Types.ObjectId(dto.serviceId) : undefined,
       };
       const doc = await this.model.create(payload as Package);
       const obj = (doc as unknown as PackageDocument).toObject();
@@ -256,6 +281,10 @@ export class PackagesService implements OnModuleInit {
         payload.hoursPerPeriod = dto.hoursPerPeriod;
       if (dto.deliverables !== undefined)
         payload.deliverables = dto.deliverables as unknown as Package['deliverables'];
+      if (dto.serviceId !== undefined)
+        payload.serviceId = dto.serviceId
+          ? new Types.ObjectId(dto.serviceId)
+          : undefined;
       const doc = await this.model
         .findByIdAndUpdate(id, { $set: payload }, { new: true, runValidators: true })
         .lean()

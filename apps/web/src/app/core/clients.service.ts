@@ -5,9 +5,19 @@ import {
   Client,
   ClientHealthStatus,
   ClientRosterStats,
+  ClientSubscription,
   ClientTier,
 } from '@seo/shared';
 import { API_BASE_URL } from './api.config';
+
+export type CreateSubscriptionPayload = Omit<
+  ClientSubscription,
+  '_id' | 'createdAt' | 'updatedAt'
+> & {
+  serviceId: string;
+};
+
+export type UpdateSubscriptionPayload = Partial<CreateSubscriptionPayload>;
 
 @Injectable({ providedIn: 'root' })
 export class ClientsService {
@@ -55,6 +65,30 @@ export class ClientsService {
    */
   rosterStats(): Observable<ClientRosterStats> {
     return this.http.get<ClientRosterStats>(`${this.base}/clients/roster-stats`);
+  }
+
+  addSubscription(clientId: string, payload: CreateSubscriptionPayload): Observable<Client> {
+    return this.http.post<Client>(
+      `${this.base}/clients/${clientId}/subscriptions`,
+      payload,
+    );
+  }
+
+  updateSubscription(
+    clientId: string,
+    subId: string,
+    payload: UpdateSubscriptionPayload,
+  ): Observable<Client> {
+    return this.http.patch<Client>(
+      `${this.base}/clients/${clientId}/subscriptions/${subId}`,
+      payload,
+    );
+  }
+
+  removeSubscription(clientId: string, subId: string) {
+    return this.http.delete<{ deleted: true }>(
+      `${this.base}/clients/${clientId}/subscriptions/${subId}`,
+    );
   }
 }
 

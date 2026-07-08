@@ -190,6 +190,9 @@ export interface Deliverable {
 /**
  * A grouping of deliverables and metadata that replaces the old ClientTier
  * enum. Packages are org-wide and CRUD-managed via Settings → Packages.
+ * Each package is scoped to a single Service (SEO / PPC / Website /
+ * Tracking / …) so the client subscription flow can filter package
+ * options by the service being subscribed to.
  */
 export interface Package {
   _id?: string;
@@ -204,8 +207,59 @@ export interface Package {
   deliverables: Deliverable[];
   /** Estimated hours per report period for scheduling defaults. */
   hoursPerPeriod?: number;
+  /** Service this package belongs to. Required for new packages after
+   *  the multi-service migration. Backfilled to the SEO service on
+   *  boot for pre-existing packages. */
+  serviceId?: string;
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+/**
+ * Admin-managed service catalog. Each Service is a top-level product
+ * line the agency sells (SEO, PPC, Website Design, Tracking Setup,
+ * Analytics, Email Marketing, …). Packages hang off a service; client
+ * subscriptions pair a service with the specific package the client
+ * bought.
+ */
+export interface Service {
+  _id?: string;
+  name: string;
+  /** URL-safe key. Also used as the migration-time bridge from the
+   *  retired ClientServiceLine enum ('seo' / 'ppc' / 'website' /
+   *  'other'). */
+  slug: string;
+  description?: string;
+  color: PackageColor;
+  /** Optional emoji or short label shown on chips. */
+  icon?: string;
+  /** Order in which services appear in pickers + sidebars. */
+  order: number;
+  active: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+/**
+ * One service the agency delivers to a specific client, paired with the
+ * package that governs its deliverables + hours. Clients can hold
+ * many subscriptions at once — e.g. SEO on Package A, PPC on Gold,
+ * Website on package 3.
+ */
+export interface ClientSubscription {
+  /** Stable id per subscription — assigned by Mongo when embedded. */
+  _id?: string;
+  serviceId: string;
+  packageId?: string;
+  /** Hours-per-cycle budgeted for this service. Falls back to the
+   *  package's hoursPerPeriod when unset. */
+  hoursPerCycle?: number;
+  startDate?: Date | string;
+  endingDate?: Date | string;
+  active: boolean;
+  notes?: string;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
 }
 
 // --- Sales pipeline --------------------------------------------------------
@@ -750,6 +804,14 @@ export interface Client {
   socialLinks?: string[];
   reviewsUrl?: string;
   photosUrl?: string;
+  /**
+   * Multi-service subscriptions. Each entry pairs a Service (SEO,
+   * PPC, Website Design, Tracking, …) with the Package the client
+   * bought for that service, plus its own hours/dates. Preferred over
+   * the legacy `packageId` + `hoursPerCycle` scalar fields after the
+   * migration.
+   */
+  subscriptions?: ClientSubscription[];
   /**
    * Agency-side classifier: what services WE provide to this client.
    * Powers the Clients page filter pills (PPC / SEO / PPC+SEO /

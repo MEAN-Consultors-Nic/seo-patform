@@ -351,8 +351,9 @@ export class SidebarComponent {
       label: 'SETTINGS',
       items: [
         { route: '/settings/working-hours', label: 'Working hours', icon: 'clock' },
-        { route: '/settings/report-layout', label: 'Report layout', icon: 'layout' },
+        { route: '/settings/services', label: 'Services', icon: 'kanban' },
         { route: '/settings/packages', label: 'Packages', icon: 'box' },
+        { route: '/settings/report-layout', label: 'Report layout', icon: 'layout' },
         { route: '/settings/onboarding', label: 'Onboarding', icon: 'check-list' },
         {
           route: '/settings/activity-log',

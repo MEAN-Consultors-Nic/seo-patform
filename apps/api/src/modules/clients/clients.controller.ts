@@ -11,6 +11,10 @@ import {
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
+import {
+  CreateSubscriptionDto,
+  UpdateSubscriptionDto,
+} from './dto/subscription.dto';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthenticatedUser } from '../auth/roles.guard';
 
@@ -78,5 +82,33 @@ export class ClientsController {
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.clients.remove(id, user);
+  }
+
+  @Post(':id/subscriptions')
+  addSubscription(
+    @Param('id') id: string,
+    @Body() dto: CreateSubscriptionDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.clients.addSubscription(id, dto, user);
+  }
+
+  @Patch(':id/subscriptions/:subId')
+  updateSubscription(
+    @Param('id') id: string,
+    @Param('subId') subId: string,
+    @Body() dto: UpdateSubscriptionDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.clients.updateSubscription(id, subId, dto, user);
+  }
+
+  @Delete(':id/subscriptions/:subId')
+  removeSubscription(
+    @Param('id') id: string,
+    @Param('subId') subId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.clients.removeSubscription(id, subId, user);
   }
 }

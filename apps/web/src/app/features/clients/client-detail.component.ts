@@ -184,6 +184,10 @@ const GROUPS: GroupDef[] = [
             <button class="btn-secondary text-xs sm:text-sm" (click)="openEdit()">
               ✏ Edit client
             </button>
+            <a [routerLink]="['/clients', c._id, 'edit']" [queryParams]="{ tab: 'subscriptions' }"
+               class="btn-secondary text-xs sm:text-sm">
+              🧩 Subscriptions
+            </a>
             <a [routerLink]="['/reports']" [queryParams]="{ clientId: c._id }" class="btn-primary text-xs sm:text-sm">
               Generate report
             </a>

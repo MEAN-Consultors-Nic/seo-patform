@@ -15,6 +15,29 @@ import {
 
 export type ClientDocument = HydratedDocument<Client>;
 
+/**
+ * One agency service the client is subscribed to (SEO, PPC, Website,
+ * Tracking, …) paired with the package that governs its deliverables.
+ * Kept with `_id: true` so each subscription has a stable id we can
+ * reference from PATCH / DELETE endpoints and from timesheets later.
+ * `timestamps` gives us createdAt / updatedAt per subscription so
+ * upsell timelines are easy to reconstruct.
+ */
+@Schema({ _id: true, timestamps: true })
+class SubscriptionSubSchema {
+  @Prop({ type: Types.ObjectId, ref: 'Service', required: true })
+  serviceId!: Types.ObjectId;
+  @Prop({ type: Types.ObjectId, ref: 'Package' })
+  packageId?: Types.ObjectId;
+  @Prop({ type: Number }) hoursPerCycle?: number;
+  @Prop() startDate?: Date;
+  @Prop() endingDate?: Date;
+  @Prop({ required: true, default: true }) active!: boolean;
+  @Prop() notes?: string;
+}
+
+const SubscriptionSchemaDef = SchemaFactory.createForClass(SubscriptionSubSchema);
+
 @Schema({ _id: false })
 class ContactSubSchema implements ClientContact {
   @Prop({ required: true }) name!: string;
@@ -277,9 +300,34 @@ export class Client {
    * 'seo' / 'ppc' / 'website' / 'other'. Drives the Clients page
    * filter pills + At-risk / Expansion tiles. Nullable while legacy
    * clients haven't been classified yet.
+   *
+   * @deprecated Superseded by `subscriptions` after the multi-service
+   * migration. Kept as a denormalized cache so roster tiles and
+   * filter pills can query without joining the subscriptions array.
+   * Rebuilt from `subscriptions[].serviceId` on save.
    */
   @Prop({ type: [String], default: undefined })
   serviceLines?: string[];
+
+  /**
+   * Multi-service subscriptions. Each entry pairs a Service (SEO,
+   * PPC, Website, Tracking, …) with the Package the client bought
+   * plus its own hours-per-cycle and dates. Zero-length array
+   * represents "no active engagement" — legacy clients that have
+   * only the deprecated packageId scalar get one subscription
+   * synthesized on first boot after the migration.
+   */
+  @Prop({ type: [SubscriptionSchemaDef], default: [] })
+  subscriptions?: Array<{
+    _id?: Types.ObjectId;
+    serviceId: Types.ObjectId;
+    packageId?: Types.ObjectId;
+    hoursPerCycle?: number;
+    startDate?: Date;
+    endingDate?: Date;
+    active: boolean;
+    notes?: string;
+  }>;
 
   /**
    * External client-portal users linked to this Client (Core Slice 1.5).

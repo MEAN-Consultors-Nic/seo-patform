@@ -4,6 +4,7 @@ import { UsersModule } from '../users/users.module';
 import { AppSettingsModule } from '../app-settings/app-settings.module';
 import { ActivityLogModule } from '../activity-log/activity-log.module';
 import { SupervisorModule } from '../supervisor/supervisor.module';
+import { ServicesModule } from '../services/services.module';
 
 /**
  * Core module barrel — groups the platform-admin building blocks
@@ -24,6 +25,7 @@ import { SupervisorModule } from '../supervisor/supervisor.module';
     AppSettingsModule,
     ActivityLogModule,
     SupervisorModule,
+    ServicesModule,
   ],
   exports: [
     AuthModule,
@@ -31,6 +33,7 @@ import { SupervisorModule } from '../supervisor/supervisor.module';
     AppSettingsModule,
     ActivityLogModule,
     SupervisorModule,
+    ServicesModule,
   ],
 })
 export class CoreModule {}
