@@ -1,12 +1,19 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { catchError, tap, throwError } from 'rxjs';
+import { Observable, catchError, tap, throwError } from 'rxjs';
 import { AuthResponse, User, UserRole } from '@seo/shared';
 import { API_BASE_URL } from './api.config';
 
 const TOKEN_KEY = 'seo_token';
 const USER_KEY = 'seo_user';
+
+export interface TokenPeekResult {
+  valid: boolean;
+  email?: string;
+  name?: string;
+  purpose?: 'invite' | 'password_reset';
+}
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -75,6 +82,42 @@ export class AuthService {
         localStorage.setItem(USER_KEY, JSON.stringify(u));
       }),
     );
+  }
+
+  peekToken(token: string): Observable<TokenPeekResult> {
+    return this.http.get<TokenPeekResult>(`${this.base}/auth/token/peek`, {
+      params: { token },
+    });
+  }
+
+  setPasswordWithToken(token: string, password: string) {
+    return this.http
+      .post<AuthResponse>(`${this.base}/auth/set-password`, { token, password })
+      .pipe(
+        tap((res) => {
+          localStorage.setItem(TOKEN_KEY, res.accessToken);
+          localStorage.setItem(USER_KEY, JSON.stringify(res.user));
+          this._token.set(res.accessToken);
+          this._user.set(res.user);
+        }),
+      );
+  }
+
+  forgotPassword(email: string) {
+    return this.http.post<{ ok: boolean }>(`${this.base}/auth/forgot-password`, {
+      email,
+    });
+  }
+
+  completeOnboarding() {
+    return this.http
+      .post<User>(`${this.base}/auth/onboarding/complete`, {})
+      .pipe(
+        tap((u) => {
+          this._user.set(u);
+          localStorage.setItem(USER_KEY, JSON.stringify(u));
+        }),
+      );
   }
 
   private readUser(): User | null {

@@ -7,10 +7,12 @@ import {
   Supervisor,
   SupervisorSchema,
 } from '../supervisor/supervisor.schema';
+import { UserInvitesModule } from '../user-invites/user-invites.module';
 
 @Module({
   imports: [
     AuthModule,
+    UserInvitesModule,
     // Legacy Supervisor collection registered read-only so UsersService
     // can migrate its rows into standard User docs on boot. The
     // Supervisor module itself is being retired (Settings tab removed);

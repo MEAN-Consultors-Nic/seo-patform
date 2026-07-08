@@ -8,6 +8,30 @@ export const appRoutes: Route[] = [
       import('./features/auth/login.component').then((m) => m.LoginComponent),
   },
   {
+    path: 'set-password',
+    loadComponent: () =>
+      import('./features/auth/set-password.component').then(
+        (m) => m.SetPasswordComponent,
+      ),
+  },
+  {
+    path: 'forgot-password',
+    loadComponent: () =>
+      import('./features/auth/forgot-password.component').then(
+        (m) => m.ForgotPasswordComponent,
+      ),
+  },
+  {
+    // Onboarding wizard is authenticated but lives outside the shell so
+    // the sidebar doesn't distract from the first-run flow.
+    path: 'onboarding',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/onboarding/onboarding.component').then(
+        (m) => m.OnboardingComponent,
+      ),
+  },
+  {
     path: 'r/:token',
     loadComponent: () =>
       import('./features/public/public-report.component').then((m) => m.PublicReportComponent),

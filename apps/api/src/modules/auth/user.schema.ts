@@ -50,6 +50,28 @@ export class User {
 
   @Prop({ default: true })
   active!: boolean;
+
+  /**
+   * Set when the user completes the /set-password flow after clicking
+   * their invite link. Undefined for users who were seeded pre-invite
+   * or who haven't accepted the invite yet.
+   */
+  @Prop() emailVerifiedAt?: Date;
+
+  /**
+   * Timestamp of the last successful password set — from either the
+   * initial /set-password (post-invite) or a subsequent /forgot-password
+   * reset. Used to distinguish "invite pending" users from full members.
+   */
+  @Prop() passwordSetAt?: Date;
+
+  /**
+   * Whether the user has completed (or skipped) the onboarding wizard.
+   * Defaults false for new invited users so they land on /onboarding on
+   * their first login. Migration marks all pre-existing users as
+   * completed so they don't get pushed through the wizard.
+   */
+  @Prop({ default: false }) onboardingCompleted?: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

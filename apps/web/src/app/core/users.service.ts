@@ -6,7 +6,6 @@ import { API_BASE_URL } from './api.config';
 export interface CreateUserPayload {
   email: string;
   name: string;
-  password: string;
   role: UserRole;
   managerId?: string;
   active?: boolean;
@@ -44,6 +43,13 @@ export class UsersService {
     return this.http.post<{ ok: true }>(
       `${this.base}/users/${id}/reset-password`,
       { password },
+    );
+  }
+
+  resendInvite(id: string) {
+    return this.http.post<{ ok: true; expiresAt: string }>(
+      `${this.base}/users/${id}/resend-invite`,
+      {},
     );
   }
 

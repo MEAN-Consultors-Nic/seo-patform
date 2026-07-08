@@ -90,6 +90,12 @@ export interface User {
    */
   managerId?: string | { _id: string; name: string; role: UserRole };
   active: boolean;
+  /** Set when the user completes the /set-password flow after invite. */
+  emailVerifiedAt?: Date;
+  /** Set when the user first picks their password (via invite or reset). */
+  passwordSetAt?: Date;
+  /** True once the user has stepped through the onboarding wizard (or skipped it). */
+  onboardingCompleted?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -778,6 +784,9 @@ export interface GoogleConnectionStatus {
   gbp?: GoogleConnectionLink;
   calendar?: GoogleConnectionLink;
   gmail?: GoogleConnectionLink;
+  /** Google Ads. Shares the same OAuth token — needsReconnect when the
+   *  adwords scope hasn't been granted on the stored token yet. */
+  googleAds?: GoogleConnectionLink;
 }
 
 export interface GbpAccount {

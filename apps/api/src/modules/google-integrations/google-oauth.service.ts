@@ -25,6 +25,7 @@ const INDEXING_SCOPE = 'https://www.googleapis.com/auth/indexing';
 const DOCS_SCOPE = 'https://www.googleapis.com/auth/documents';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const GMAIL_SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
+const ADWORDS_SCOPE = 'https://www.googleapis.com/auth/adwords';
 const PROFILE_SCOPES = ['openid', 'email', 'profile'];
 const SCOPES = [
   GSC_SCOPE,
@@ -36,6 +37,7 @@ const SCOPES = [
   DOCS_SCOPE,
   SHEETS_SCOPE,
   GMAIL_SEND_SCOPE,
+  ADWORDS_SCOPE,
   ...PROFILE_SCOPES,
 ];
 
@@ -195,6 +197,9 @@ export class GoogleOAuthService {
     const hasGmailScope = !!doc?.scopes?.some((s) =>
       s.includes('auth/gmail.send'),
     );
+    const hasAdwordsScope = !!doc?.scopes?.some((s) =>
+      s.includes('auth/adwords'),
+    );
     return {
       // GSC, GA4, Merchant Center, and Business Profile share the same
       // OAuth credentials — one connect grants access to all four. The
@@ -231,6 +236,15 @@ export class GoogleOAuthService {
         : { connected: false },
       gmail: doc
         ? hasGmailScope
+          ? linked
+          : {
+              connected: false,
+              needsReconnect: true,
+              email: doc.googleEmail,
+            }
+        : { connected: false },
+      googleAds: doc
+        ? hasAdwordsScope
           ? linked
           : {
               connected: false,

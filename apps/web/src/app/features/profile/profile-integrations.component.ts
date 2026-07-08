@@ -233,6 +233,64 @@ import { GoogleIntegrationsService } from '../../core/google-integrations.servic
           </div>
         </div>
 
+        <!-- Google Ads -->
+        <div class="card mb-4">
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex items-start gap-3">
+              <div class="w-10 h-10 rounded-md bg-warning-100 border border-warning-500/30 flex items-center justify-center text-lg">📣</div>
+              <div>
+                <h2 class="text-base font-semibold text-ink-900">Google Ads</h2>
+                <p class="text-xs text-ink-500 mt-0.5 max-w-md">
+                  Pulls PPC campaign performance — impressions, spend, CPC,
+                  conversions — for each client whose Google Ads account
+                  you're linked to. Shares the same OAuth connection as
+                  Search Console.
+                </p>
+              </div>
+            </div>
+            @if (s.googleAds?.connected) {
+              <span class="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-positive-100 text-positive-500">
+                ● Connected
+              </span>
+            } @else if (s.googleAds?.needsReconnect) {
+              <span class="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-warning-100 text-warning-500">
+                ⟳ Needs reconnect
+              </span>
+            } @else {
+              <span class="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-ink-100 text-ink-500">
+                ○ Disconnected
+              </span>
+            }
+          </div>
+
+          <div class="mt-4 pt-4 border-t border-ink-100 text-xs space-y-2">
+            @if (s.googleAds?.connected) {
+              <div class="text-ink-700">
+                Using <strong class="text-ink-900">{{ s.googleAds?.email || '(unknown)' }}</strong>
+                via the Google Search Console connection.
+              </div>
+            } @else if (s.googleAds?.needsReconnect) {
+              <div class="text-warning-500">
+                ⚠ Your existing Google token doesn't include the Ads scope.
+                Click <strong>Reconnect</strong> at the top of this page to
+                grant access — Google will reuse the same account.
+              </div>
+            } @else {
+              <div class="text-ink-500">
+                Connect Google Search Console above. The same OAuth grants
+                Ads access when the scope is approved.
+              </div>
+            }
+            <div class="rounded-md bg-warning-100/60 border border-warning-500/30 px-3 py-2 text-[11px] text-ink-700">
+              ⚠ <strong>Important:</strong> live Ads data also requires an
+              approved <em>Developer Token</em> from Google Ads (separate
+              from OAuth). Until that token is approved, campaign endpoints
+              return 403. You can still connect now — data will flow once
+              the token clears review.
+            </div>
+          </div>
+        </div>
+
         <!-- Next steps -->
         <div class="card">
           <h2 class="text-sm font-semibold text-ink-900 mb-2">Next steps</h2>

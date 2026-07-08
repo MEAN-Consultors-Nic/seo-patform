@@ -10,6 +10,8 @@ import {
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ResetPasswordDto, UpdateUserDto } from './dto/update-user.dto';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { AuthenticatedUser } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.guard';
 
 /**
@@ -43,8 +45,20 @@ export class UsersController {
 
   @Post()
   @Roles('root', 'owner', 'admin')
-  create(@Body() dto: CreateUserDto) {
-    return this.users.create(dto);
+  create(
+    @Body() dto: CreateUserDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.users.create(dto, actor.email);
+  }
+
+  @Post(':id/resend-invite')
+  @Roles('root', 'owner', 'admin')
+  resendInvite(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.users.resendInvite(id, actor.email);
   }
 
   @Patch(':id')

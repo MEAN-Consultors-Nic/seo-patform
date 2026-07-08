@@ -42,17 +42,29 @@ type FormMode = 'create' | 'edit' | 'reset' | null;
                   <span class="badge" [ngClass]="roleBadgeClass(u.role)">{{ roleLabel(u.role) }}</span>
                 </td>
                 <td>
-                  @if (u.active) {
-                    <span class="badge-success">Active</span>
-                  } @else {
+                  @if (!u.active) {
                     <span class="badge-neutral">Disabled</span>
+                  } @else if (!u.passwordSetAt) {
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-warning-100 text-warning-500">
+                      ⏳ Pending invite
+                    </span>
+                  } @else {
+                    <span class="badge-success">Active</span>
                   }
                 </td>
                 <td class="text-xs text-ink-500">{{ u.createdAt | date: 'mediumDate' }}</td>
                 <td class="text-right">
                   <div class="inline-flex gap-1">
                     <button class="btn-ghost btn-sm" (click)="openEdit(u)">Edit</button>
-                    <button class="btn-ghost btn-sm" (click)="openReset(u)">Reset PW</button>
+                    @if (!u.passwordSetAt) {
+                      <button class="btn-ghost btn-sm text-brand-500"
+                              [disabled]="resendingId() === u._id"
+                              (click)="resendInvite(u)">
+                        {{ resendingId() === u._id ? 'Sending…' : 'Resend invite' }}
+                      </button>
+                    } @else {
+                      <button class="btn-ghost btn-sm" (click)="openReset(u)">Reset PW</button>
+                    }
                     @if (u._id !== auth.user()?._id) {
                       <button class="btn-ghost btn-sm text-danger-500" (click)="remove(u)">Delete</button>
                     }
@@ -90,11 +102,9 @@ type FormMode = 'create' | 'edit' | 'reset' | null;
                   <div>
                     <label class="label">Email</label>
                     <input class="input" type="email" [(ngModel)]="form.email" />
-                  </div>
-                  <div>
-                    <label class="label">Initial password</label>
-                    <input class="input" type="text" [(ngModel)]="form.password" />
-                    <div class="text-xs text-ink-400 mt-1">Min. 8 characters. Share securely.</div>
+                    <div class="text-xs text-ink-500 mt-1">
+                      We'll email an invite link so they can set their own password.
+                    </div>
                   </div>
                 }
                 <div>
@@ -150,7 +160,7 @@ type FormMode = 'create' | 'edit' | 'reset' | null;
             <div class="flex justify-end gap-2 mt-6">
               <button class="btn-secondary" (click)="closeModal()">Cancel</button>
               <button class="btn-primary" (click)="submit()" [disabled]="submitting()">
-                {{ submitting() ? 'Saving…' : 'Save' }}
+                {{ submitLabel() }}
               </button>
             </div>
           </div>
@@ -167,6 +177,7 @@ export class UsersListComponent implements OnInit {
   loading = signal(true);
   mode = signal<FormMode>(null);
   submitting = signal(false);
+  resendingId = signal<string | null>(null);
   error = signal<string | null>(null);
   editingId: string | null = null;
 
@@ -185,6 +196,14 @@ export class UsersListComponent implements OnInit {
     managerId: undefined,
     active: true,
   };
+
+  submitLabel(): string {
+    if (this.submitting()) return 'Saving…';
+    const m = this.mode();
+    if (m === 'create') return 'Send invite';
+    if (m === 'reset') return 'Save new password';
+    return 'Save';
+  }
 
   eligibleManagers = computed(() =>
     this.users().filter(
@@ -295,7 +314,6 @@ export class UsersListComponent implements OnInit {
         .create({
           email: this.form.email,
           name: this.form.name,
-          password: this.form.password,
           role: this.form.role,
           managerId:
             this.form.role === 'strategist' ? this.form.managerId : undefined,
@@ -317,6 +335,21 @@ export class UsersListComponent implements OnInit {
         .resetPassword(this.editingId, this.form.password)
         .subscribe({ next: done, error: onErr });
     }
+  }
+
+  resendInvite(u: User) {
+    if (!u._id) return;
+    this.resendingId.set(u._id);
+    this.usersSvc.resendInvite(u._id).subscribe({
+      next: () => {
+        this.resendingId.set(null);
+        alert(`Invite email re-sent to ${u.email}.`);
+      },
+      error: (err) => {
+        this.resendingId.set(null);
+        alert(err?.error?.message || 'Failed to resend invite.');
+      },
+    });
   }
 
   remove(u: User) {

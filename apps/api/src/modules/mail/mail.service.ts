@@ -1,7 +1,9 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import { renderPasswordResetEmail } from './templates/password-reset.template';
 import { renderReportNotificationEmail } from './templates/report-notification.template';
+import { renderInviteEmail } from './templates/user-invite.template';
 
 export interface SendReportNotificationInput {
   recipients: string[];
@@ -12,6 +14,22 @@ export interface SendReportNotificationInput {
   reportUrl: string;
   pin: string;
   preparedBy?: string;
+}
+
+export interface SendInviteEmailInput {
+  recipientName: string;
+  recipientEmail: string;
+  invitedBy?: string;
+  role?: string;
+  actionUrl: string;
+  expiresAt: Date;
+}
+
+export interface SendPasswordResetInput {
+  recipientName: string;
+  recipientEmail: string;
+  actionUrl: string;
+  expiresAt: Date;
 }
 
 @Injectable()
@@ -86,5 +104,47 @@ export class MailService implements OnModuleInit {
       `Report notification sent to ${input.recipients.length} recipient(s) — messageId=${result.messageId}`,
     );
     return { messageId: result.messageId, sentTo: input.recipients };
+  }
+
+  async sendInvite(input: SendInviteEmailInput) {
+    if (!this.transporter) {
+      throw new Error(
+        'Email service is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD in the API .env file.',
+      );
+    }
+    const subject = `You're invited to Media Spearhead · Internal Tools`;
+    const { html, text } = renderInviteEmail(input);
+    const result = await this.transporter.sendMail({
+      from: this.from,
+      to: input.recipientEmail,
+      subject,
+      text,
+      html,
+    });
+    this.logger.log(
+      `Invite email sent to ${input.recipientEmail} — messageId=${result.messageId}`,
+    );
+    return { messageId: result.messageId };
+  }
+
+  async sendPasswordReset(input: SendPasswordResetInput) {
+    if (!this.transporter) {
+      throw new Error(
+        'Email service is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD in the API .env file.',
+      );
+    }
+    const subject = `Reset your Media Spearhead password`;
+    const { html, text } = renderPasswordResetEmail(input);
+    const result = await this.transporter.sendMail({
+      from: this.from,
+      to: input.recipientEmail,
+      subject,
+      text,
+      html,
+    });
+    this.logger.log(
+      `Password reset email sent to ${input.recipientEmail} — messageId=${result.messageId}`,
+    );
+    return { messageId: result.messageId };
   }
 }

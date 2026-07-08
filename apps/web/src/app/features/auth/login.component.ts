@@ -1,13 +1,13 @@
 import { CommonModule } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="min-h-screen flex items-center justify-center bg-ink-50 px-4">
       <div class="w-full max-w-md">
@@ -62,8 +62,10 @@ import { AuthService } from '../../core/auth.service';
           </form>
         </div>
 
-        <p class="text-center text-xs text-ink-400 mt-6">
-          Forgot your password? Contact your administrator.
+        <p class="text-center text-xs text-ink-500 mt-6">
+          <a routerLink="/forgot-password" class="text-brand-500 hover:underline font-medium">
+            Forgot your password?
+          </a>
         </p>
       </div>
     </div>
@@ -83,9 +85,13 @@ export class LoginComponent {
     this.loading.set(true);
     this.error.set(null);
     this.auth.login(this.email, this.password).subscribe({
-      next: () => {
+      next: (res) => {
         this.loading.set(false);
-        this.router.navigate(['/dashboard']);
+        // Fresh invites land on /onboarding; existing users have the flag
+        // backfilled to true so they go straight to the dashboard.
+        this.router.navigate([
+          res.user.onboardingCompleted === false ? '/onboarding' : '/dashboard',
+        ]);
       },
       error: (err) => {
         this.loading.set(false);
