@@ -177,6 +177,11 @@ import { FileDropDirective } from '../../../shared/file-drop.directive';
                   @if (menuOpenId() === p._id) {
                     <div class="absolute right-0 top-full mt-1 z-20 w-48 bg-white border border-ink-200 rounded-md shadow-lg py-1 text-xs"
                          (click)="$event.stopPropagation()">
+                      <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900 font-semibold"
+                              (click)="openEditModal(p)">
+                        ✎ Edit piece
+                      </button>
+                      <div class="my-1 border-t border-ink-100"></div>
                       @if (p.status !== 'idea') {
                         <button class="block w-full text-left px-3 py-1.5 hover:bg-ink-50 text-ink-700 hover:text-ink-900"
                                 (click)="setStatus(p, 'idea')">
@@ -348,6 +353,125 @@ import { FileDropDirective } from '../../../shared/file-drop.directive';
         </div>
       </div>
     }
+
+    <!-- Full edit modal. Kept intentionally simple: all the piece's
+         first-class fields (type, status, title, keyword, notes, draft
+         URL, published URL). Attachments stay inline on the list row
+         because they're big enough to warrant their own visible slot. -->
+    @if (editModalPiece(); as p) {
+      <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
+           (click)="dismissEditModal()">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-xl p-6 max-h-[90vh] overflow-y-auto"
+             (click)="$event.stopPropagation()">
+          <div class="flex items-start justify-between mb-4">
+            <div>
+              <h2 class="text-lg font-bold text-ink-900">Edit piece</h2>
+              <p class="text-xs text-ink-500 mt-0.5">
+                Change any field. Attachments stay on the list row.
+              </p>
+            </div>
+            <button type="button" (click)="dismissEditModal()"
+                    class="text-ink-400 hover:text-ink-900 text-2xl leading-none">×</button>
+          </div>
+
+          <div class="space-y-3">
+            <div>
+              <label class="label">Title</label>
+              <input class="input" [(ngModel)]="editForm.title" placeholder="Piece title" />
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="label">Type</label>
+                <select class="input" [(ngModel)]="editForm.contentType">
+                  @for (t of types; track t) {
+                    <option [value]="t">{{ t }}</option>
+                  }
+                </select>
+              </div>
+              <div>
+                <label class="label">Status</label>
+                <select class="input" [(ngModel)]="editForm.status">
+                  @for (s of statuses; track s) {
+                    <option [value]="s">{{ s }}</option>
+                  }
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label class="label">Target keyword</label>
+              <input class="input" [(ngModel)]="editForm.targetKeyword"
+                     placeholder="e.g. truck repair Palmyra PA" />
+            </div>
+
+            <div>
+              <label class="label">Notes</label>
+              <textarea class="input min-h-[80px]" [(ngModel)]="editForm.notes"
+                        placeholder="Angle, brief, context…"></textarea>
+            </div>
+
+            <div>
+              <label class="label">Draft URL <span class="text-ink-400 font-normal">(optional)</span></label>
+              <input class="input" [(ngModel)]="editForm.briefUrl"
+                     placeholder="https://docs.google.com/document/d/…" />
+            </div>
+
+            <div>
+              <label class="label">Published URL <span class="text-ink-400 font-normal">(optional)</span></label>
+              <input class="input" [(ngModel)]="editForm.publishedUrl"
+                     placeholder="https://example.com/blog/my-piece" />
+            </div>
+
+            <!-- Attachments — inline management, no leaving the modal -->
+            <div>
+              <label class="label">Attachments</label>
+              @if (p.attachments?.length) {
+                <div class="space-y-1.5">
+                  @for (a of p.attachments || []; track a.publicId) {
+                    <div class="flex items-center gap-2 text-xs bg-ink-50 border border-ink-200 rounded px-2 py-1.5">
+                      <a [href]="a.url" target="_blank" rel="noopener"
+                         class="flex-1 text-ink-700 hover:text-brand-500 truncate font-medium"
+                         [title]="a.originalFilename || a.publicId">
+                        📎 {{ a.originalFilename || 'attachment' }}
+                      </a>
+                      <button type="button" class="text-ink-400 hover:text-danger-500 leading-none px-1 text-lg"
+                              (click)="removeAttachment(p, a)"
+                              title="Remove attachment">×</button>
+                    </div>
+                  }
+                </div>
+              } @else {
+                <div class="text-xs text-ink-400 italic mb-2">
+                  No files attached yet.
+                </div>
+              }
+              <button type="button"
+                      class="mt-2 text-xs font-semibold px-3 py-1.5 rounded-md bg-white border border-ink-200 text-ink-700 hover:bg-ink-50 disabled:opacity-50"
+                      [disabled]="!cloudinary.isConfigured() || uploadingFor() === p._id"
+                      [title]="cloudinary.isConfigured() ? '' : 'Cloudinary not configured'"
+                      (click)="triggerAttachFile(p)">
+                {{ uploadingFor() === p._id ? 'Uploading ' + uploadProgress() + '%…' : '📎 Attach file' }}
+              </button>
+            </div>
+          </div>
+
+          @if (editError()) {
+            <div class="text-xs text-danger-500 mt-3">{{ editError() }}</div>
+          }
+
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-ink-100">
+            <button class="btn-secondary" (click)="dismissEditModal()" [disabled]="editSaving()">
+              Cancel
+            </button>
+            <button class="btn-primary" (click)="saveEdit()"
+                    [disabled]="editSaving() || !editForm.title?.trim()">
+              {{ editSaving() ? 'Saving…' : 'Save changes' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class ClientContentTab implements OnChanges {
@@ -400,6 +524,14 @@ export class ClientContentTab implements OnChanges {
   draftUrlInput = '';
   draftLinkSaving = signal(false);
   draftLinkError = signal<string | null>(null);
+
+  // Full edit modal state. The form is kept as a plain object rather
+  // than a signal since Angular's two-way binding already re-renders
+  // the modal on change.
+  editModalPiece = signal<ContentPiece | null>(null);
+  editForm: Partial<ContentPiece> = {};
+  editSaving = signal(false);
+  editError = signal<string | null>(null);
 
   // Inline toast for transient errors / success messages around the
   // "Create task" + draft-link flows. The publish flow has its own
@@ -739,6 +871,74 @@ export class ClientContentTab implements OnChanges {
         const m = err?.error?.message;
         this.draftLinkError.set(
           Array.isArray(m) ? m.join(', ') : m || 'Could not save',
+        );
+      },
+    });
+  }
+
+  // --- Edit modal --------------------------------------------------------
+
+  /**
+   * Opens the full-edit modal for a piece. Seeds the form from the
+   * current piece; edits are held locally until Save so a Cancel
+   * discards without a network roundtrip.
+   */
+  openEditModal(p: ContentPiece) {
+    this.menuOpenId.set(null);
+    this.editForm = {
+      title: p.title,
+      contentType: p.contentType || 'post',
+      status: p.status,
+      targetKeyword: p.targetKeyword || '',
+      notes: p.notes || '',
+      briefUrl: p.briefUrl || '',
+      publishedUrl: p.publishedUrl || '',
+    };
+    this.editError.set(null);
+    this.editModalPiece.set(p);
+  }
+
+  dismissEditModal() {
+    if (this.editSaving()) return;
+    this.editModalPiece.set(null);
+    this.editForm = {};
+    this.editError.set(null);
+  }
+
+  saveEdit() {
+    const piece = this.editModalPiece();
+    if (!piece?._id) return;
+    const title = (this.editForm.title || '').trim();
+    if (!title) {
+      this.editError.set('Title is required.');
+      return;
+    }
+    // Normalize empty strings to undefined so we clear optional fields
+    // rather than persisting whitespace.
+    const patch: Partial<ContentPiece> = {
+      title,
+      contentType: this.editForm.contentType,
+      status: this.editForm.status,
+      targetKeyword: (this.editForm.targetKeyword || '').trim() || undefined,
+      notes: (this.editForm.notes || '').trim() || undefined,
+      briefUrl: (this.editForm.briefUrl || '').trim() || undefined,
+      publishedUrl: (this.editForm.publishedUrl || '').trim() || undefined,
+    };
+    this.editSaving.set(true);
+    this.editError.set(null);
+    this.svc.update(piece._id, patch).subscribe({
+      next: () => {
+        this.editSaving.set(false);
+        this.editModalPiece.set(null);
+        this.editForm = {};
+        this.flashToast('success', 'Piece updated.');
+        this.load();
+      },
+      error: (err) => {
+        this.editSaving.set(false);
+        const m = err?.error?.message;
+        this.editError.set(
+          Array.isArray(m) ? m.join(', ') : m || 'Could not save.',
         );
       },
     });
