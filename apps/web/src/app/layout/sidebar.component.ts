@@ -7,6 +7,7 @@ import {
   Input,
   Output,
 } from '@angular/core';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { USER_ROLE_LABELS, UserRole } from '@seo/shared';
 import { AuthService } from '../core/auth.service';
@@ -265,6 +266,7 @@ interface NavSection {
 })
 export class SidebarComponent {
   private auth = inject(AuthService);
+  private sanitizer = inject(DomSanitizer);
 
   /** Collapse state is owned by the shell so it can control the main
    *  content margin in the same render tick. */
@@ -272,10 +274,21 @@ export class SidebarComponent {
   @Output() toggle = new EventEmitter<void>();
   @Output() signOut = new EventEmitter<void>();
 
-  chevronLeft = SIDEBAR_ICONS['chevron-left'];
-  chevronRight = SIDEBAR_ICONS['chevron-right'];
-  settingsIcon = SIDEBAR_ICONS['settings-gear'];
-  logoutIcon = SIDEBAR_ICONS['logout'];
+  /**
+   * Icon strings are trusted (hand-authored in sidebar-icons.ts) but Angular's
+   * default HTML sanitizer strips SVG child elements when bound via
+   * `[innerHTML]`. Wrap them in SafeHtml so `<path>`, `<circle>`, etc. render.
+   */
+  private safe(name: string): SafeHtml {
+    return this.sanitizer.bypassSecurityTrustHtml(SIDEBAR_ICONS[name] || '');
+  }
+
+  chevronLeft = this.safe('chevron-left');
+  chevronRight = this.safe('chevron-right');
+  settingsIcon = this.safe('settings-gear');
+  logoutIcon = this.safe('logout');
+
+  private iconCache = new Map<string, SafeHtml>();
 
   /**
    * Static nav tree. Grouping is purely presentational — the router
@@ -370,13 +383,23 @@ export class SidebarComponent {
     );
   }
 
-  iconFor(name: string): string {
-    return SIDEBAR_ICONS[name] || '';
+  /**
+   * Cached to avoid re-wrapping the same string on every change-detection
+   * cycle (Angular runs the template getter each tick).
+   */
+  iconFor(name: string): SafeHtml {
+    let cached = this.iconCache.get(name);
+    if (!cached) {
+      cached = this.safe(name);
+      this.iconCache.set(name, cached);
+    }
+    return cached;
   }
 
   /**
-   * Build the class list for a nav item. Kept in TS (not the template)
-   * so the active-state gradient stays in one place.
+   * Build the class list for a nav item. Solid brand fill on active — the
+   * earlier coral→green gradient read as decorative and clashed with the
+   * rest of the app (all buttons are solid).
    */
   itemClasses(active: boolean, collapsed: boolean): string {
     const base =
@@ -385,10 +408,7 @@ export class SidebarComponent {
       ? 'justify-center h-10 mx-0'
       : 'gap-2.5 px-3 py-2';
     if (active) {
-      // Gradient uses palette tokens (brand -> positive) to match the
-      // reference. Text is forced white via `!` because the parent
-      // ancestor may set a colour on hover.
-      return `${base} ${padding} bg-gradient-to-r from-brand-500/95 to-positive-500/90 !text-white shadow-sm`;
+      return `${base} ${padding} bg-brand-500 !text-white shadow-sm`;
     }
     return `${base} ${padding} text-ink-700 hover:bg-ink-100 hover:text-ink-900`;
   }
