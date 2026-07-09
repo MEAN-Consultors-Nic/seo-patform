@@ -1014,9 +1014,11 @@ export class ClientTasksTab implements OnChanges {
 
   /**
    * List-view row source — same filter as filteredTasks but sorted so
-   * pending/in-progress rise to the top, then priority, then most
-   * recently updated. Completed rows sink to the bottom of the "all"
-   * view.
+   * pending/in-progress rise to the top, ordered by priority + recent
+   * update. Completed rows sink to the bottom of the "all" view and
+   * are sorted by completedAt DESCENDING so the freshest wins land
+   * on top of the pile (falls back to updatedAt for older completions
+   * that predate the completedAt field).
    */
   listRows = computed<Task[]>(() => {
     const statusRank: Record<string, number> = {
@@ -1033,6 +1035,16 @@ export class ClientTasksTab implements OnChanges {
     return [...this.filteredTasks()].sort((a, b) => {
       const sd = (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9);
       if (sd !== 0) return sd;
+
+      // Within completed, sort by when it was completed (newest first).
+      // Priority is not a useful axis for closed work — completion date
+      // is the thing operators want to scan.
+      if (a.status === 'completed' && b.status === 'completed') {
+        const ac = new Date(a.completedAt ?? a.updatedAt ?? 0).getTime();
+        const bc = new Date(b.completedAt ?? b.updatedAt ?? 0).getTime();
+        return bc - ac;
+      }
+
       const pd = (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9);
       if (pd !== 0) return pd;
       const at = new Date(a.updatedAt ?? 0).getTime();
