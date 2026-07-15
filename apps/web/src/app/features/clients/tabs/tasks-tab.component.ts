@@ -208,12 +208,13 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
                     }
                   </div>
 
-                  <!-- Title (click → details modal) -->
+                  <!-- Title (click → details modal). No line-through
+                       on completed rows — the green pill / accent bar /
+                       Reopen button already signal completion, and the
+                       strike-through hurt readability on longer titles. -->
                   <button type="button"
                           (click)="openDetailModal(t)"
                           class="text-left w-full text-sm font-semibold text-ink-900 leading-snug hover:text-brand-500 truncate"
-                          [class.line-through]="t.status === 'completed'"
-                          [class.text-ink-400]="t.status === 'completed'"
                           [title]="t.title">
                     {{ t.title }}
                   </button>
