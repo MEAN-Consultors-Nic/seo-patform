@@ -157,7 +157,10 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
              carve out a Blocked column because that state is rare and
              deserves attention when it happens rather than a
              persistent bucket. -->
-        <div class="bg-white border border-ink-200 rounded-lg overflow-hidden">
+        <!-- overflow-visible so the kebab menu dropdown on each row can
+             escape the container's rounded corners; ancestor
+             overflow-hidden clips absolute-positioned descendants. -->
+        <div class="bg-white border border-ink-200 rounded-lg">
           <!-- Header row for the table. Hidden on very narrow widths so
                the row content re-flows without overlapping. -->
           <div class="hidden md:grid grid-cols-[minmax(0,1fr)_120px_120px_44px] items-center gap-3 px-4 py-2 border-b border-ink-100 bg-ink-50/60 text-[10px] font-semibold uppercase tracking-wider text-ink-500">
