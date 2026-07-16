@@ -249,7 +249,18 @@ export class GoogleDocsService {
       category?: string;
       priority?: string;
       completedAt?: Date;
-      imageAttachments?: string[];
+      /**
+       * Structured attachment list. Images are inlined as thumbnails
+       * (max 2); everything else is written as a "📎 filename" line
+       * with a hyperlink to the file so the reader can open the
+       * document/PDF/video without breaking the Docs API on a
+       * non-image URI.
+       */
+      attachments?: Array<{
+        url: string;
+        originalFilename?: string;
+        resourceType?: 'image' | 'raw' | 'video';
+      }>;
     },
   ): Promise<void> {
     try {
@@ -410,31 +421,26 @@ export class GoogleDocsService {
       }
       cursor += intro.length;
 
-      // Inline images, capped at TWO. Sized small enough that two
-      // images + a single space separator fit comfortably on one
-      // line inside the 468pt default content width of a LETTER
-      // page. At 210×140pt each, a row of two consumes about
-      // 425pt — plenty of breathing room, so Docs won't push the
-      // second image to a new line.
-      //
-      // 230pt worked at the math level but Docs added enough
-      // intrinsic image-margin that the combined width tipped over
-      // 468pt and the second image wrapped to a new line. Dropping
-      // to 210pt buys back the margin budget while keeping the
-      // images legible.
-      //
-      // Each image gets a text-style link applied to its single-
-      // char range so clicking it in the doc opens the original on
-      // Cloudinary.
-      const images = (task.imageAttachments ?? [])
-        .filter((u): u is string => !!u)
+      // Split attachments by kind: images get inlined as thumbnails
+      // (capped at 2 so the row fits inside the 468pt LETTER content
+      // width), everything else is rendered as a "📎 filename" line
+      // with a hyperlink. Trying to insertInlineImage on a PDF / doc /
+      // video URI causes the Docs API to reject the batch — that's
+      // the failure the user hit.
+      const allAttachments = (task.attachments ?? []).filter((a) => !!a?.url);
+      const images = allAttachments
+        .filter((a) => a.resourceType === 'image')
         .slice(0, 2);
-      images.forEach((url, idx) => {
+      const fileLinks = allAttachments.filter(
+        (a) => a.resourceType !== 'image',
+      );
+
+      images.forEach((att, idx) => {
         const imageIndex = cursor;
         requests.push({
           insertInlineImage: {
             location: { index: cursor, tabId },
-            uri: url,
+            uri: att.url,
             objectSize: {
               width: { magnitude: 210, unit: 'PT' },
               height: { magnitude: 140, unit: 'PT' },
@@ -449,14 +455,10 @@ export class GoogleDocsService {
               endIndex: imageIndex + 1,
               tabId,
             },
-            textStyle: { link: { url } },
+            textStyle: { link: { url: att.url } },
             fields: 'link',
           },
         });
-        // Single space between the two images. Two spaces with the
-        // previous 230pt sizing tipped the line width over the
-        // content width and forced a wrap; one space at 210pt
-        // leaves enough room that the line stays intact.
         if (idx === 0 && images.length > 1) {
           requests.push({
             insertText: { location: { index: cursor, tabId }, text: ' ' },
@@ -470,6 +472,36 @@ export class GoogleDocsService {
         });
         cursor += 1;
       }
+
+      // Non-image attachments: one line each, "📎 filename" with the
+      // filename hyperlinked to the file. Falls back to the URL path
+      // segment when the original filename isn't stored. The 📎 prefix
+      // isn't styled as a link so the icon stays visible even if the
+      // doc theme hides link decorations.
+      fileLinks.forEach((att) => {
+        const label = att.originalFilename?.trim() || this.urlFilename(att.url);
+        const prefix = '📎 ';
+        const lineText = `${prefix}${label}\n`;
+        const lineStart = cursor;
+        const labelStart = lineStart + prefix.length;
+        const labelEnd = labelStart + label.length;
+        requests.push({
+          insertText: { location: { index: cursor, tabId }, text: lineText },
+        });
+        // Style just the filename portion as a hyperlink (blue +
+        // underlined via Docs' default link style).
+        requests.push({
+          updateTextStyle: {
+            range: { startIndex: labelStart, endIndex: labelEnd, tabId },
+            textStyle: {
+              link: { url: att.url },
+              fontSize: { magnitude: 10, unit: 'PT' },
+            },
+            fields: 'link,fontSize',
+          },
+        });
+        cursor += lineText.length;
+      });
 
       // 3) Footer: separator rule + metadata signature line. Single
       //    trailing newline (NOT \n\n) so no empty paragraph lingers
@@ -532,6 +564,21 @@ export class GoogleDocsService {
         `appendTaskToTab failed for doc=${documentId} tab=${tabId}: ${upstream}`,
       );
       throw new Error(`Google Docs append failed: ${upstream}`);
+    }
+  }
+
+  /**
+   * Extract a filename from a Cloudinary URL when the caller didn't
+   * pass originalFilename. Takes the last path segment and strips the
+   * query string — good enough for a "📎 label" display line.
+   */
+  private urlFilename(url: string): string {
+    try {
+      const path = url.split('?')[0];
+      const seg = path.split('/').pop() || 'attachment';
+      return decodeURIComponent(seg);
+    } catch {
+      return 'attachment';
     }
   }
 

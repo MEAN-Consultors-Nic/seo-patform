@@ -244,10 +244,14 @@ export class TasksService {
       category?: string;
       priority?: string;
       completedAt?: Date;
-      attachments?: Array<{ url: string; resourceType?: string }>;
+      attachments?: Array<{
+        url: string;
+        originalFilename?: string;
+        resourceType?: string;
+      }>;
     },
     userId: string,
-    skipImages = false,
+    skipAttachments = false,
     docTabName?: string,
   ): Promise<{ ok: boolean; message?: string }> {
     try {
@@ -261,19 +265,29 @@ export class TasksService {
       const tabId = docTabName
         ? await this.docs.findTabByName(userId, docId, docTabName)
         : await this.docs.findMonthlyTab(userId, docId, when);
-      const imageAttachments = skipImages
+      // Pass the whole attachment shape so the docs service can pick
+      // its own strategy per resourceType: image → inline thumbnail,
+      // raw/video → 📎 filename hyperlink.
+      const attachments = skipAttachments
         ? []
         : (task.attachments ?? [])
-            .filter((a) => a.resourceType !== 'raw')
-            .map((a) => a.url)
-            .filter((u): u is string => !!u);
+            .filter((a) => !!a?.url)
+            .map((a) => ({
+              url: a.url,
+              originalFilename: a.originalFilename,
+              resourceType: (a.resourceType as
+                | 'image'
+                | 'raw'
+                | 'video'
+                | undefined) ?? undefined,
+            }));
       await this.docs.appendTaskToTab(userId, docId, tabId, {
         title: task.title,
         description: task.description,
         category: task.category,
         priority: task.priority,
         completedAt: when,
-        imageAttachments,
+        attachments,
       });
       return { ok: true, message: 'Task synced to Google Doc.' };
     } catch (err) {

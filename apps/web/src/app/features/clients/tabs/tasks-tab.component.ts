@@ -463,21 +463,30 @@ const STATUS_META: Record<TaskStatus, StatusOption> = {
               }
             </div>
 
-            @if (imageAttachmentsOf(p).length > 0) {
+            @if (attachmentsOf(p).length > 0) {
               <div>
-                <label class="label">Attached images ({{ imageAttachmentsOf(p).length }})</label>
+                <label class="label">Attachments ({{ attachmentsOf(p).length }})</label>
                 <div class="bg-ink-50 border border-ink-200 rounded-md p-2">
-                  <div class="flex flex-wrap gap-2 mb-2">
-                    @for (a of imageAttachmentsOf(p); track a.publicId) {
-                      <img [src]="a.thumbnailUrl || a.url" [alt]="a.originalFilename || ''"
-                           class="w-12 h-12 object-cover rounded-md border border-ink-200" />
+                  <div class="flex flex-wrap items-center gap-2 mb-2">
+                    @for (a of attachmentsOf(p); track a.publicId) {
+                      @if (a.resourceType === 'image') {
+                        <img [src]="a.thumbnailUrl || a.url" [alt]="a.originalFilename || ''"
+                             class="w-12 h-12 object-cover rounded-md border border-ink-200"
+                             [title]="a.originalFilename || 'image'" />
+                      } @else {
+                        <div class="flex items-center gap-1.5 px-2 py-1 bg-white border border-ink-200 rounded-md text-xs text-ink-700 max-w-[180px]"
+                             [title]="a.originalFilename || 'file'">
+                          <span>📎</span>
+                          <span class="truncate">{{ a.originalFilename || 'file' }}</span>
+                        </div>
+                      }
                     }
                   </div>
                   <label class="text-xs text-ink-700 inline-flex items-center gap-1.5 cursor-pointer">
                     <input type="checkbox" class="rounded border-ink-300"
                            [ngModel]="completionIncludeImages()"
                            (ngModelChange)="completionIncludeImages.set($event)" />
-                    Include images in the doc (first 2 max)
+                    Include attachments in the doc — images inline (first 2), files as links
                   </label>
                 </div>
               </div>
@@ -1468,12 +1477,13 @@ export class ClientTasksTab implements OnChanges {
   }
 
   /**
-   * Lists image attachments (Cloudinary uploads that aren't PDFs/raw
-   * files). Used both by the completion confirm dialog to show
-   * thumbnails and by the gating decision in setStatus().
+   * All Cloudinary attachments on the task (images + files). The
+   * completion confirm dialog renders images as thumbnails and files
+   * as chips; the backend picks per-item strategy (inline image vs.
+   * hyperlinked filename) when syncing to the Google Doc.
    */
-  imageAttachmentsOf(t: Task): TaskAttachment[] {
-    return (t.attachments || []).filter((a) => a.resourceType !== 'raw');
+  attachmentsOf(t: Task): TaskAttachment[] {
+    return t.attachments || [];
   }
 
   confirmCompletion() {
@@ -1484,11 +1494,12 @@ export class ClientTasksTab implements OnChanges {
     if (!iso) return;
     const completedAt = new Date(`${iso}T12:00:00.000Z`);
     const tabName = this.completionTabName().trim() || undefined;
-    // Only tasks with image attachments can meaningfully skip images;
-    // otherwise the flag is a no-op. Preserve the pre-existing "skip"
-    // semantics: the modal toggle is 'include', so skip = !include.
-    const hasImages = this.imageAttachmentsOf(t).length > 0;
-    const skipImages = hasImages ? !this.completionIncludeImages() : false;
+    // Toggle governs the whole attachments block (images + file
+    // links). skip = !include; a no-op when the task has no
+    // attachments. The API-side variable is still called skipImages
+    // for backwards compatibility with the /send-to-doc payload.
+    const hasAttachments = this.attachmentsOf(t).length > 0;
+    const skipImages = hasAttachments ? !this.completionIncludeImages() : false;
     this.completionPrompt.set(null);
     if (mode === 'sendToDoc') {
       this.performSendToDoc(t, skipImages, tabName);
