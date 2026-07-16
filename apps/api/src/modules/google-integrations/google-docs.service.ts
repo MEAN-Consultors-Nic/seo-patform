@@ -425,14 +425,23 @@ export class GoogleDocsService {
       // (capped at 2 so the row fits inside the 468pt LETTER content
       // width), everything else is rendered as a "📎 filename" line
       // with a hyperlink. Trying to insertInlineImage on a PDF / doc /
-      // video URI causes the Docs API to reject the batch — that's
-      // the failure the user hit.
+      // video URI causes the Docs API to reject the whole batch
+      // ("Access to the provided image was forbidden").
+      //
+      // Cloudinary sometimes tags PDFs as resource_type=image (it
+      // rasterizes them on the fly), so trusting resourceType alone
+      // isn't enough — we also require an actual raster extension
+      // (png/jpg/gif/webp) via isLikelyImage(). Anything ambiguous
+      // falls into the file-links bucket so nothing that isn't a
+      // real image ever reaches insertInlineImage.
       const allAttachments = (task.attachments ?? []).filter((a) => !!a?.url);
       const images = allAttachments
-        .filter((a) => a.resourceType === 'image')
+        .filter(
+          (a) => a.resourceType === 'image' && this.isLikelyImage(a.url),
+        )
         .slice(0, 2);
       const fileLinks = allAttachments.filter(
-        (a) => a.resourceType !== 'image',
+        (a) => !(a.resourceType === 'image' && this.isLikelyImage(a.url)),
       );
 
       images.forEach((att, idx) => {
