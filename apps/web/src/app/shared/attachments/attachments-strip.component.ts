@@ -13,6 +13,7 @@ import {
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { TaskAttachment } from '@seo/shared';
 import { CloudinaryService } from '../../core/cloudinary.service';
 import { TasksService } from '../../core/tasks.service';
@@ -297,6 +298,38 @@ interface UploadDraft {
           @if (isImage(a)) {
             <img [src]="cloudinary.fullUrl(a.publicId)" [alt]="a.caption || a.label"
                  class="w-full max-h-[80vh] object-contain rounded-lg shadow-2xl" />
+          } @else if (isPdf(a)) {
+            <!-- Embedded PDF viewer. Browsers render Cloudinary raw
+                 PDFs natively via <iframe>; we still surface the
+                 filename + size + View/Download in a top bar so the
+                 reader can bail out or save the file without leaving
+                 the modal. -->
+            <div class="w-full rounded-lg shadow-2xl bg-white flex flex-col overflow-hidden max-h-[85vh]">
+              <div class="px-4 py-2.5 border-b border-ink-100 flex items-center gap-3 bg-ink-50">
+                <span class="inline-flex items-center justify-center w-8 h-8 rounded bg-white border border-ink-200 text-xs font-bold text-ink-700">PDF</span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-semibold text-ink-900 truncate"
+                       [title]="a.originalFilename">
+                    {{ a.originalFilename || 'document.pdf' }}
+                  </div>
+                  @if (a.bytes) {
+                    <div class="text-[11px] text-ink-500">{{ formatBytes(a.bytes) }}</div>
+                  }
+                </div>
+                <a [href]="a.url" target="_blank" rel="noopener"
+                   class="text-xs font-semibold text-ink-600 hover:text-ink-900 px-2 py-1 rounded hover:bg-ink-100">
+                  🔗 Open
+                </a>
+                <a [href]="a.url" [download]="a.originalFilename || 'file.pdf'"
+                   class="text-xs font-semibold text-white bg-brand-500 hover:bg-brand-600 px-3 py-1.5 rounded">
+                  ⬇ Download
+                </a>
+              </div>
+              <iframe [src]="pdfPreviewUrl(a)"
+                      class="w-full flex-1 border-0"
+                      style="min-height: 70vh;"
+                      title="PDF preview"></iframe>
+            </div>
           } @else {
             <div class="w-full max-h-[80vh] rounded-lg shadow-2xl bg-white flex flex-col items-center justify-center p-10 gap-4">
               <div class="flex flex-col items-center justify-center w-24 h-32 rounded border border-ink-200 bg-ink-50 text-ink-600 text-xl font-bold">
@@ -370,6 +403,12 @@ interface UploadDraft {
 export class AttachmentsStripComponent implements AfterViewChecked, OnDestroy {
   protected cloudinary = inject(CloudinaryService);
   private tasksSvc = inject(TasksService);
+  private sanitizer = inject(DomSanitizer);
+
+  // Cached bypass-security wrapped iframe URLs so we don't re-run the
+  // sanitizer on every change-detection tick for the currently-open
+  // PDF preview.
+  private pdfUrlCache = new Map<string, SafeResourceUrl>();
 
   @ViewChild('lightboxRoot') lightboxRoot?: ElementRef<HTMLDivElement>;
   private lightboxInBody = false;
@@ -629,6 +668,30 @@ export class AttachmentsStripComponent implements AfterViewChecked, OnDestroy {
     // filename extension.
     const name = (a.originalFilename || a.url || '').toLowerCase();
     return imgFormats.some((f) => name.endsWith(`.${f}`));
+  }
+
+  /** True when the attachment is a PDF — Cloudinary can host these
+   *  under either resource_type=image (its default for PDFs) or
+   *  resource_type=raw depending on the upload preset, so we sniff
+   *  the format field and the URL/filename extension instead. */
+  isPdf(a: TaskAttachment): boolean {
+    if ((a.format || '').toLowerCase() === 'pdf') return true;
+    const name = (a.originalFilename || a.url || '').toLowerCase();
+    return name.endsWith('.pdf');
+  }
+
+  /** Sanitizer-bypassed URL for the PDF iframe. Cached per publicId
+   *  so the iframe doesn't get re-created on every change detection. */
+  pdfPreviewUrl(a: TaskAttachment): SafeResourceUrl {
+    const cached = this.pdfUrlCache.get(a.publicId);
+    if (cached) return cached;
+    // Append #view=FitH so Acrobat / Chrome's PDF viewer opens with
+    // the page fitted horizontally — matches the frame width instead
+    // of the browser default zoom.
+    const suffixed = a.url.includes('#') ? a.url : `${a.url}#view=FitH`;
+    const safe = this.sanitizer.bypassSecurityTrustResourceUrl(suffixed);
+    this.pdfUrlCache.set(a.publicId, safe);
+    return safe;
   }
 
   fileExt(a: TaskAttachment): string {
