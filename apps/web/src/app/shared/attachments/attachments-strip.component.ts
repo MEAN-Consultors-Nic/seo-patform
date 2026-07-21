@@ -38,29 +38,61 @@ interface UploadDraft {
     <div class="mt-1.5 space-y-2">
       <!-- Files block. Rendered first because docs are usually the
            thing the reader needs to jump into (specs, briefs, PDFs);
-           screenshots come below as supporting context. -->
+           screenshots come below as supporting context.
+           Rendered as a list so the filename is visible — the
+           icon-only grid was fine when everything was called
+           "attachment.pdf" but useless when you actually need to
+           tell PDFs apart. -->
       @if (fileAttachments().length > 0) {
         <div>
           <div class="text-[9px] font-semibold uppercase tracking-wider text-ink-400 mb-1">
             Files · {{ fileAttachments().length }}
           </div>
-          <div class="flex flex-wrap items-center gap-1.5">
+          <ul class="border border-ink-200 rounded-md divide-y divide-ink-100 bg-white">
             @for (a of fileAttachments(); track a.publicId) {
-              <div class="group relative">
+              <li class="group flex items-center gap-2 px-2 py-1.5 hover:bg-ink-50 transition">
                 <button (click)="open(a)"
-                        [title]="a.originalFilename || a.caption || 'Document'"
-                        class="flex flex-col items-center justify-center w-10 h-10 rounded border border-ink-200 bg-ink-50 text-ink-600 hover:border-brand-500 hover:text-brand-600 transition text-[8px] font-bold uppercase">
-                  <span class="text-base leading-none">📄</span>
+                        [title]="'Preview ' + (a.originalFilename || 'file')"
+                        class="flex-shrink-0 flex flex-col items-center justify-center w-8 h-9 rounded border border-ink-200 bg-ink-50 text-ink-600 hover:border-brand-500 hover:text-brand-600 transition text-[8px] font-bold uppercase">
+                  <span class="text-sm leading-none">📄</span>
                   <span class="leading-none mt-0.5">{{ fileExt(a) }}</span>
                 </button>
+                <button (click)="open(a)"
+                        class="flex-1 min-w-0 text-left"
+                        [title]="a.originalFilename || 'file'">
+                  <div class="text-xs font-semibold text-ink-900 truncate hover:text-brand-500">
+                    {{ a.originalFilename || 'Untitled file' }}
+                  </div>
+                  <div class="text-[10px] text-ink-500 mt-0.5">
+                    {{ fileExt(a) }}@if (a.bytes) {
+                      <span> · {{ formatBytes(a.bytes) }}</span>
+                    }@if (a.caption) {
+                      <span> · {{ a.caption }}</span>
+                    }
+                  </div>
+                </button>
+                <a [href]="a.url" target="_blank" rel="noopener"
+                   class="opacity-0 group-hover:opacity-100 text-[10px] font-semibold text-ink-500 hover:text-brand-500 px-2 py-1 rounded hover:bg-ink-100 transition"
+                   [title]="'Open in new tab'"
+                   (click)="$event.stopPropagation()">
+                  🔗
+                </a>
+                <a [href]="a.url" [download]="a.originalFilename || 'file'"
+                   class="opacity-0 group-hover:opacity-100 text-[10px] font-semibold text-ink-500 hover:text-brand-500 px-2 py-1 rounded hover:bg-ink-100 transition"
+                   title="Download"
+                   (click)="$event.stopPropagation()">
+                  ⬇
+                </a>
                 @if (!readOnly) {
                   <button (click)="remove(a)"
                           title="Delete"
-                          class="opacity-0 group-hover:opacity-100 absolute -top-1.5 -left-1.5 w-4 h-4 rounded-full bg-danger-500 text-white text-[10px] leading-none flex items-center justify-center hover:bg-danger-700 transition">×</button>
+                          class="opacity-0 group-hover:opacity-100 text-[10px] font-semibold text-danger-500 hover:text-danger-700 px-2 py-1 rounded hover:bg-danger-100 transition">
+                    ×
+                  </button>
                 }
-              </div>
+              </li>
             }
-          </div>
+          </ul>
         </div>
       }
 
