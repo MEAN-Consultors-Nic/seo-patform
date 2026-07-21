@@ -23,6 +23,18 @@ export class CloudinaryService {
    * Upload a file directly to Cloudinary using the unsigned preset.
    * Returns a promise with the upload metadata.
    * Supports onProgress callback (0-100).
+   *
+   * Endpoint is chosen per file type instead of using /auto/upload:
+   *   image/*  → /image/upload
+   *   video/*  → /video/upload
+   *   anything else (PDF, DOC, ZIP, TXT, …) → /raw/upload
+   *
+   * The /auto endpoint defaults PDFs to resource_type=image, and by
+   * default Cloudinary blocks PDF/ZIP delivery from image resources
+   * for security ("Restricted media types" is on for new accounts).
+   * Routing docs through /raw/upload avoids the restriction and the
+   * resulting `/raw/upload/...pdf` URL is publicly retrievable, which
+   * is what the preview iframe and Download button need.
    */
   upload(file: File, onProgress?: (pct: number) => void): Promise<CloudinaryUploadResult> {
     return new Promise((resolve, reject) => {
@@ -32,9 +44,8 @@ export class CloudinaryService {
       }
 
       const { cloudName, uploadPreset } = environment.cloudinary;
-      // Use /auto/upload so Cloudinary detects whether the file is an image,
-      // raw document (PDF, Word, etc.), or video.
-      const url = `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`;
+      const endpoint = this.endpointFor(file);
+      const url = `https://api.cloudinary.com/v1_1/${cloudName}/${endpoint}/upload`;
 
       const xhr = new XMLHttpRequest();
       const formData = new FormData();
@@ -89,5 +100,29 @@ export class CloudinaryService {
   fullUrl(publicId: string, width = 1600): string {
     const { cloudName } = environment.cloudinary;
     return `https://res.cloudinary.com/${cloudName}/image/upload/c_limit,w_${width},q_auto,f_auto/${publicId}`;
+  }
+
+  /**
+   * Picks the Cloudinary upload endpoint based on the file's mime and
+   * extension. PDFs / docs / spreadsheets / zips / txt all go through
+   * /raw/upload so they don't get filtered by the image-resource PDF
+   * restriction (see upload() docstring). Falls back to raw for any
+   * unrecognized type so previously-broken formats now work by
+   * default — matches the spirit of /auto/upload without inheriting
+   * its PDF-as-image quirk.
+   */
+  private endpointFor(file: File): 'image' | 'video' | 'raw' {
+    const mime = (file.type || '').toLowerCase();
+    if (mime.startsWith('image/')) return 'image';
+    if (mime.startsWith('video/')) return 'video';
+    // Some browsers report empty mime for less common formats; sniff
+    // by extension too so a .heic / .webp always lands on /image and
+    // a bare .csv falls to /raw.
+    const name = file.name.toLowerCase();
+    const imageExts = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.avif', '.bmp', '.heic', '.heif'];
+    const videoExts = ['.mp4', '.mov', '.webm', '.mkv', '.avi'];
+    if (imageExts.some((e) => name.endsWith(e))) return 'image';
+    if (videoExts.some((e) => name.endsWith(e))) return 'video';
+    return 'raw';
   }
 }
