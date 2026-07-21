@@ -34,37 +34,63 @@ interface UploadDraft {
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
-      @for (a of attachments; track a.publicId) {
-        <div class="group relative">
-          @if (isImage(a)) {
-            <button (click)="open(a)"
-                    class="block w-10 h-10 rounded border border-ink-200 overflow-hidden hover:border-brand-500 transition">
-              <img [src]="a.thumbnailUrl || a.url" [alt]="a.caption || a.label"
-                   class="w-full h-full object-cover" />
-            </button>
-          } @else {
-            <a [href]="a.url" target="_blank" rel="noopener"
-               [title]="a.originalFilename || a.caption || 'Document'"
-               class="flex flex-col items-center justify-center w-10 h-10 rounded border border-ink-200 bg-ink-50 text-ink-600 hover:border-brand-500 hover:text-brand-600 transition text-[8px] font-bold uppercase">
-              <span class="text-base leading-none">📄</span>
-              <span class="leading-none mt-0.5">{{ fileExt(a) }}</span>
-            </a>
-          }
-          @if (a.label && a.label !== 'other') {
-            <span class="absolute -top-1 -right-1 text-[8px] font-bold px-1 py-0.5 rounded-sm uppercase tracking-wider"
-                  [class]="labelBadgeClass(a.label)">
-              {{ a.label }}
-            </span>
-          }
-          @if (!isImage(a) && !readOnly) {
-            <button (click)="remove(a)"
-                    title="Delete"
-                    class="opacity-0 group-hover:opacity-100 absolute -top-1.5 -left-1.5 w-4 h-4 rounded-full bg-danger-500 text-white text-[10px] leading-none flex items-center justify-center hover:bg-danger-700 transition">×</button>
-          }
+    <div class="mt-1.5 space-y-2">
+      <!-- Files block. Rendered first because docs are usually the
+           thing the reader needs to jump into (specs, briefs, PDFs);
+           screenshots come below as supporting context. -->
+      @if (fileAttachments().length > 0) {
+        <div>
+          <div class="text-[9px] font-semibold uppercase tracking-wider text-ink-400 mb-1">
+            Files · {{ fileAttachments().length }}
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5">
+            @for (a of fileAttachments(); track a.publicId) {
+              <div class="group relative">
+                <button (click)="open(a)"
+                        [title]="a.originalFilename || a.caption || 'Document'"
+                        class="flex flex-col items-center justify-center w-10 h-10 rounded border border-ink-200 bg-ink-50 text-ink-600 hover:border-brand-500 hover:text-brand-600 transition text-[8px] font-bold uppercase">
+                  <span class="text-base leading-none">📄</span>
+                  <span class="leading-none mt-0.5">{{ fileExt(a) }}</span>
+                </button>
+                @if (!readOnly) {
+                  <button (click)="remove(a)"
+                          title="Delete"
+                          class="opacity-0 group-hover:opacity-100 absolute -top-1.5 -left-1.5 w-4 h-4 rounded-full bg-danger-500 text-white text-[10px] leading-none flex items-center justify-center hover:bg-danger-700 transition">×</button>
+                }
+              </div>
+            }
+          </div>
         </div>
       }
 
+      <!-- Images block. Thumbnails with the same BEFORE/AFTER/OTHER
+           label overlay the previous single-block strip had. -->
+      @if (imageAttachments().length > 0) {
+        <div>
+          <div class="text-[9px] font-semibold uppercase tracking-wider text-ink-400 mb-1">
+            Images · {{ imageAttachments().length }}
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5">
+            @for (a of imageAttachments(); track a.publicId) {
+              <div class="group relative">
+                <button (click)="open(a)"
+                        class="block w-10 h-10 rounded border border-ink-200 overflow-hidden hover:border-brand-500 transition">
+                  <img [src]="a.thumbnailUrl || a.url" [alt]="a.caption || a.label"
+                       class="w-full h-full object-cover" />
+                </button>
+                @if (a.label && a.label !== 'other') {
+                  <span class="absolute -top-1 -right-1 text-[8px] font-bold px-1 py-0.5 rounded-sm uppercase tracking-wider"
+                        [class]="labelBadgeClass(a.label)">
+                    {{ a.label }}
+                  </span>
+                }
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+    <div class="flex flex-wrap items-center gap-1.5">
       @if (!readOnly) {
         @if (cloudinary.isConfigured()) {
           <button (click)="openUploadModal()"
@@ -104,6 +130,7 @@ interface UploadDraft {
           </div>
         </div>
       }
+    </div>
     </div>
 
     <!-- Upload modal -->
@@ -255,16 +282,50 @@ interface UploadDraft {
       </div>
     }
 
-    <!-- Lightbox (teleported to document.body so it escapes any
-         ancestor stacking context, e.g. completed task cards) -->
+    <!-- Preview (teleported to document.body so it escapes any
+         ancestor stacking context, e.g. completed task cards). Body
+         branches on isImage(a): images render as the classic image
+         lightbox; documents render as a file card with View +
+         Download so PDFs / videos / other files stop dead-ending on
+         a broken image tag. -->
     @if (lightbox(); as a) {
       <div #lightboxRoot
            class="fixed inset-0 bg-ink-900/80 flex items-center justify-center p-6"
            style="z-index: 10000;"
            (click)="lightbox.set(null)">
         <div class="relative max-w-5xl w-full" (click)="$event.stopPropagation()">
-          <img [src]="cloudinary.fullUrl(a.publicId)" [alt]="a.caption || a.label"
-               class="w-full max-h-[80vh] object-contain rounded-lg shadow-2xl" />
+          @if (isImage(a)) {
+            <img [src]="cloudinary.fullUrl(a.publicId)" [alt]="a.caption || a.label"
+                 class="w-full max-h-[80vh] object-contain rounded-lg shadow-2xl" />
+          } @else {
+            <div class="w-full max-h-[80vh] rounded-lg shadow-2xl bg-white flex flex-col items-center justify-center p-10 gap-4">
+              <div class="flex flex-col items-center justify-center w-24 h-32 rounded border border-ink-200 bg-ink-50 text-ink-600 text-xl font-bold">
+                <span class="text-4xl leading-none">📄</span>
+                <span class="mt-2 text-[10px] tracking-wider uppercase">{{ fileExt(a) }}</span>
+              </div>
+              <div class="text-center max-w-md">
+                <div class="text-lg font-bold text-ink-900 break-all">
+                  {{ a.originalFilename || 'Attachment' }}
+                </div>
+                @if (a.bytes) {
+                  <div class="text-xs text-ink-500 mt-1">{{ formatBytes(a.bytes) }}</div>
+                }
+                @if (a.caption) {
+                  <div class="text-sm text-ink-600 mt-2 italic">{{ a.caption }}</div>
+                }
+              </div>
+              <div class="flex items-center gap-2 mt-2">
+                <a [href]="a.url" target="_blank" rel="noopener"
+                   class="btn-secondary text-sm">
+                  🔗 View
+                </a>
+                <a [href]="a.url" [download]="a.originalFilename || 'file'"
+                   class="btn-primary text-sm">
+                  ⬇ Download
+                </a>
+              </div>
+            </div>
+          }
 
           <button (click)="lightbox.set(null)"
                   class="absolute top-2 right-2 w-9 h-9 rounded-full bg-ink-900/80 text-white hover:bg-ink-900 flex items-center justify-center text-lg">
@@ -272,15 +333,17 @@ interface UploadDraft {
           </button>
 
           <div class="absolute bottom-0 left-0 right-0 bg-ink-900/90 backdrop-blur rounded-b-lg px-4 py-3 flex items-center gap-3 text-white">
-            <div class="flex items-center gap-1">
-              @for (lbl of labels; track lbl) {
-                <button (click)="setLabel(a, lbl)"
-                        [class]="'px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition ' +
-                          (a.label === lbl ? 'bg-brand-500 text-white' : 'bg-white/10 hover:bg-white/20')">
-                  {{ lbl }}
-                </button>
-              }
-            </div>
+            @if (isImage(a)) {
+              <div class="flex items-center gap-1">
+                @for (lbl of labels; track lbl) {
+                  <button (click)="setLabel(a, lbl)"
+                          [class]="'px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition ' +
+                            (a.label === lbl ? 'bg-brand-500 text-white' : 'bg-white/10 hover:bg-white/20')">
+                    {{ lbl }}
+                  </button>
+                }
+              </div>
+            }
 
             <input class="flex-1 bg-white/10 text-sm rounded px-3 py-1.5 border border-white/20 focus:outline-none focus:border-brand-500"
                    [(ngModel)]="captionDraft"
@@ -327,6 +390,17 @@ export class AttachmentsStripComponent implements AfterViewChecked, OnDestroy {
 
   captionDraft = '';
   labels: Array<LabelOption> = ['before', 'after', 'other'];
+
+  /** Attachments grouped for the two visual blocks — files first
+   *  (documents / videos / anything the isImage() check rejects),
+   *  then images. Preserves the original array order within each
+   *  bucket so the caller's ordering intent survives. */
+  imageAttachments(): TaskAttachment[] {
+    return (this.attachments ?? []).filter((a) => this.isImage(a));
+  }
+  fileAttachments(): TaskAttachment[] {
+    return (this.attachments ?? []).filter((a) => !this.isImage(a));
+  }
 
   pasteHint = this.detectPasteHint();
 
@@ -527,17 +601,34 @@ export class AttachmentsStripComponent implements AfterViewChecked, OnDestroy {
     }
   }
 
+  /**
+   * Opens the preview lightbox. Now handles both real images and
+   * documents — the lightbox template branches on isImage() to render
+   * the right body. Only real raster images get the image viewer;
+   * PDFs / videos / other files get a document card + View/Download.
+   */
   open(a: TaskAttachment) {
-    if (!this.isImage(a)) return;
     this.lightbox.set(a);
     this.captionDraft = a.caption || '';
   }
 
+  /**
+   * Real raster image? Cloudinary sometimes tags PDFs as
+   * resourceType='image' because it can rasterize them, so we
+   * require BOTH the resourceType and an actual image-format hint
+   * (extension or Cloudinary `format` field). Anything ambiguous
+   * counts as a document so the UI doesn't try to render a PDF as
+   * an inline <img>.
+   */
   isImage(a: TaskAttachment): boolean {
-    if (a.resourceType) return a.resourceType === 'image';
-    // Legacy attachments without resourceType — fall back to format check
     const imgFormats = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp'];
-    return !!(a.format && imgFormats.includes(a.format.toLowerCase()));
+    const fmt = (a.format || '').toLowerCase();
+    if (a.resourceType === 'image' && imgFormats.includes(fmt)) return true;
+    if (!a.resourceType && imgFormats.includes(fmt)) return true;
+    // Fallback for legacy attachments that stored neither: sniff the
+    // filename extension.
+    const name = (a.originalFilename || a.url || '').toLowerCase();
+    return imgFormats.some((f) => name.endsWith(`.${f}`));
   }
 
   fileExt(a: TaskAttachment): string {
