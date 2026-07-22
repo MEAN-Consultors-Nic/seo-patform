@@ -177,6 +177,22 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed' | 'orphan';
                (ngModelChange)="search.set($event)" />
       </div>
 
+      <!-- Row-action progress banner. Fires when a single-URL action
+           (Request indexing / Recheck status) is in flight so the
+           user has a visible signal beyond the row spinner. -->
+      @if (rowActionBusy(); as busy) {
+        <div class="card border-l-4 border-brand-500 bg-brand-500/10 text-sm flex items-center gap-3 py-2 px-3">
+          <svg class="animate-spin h-4 w-4 text-brand-500 flex-shrink-0" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" opacity="0.25" />
+            <path d="M21 12a9 9 0 0 1-9 9" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+          </svg>
+          <div class="flex-1 min-w-0">
+            <div class="font-semibold text-ink-900">{{ busy.action }}…</div>
+            <div class="text-xs text-ink-600 truncate">{{ busy.url }}</div>
+          </div>
+        </div>
+      }
+
       <!-- Table -->
       @if (loading()) {
         <div class="card py-10 text-center text-ink-400 italic text-sm">Loading…</div>
@@ -255,13 +271,25 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed' | 'orphan';
                     <button type="button"
                             (click)="toggleMenu(r.url, $event)"
                             [class.bg-ink-100]="menuOpenUrl() === r.url"
-                            class="w-7 h-7 rounded-md inline-flex items-center justify-center text-ink-500 hover:bg-ink-100 hover:text-ink-900 transition"
-                            aria-label="URL actions">
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                        <circle cx="3" cy="8" r="1.5" />
-                        <circle cx="8" cy="8" r="1.5" />
-                        <circle cx="13" cy="8" r="1.5" />
-                      </svg>
+                            [disabled]="rowBusy(r.url)"
+                            class="w-7 h-7 rounded-md inline-flex items-center justify-center text-ink-500 hover:bg-ink-100 hover:text-ink-900 transition disabled:opacity-100 disabled:cursor-progress"
+                            [attr.aria-label]="rowBusy(r.url) ? 'Working…' : 'URL actions'"
+                            [title]="rowBusy(r.url) ? rowBusyLabel(r.url) : ''">
+                      @if (rowBusy(r.url)) {
+                        <svg class="animate-spin h-4 w-4 text-brand-500"
+                             viewBox="0 0 24 24" fill="none">
+                          <circle cx="12" cy="12" r="9" stroke="currentColor"
+                                  stroke-width="3" opacity="0.25" />
+                          <path d="M21 12a9 9 0 0 1-9 9" stroke="currentColor"
+                                stroke-width="3" stroke-linecap="round" />
+                        </svg>
+                      } @else {
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                          <circle cx="3" cy="8" r="1.5" />
+                          <circle cx="8" cy="8" r="1.5" />
+                          <circle cx="13" cy="8" r="1.5" />
+                        </svg>
+                      }
                     </button>
                     @if (menuOpenUrl() === r.url) {
                       <div (click)="$event.stopPropagation()"
@@ -573,4 +601,30 @@ export class ClientIndexingTab implements OnChanges {
   requestingUrl = signal<string | null>(null);
   /** URL currently being re-inspected (Recheck status) — used to show a spinner. */
   rechckingUrl = signal<string | null>(null);
+
+  /** True while either single-URL action is running against `url`. */
+  rowBusy(url: string): boolean {
+    return this.requestingUrl() === url || this.rechckingUrl() === url;
+  }
+
+  /** Tooltip on the ⋮ spinner while the row is busy. */
+  rowBusyLabel(url: string): string {
+    if (this.requestingUrl() === url) return 'Requesting indexing…';
+    if (this.rechckingUrl() === url) return 'Rechecking status…';
+    return '';
+  }
+
+  /**
+   * Composite signal for the top-of-table progress banner. Returns
+   * the URL + a human label whenever any single-URL action is in
+   * flight, so the reader has an unmistakable "yes, something is
+   * happening" cue even if the menu closed on click.
+   */
+  rowActionBusy = computed<{ action: string; url: string } | null>(() => {
+    const req = this.requestingUrl();
+    if (req) return { action: 'Requesting indexing', url: req };
+    const rec = this.rechckingUrl();
+    if (rec) return { action: 'Rechecking status', url: rec };
+    return null;
+  });
 }
