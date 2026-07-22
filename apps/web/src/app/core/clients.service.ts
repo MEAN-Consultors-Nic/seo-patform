@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   Client,
+  ClientAttachment,
   ClientHealthStatus,
   ClientRosterStats,
   ClientSubscription,
@@ -88,6 +89,30 @@ export class ClientsService {
   removeSubscription(clientId: string, subId: string) {
     return this.http.delete<{ deleted: true }>(
       `${this.base}/clients/${clientId}/subscriptions/${subId}`,
+    );
+  }
+
+  addAttachment(clientId: string, attachment: Partial<ClientAttachment>): Observable<Client> {
+    return this.http.post<Client>(
+      `${this.base}/clients/${clientId}/attachments`,
+      attachment,
+    );
+  }
+
+  updateAttachment(
+    clientId: string,
+    publicId: string,
+    patch: { label?: string },
+  ): Observable<Client> {
+    return this.http.patch<Client>(
+      `${this.base}/clients/${clientId}/attachments/${encodeURIComponent(publicId)}`,
+      patch,
+    );
+  }
+
+  removeAttachment(clientId: string, publicId: string) {
+    return this.http.delete<{ deleted: true }>(
+      `${this.base}/clients/${clientId}/attachments/${encodeURIComponent(publicId)}`,
     );
   }
 }

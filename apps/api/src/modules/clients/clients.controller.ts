@@ -111,4 +111,43 @@ export class ClientsController {
   ) {
     return this.clients.removeSubscription(id, subId, user);
   }
+
+  @Post(':id/attachments')
+  addAttachment(
+    @Param('id') id: string,
+    @Body() body: {
+      publicId: string;
+      url: string;
+      thumbnailUrl?: string;
+      format?: string;
+      width?: number;
+      height?: number;
+      bytes?: number;
+      resourceType?: 'image' | 'raw' | 'video';
+      originalFilename?: string;
+      label?: string;
+    },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.clients.addAttachment(id, body, user);
+  }
+
+  @Patch(':id/attachments/:publicId')
+  updateAttachment(
+    @Param('id') id: string,
+    @Param('publicId') publicId: string,
+    @Body() body: { label?: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.clients.updateAttachment(id, publicId, body, user);
+  }
+
+  @Delete(':id/attachments/:publicId')
+  removeAttachment(
+    @Param('id') id: string,
+    @Param('publicId') publicId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.clients.removeAttachment(id, publicId, user);
+  }
 }

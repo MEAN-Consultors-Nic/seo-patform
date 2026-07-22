@@ -813,6 +813,13 @@ export interface Client {
    */
   subscriptions?: ClientSubscription[];
   /**
+   * Files attached at the client level — contracts, brand kits,
+   * reference material — that don't belong to any specific task or
+   * content piece. Each has an optional free-text label the user
+   * can set to categorize.
+   */
+  attachments?: ClientAttachment[];
+  /**
    * Agency-side classifier: what services WE provide to this client.
    * Powers the Clients page filter pills (PPC / SEO / PPC+SEO /
    * Website), the At-risk + Expansion tabs (multi-service), and the
@@ -972,6 +979,28 @@ export const CONTENT_STATUSES: ContentStatus[] = [
 export type ContentPieceType = 'page' | 'post';
 
 export const CONTENT_PIECE_TYPES: ContentPieceType[] = ['page', 'post'];
+
+/**
+ * Client-scoped attachment. Same Cloudinary metadata shape as
+ * ContentAttachment but with a free-text `label` tag so users can
+ * name buckets themselves (Contract, Brand kit, Reference, …) without
+ * a fixed enum.
+ */
+export interface ClientAttachment {
+  publicId: string;
+  url: string;
+  thumbnailUrl?: string;
+  format?: string;
+  width?: number;
+  height?: number;
+  bytes?: number;
+  resourceType?: 'image' | 'raw' | 'video';
+  originalFilename?: string;
+  /** Free-text tag for the reader — Contract, Brand kit, Reference,
+   *  whatever the user wants. Optional. */
+  label?: string;
+  uploadedAt: Date;
+}
 
 export interface ContentAttachment {
   publicId: string;

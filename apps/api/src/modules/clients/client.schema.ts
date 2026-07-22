@@ -38,6 +38,32 @@ class SubscriptionSubSchema {
 
 const SubscriptionSchemaDef = SchemaFactory.createForClass(SubscriptionSubSchema);
 
+/**
+ * Client-level attachment (contracts, brand assets, reference PDFs,
+ * anything that doesn't belong to a specific task or content piece).
+ * Same Cloudinary metadata pattern as TaskAttachment / ContentAttachment,
+ * with a free-text label instead of the fixed before/after/other
+ * enum used on task attachments.
+ */
+@Schema({ _id: false })
+class ClientAttachmentSubSchema {
+  @Prop({ required: true }) publicId!: string;
+  @Prop({ required: true }) url!: string;
+  @Prop() thumbnailUrl?: string;
+  @Prop() format?: string;
+  @Prop() width?: number;
+  @Prop() height?: number;
+  @Prop() bytes?: number;
+  @Prop({ type: String, enum: ['image', 'raw', 'video'] })
+  resourceType?: 'image' | 'raw' | 'video';
+  @Prop() originalFilename?: string;
+  @Prop() label?: string;
+  @Prop({ default: () => new Date() }) uploadedAt!: Date;
+}
+const ClientAttachmentSchemaDef = SchemaFactory.createForClass(
+  ClientAttachmentSubSchema,
+);
+
 @Schema({ _id: false })
 class ContactSubSchema implements ClientContact {
   @Prop({ required: true }) name!: string;
@@ -327,6 +353,26 @@ export class Client {
     endingDate?: Date;
     active: boolean;
     notes?: string;
+  }>;
+
+  /**
+   * Client-scoped attachments — contracts, brand assets, reference
+   * material, anything that lives with the client record rather
+   * than a specific task or content piece.
+   */
+  @Prop({ type: [ClientAttachmentSchemaDef], default: [] })
+  attachments?: Array<{
+    publicId: string;
+    url: string;
+    thumbnailUrl?: string;
+    format?: string;
+    width?: number;
+    height?: number;
+    bytes?: number;
+    resourceType?: 'image' | 'raw' | 'video';
+    originalFilename?: string;
+    label?: string;
+    uploadedAt: Date;
   }>;
 
   /**

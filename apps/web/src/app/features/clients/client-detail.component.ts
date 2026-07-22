@@ -15,6 +15,7 @@ import { PackagesService } from '../../core/packages.service';
 import { ClientKeywordsTab } from './tabs/keywords-tab.component';
 import { ClientKpiHistoryTab } from './tabs/kpi-history-tab.component';
 import { ClientKnowledgeTab } from './tabs/knowledge-tab.component';
+import { ClientFilesTabComponent } from './tabs/files-tab.component';
 import { ClientContactsTab } from './tabs/contacts-tab.component';
 import { ClientCompetitorsTab } from './tabs/competitors-tab.component';
 import { ClientBacklinksTab } from './tabs/backlinks-tab.component';
@@ -45,6 +46,7 @@ type TabKey =
   | 'access'
   | 'contacts'
   | 'knowledge'
+  | 'files'
   | 'onboarding'
   | 'tasks'
   | 'content'
@@ -104,6 +106,7 @@ const GROUPS: GroupDef[] = [
     ClientKeywordsTab,
     ClientKpiHistoryTab,
     ClientKnowledgeTab,
+    ClientFilesTabComponent,
     ClientContactsTab,
     ClientCompetitorsTab,
     ClientBacklinksTab,
@@ -293,6 +296,9 @@ const GROUPS: GroupDef[] = [
           @case ('knowledge') {
             <app-client-knowledge-tab [client]="c" (changed)="reload()" />
           }
+          @case ('files') {
+            <app-client-files-tab [clientId]="c._id!" [attachments]="(c.attachments ?? [])" />
+          }
           @case ('onboarding') {
             <app-client-onboarding-tab [clientId]="c._id!" [client]="c" />
           }
@@ -417,6 +423,7 @@ export class ClientDetailComponent implements OnInit {
       { key: 'knowledge', label: 'Knowledge', group: 'setup' },
       { key: 'contacts', label: 'Contacts', group: 'setup' },
       { key: 'access', label: 'Credentials', group: 'setup' },
+      { key: 'files', label: 'Files', group: 'setup' },
       { key: 'integrations', label: 'Integrations', group: 'setup' },
     ];
     const c = this.client();

@@ -641,4 +641,113 @@ export class ClientsService implements OnModuleInit {
     });
     return { deleted: true };
   }
+
+  // --- Client-level attachments ------------------------------------------
+
+  async addAttachment(
+    clientId: string,
+    attachment: {
+      publicId: string;
+      url: string;
+      thumbnailUrl?: string;
+      format?: string;
+      width?: number;
+      height?: number;
+      bytes?: number;
+      resourceType?: 'image' | 'raw' | 'video';
+      originalFilename?: string;
+      label?: string;
+    },
+    user?: AuthenticatedUser,
+  ) {
+    if (user) await this.assertAccess(clientId, user);
+    if (!attachment?.publicId || !attachment?.url) {
+      throw new BadRequestException('Attachment is missing publicId or url.');
+    }
+    const updated = await this.model
+      .findByIdAndUpdate(
+        clientId,
+        {
+          $push: {
+            attachments: {
+              ...attachment,
+              uploadedAt: new Date(),
+            },
+          },
+        },
+        { new: true },
+      )
+      .lean()
+      .exec();
+    if (!updated) throw new NotFoundException(`Client ${clientId} not found`);
+    await this.audit.log({
+      userId: user?.userId,
+      userEmail: user?.email,
+      action: 'client.attachment.added',
+      targetType: 'Client',
+      targetId: clientId,
+      details: {
+        publicId: attachment.publicId,
+        filename: attachment.originalFilename,
+      },
+    });
+    return updated;
+  }
+
+  async updateAttachment(
+    clientId: string,
+    publicId: string,
+    patch: { label?: string },
+    user?: AuthenticatedUser,
+  ) {
+    if (user) await this.assertAccess(clientId, user);
+    const setDoc: Record<string, unknown> = {};
+    if (patch.label !== undefined) {
+      setDoc['attachments.$.label'] = patch.label || undefined;
+    }
+    if (Object.keys(setDoc).length === 0) {
+      throw new BadRequestException('Nothing to update.');
+    }
+    const updated = await this.model
+      .findOneAndUpdate(
+        {
+          _id: new Types.ObjectId(clientId),
+          'attachments.publicId': publicId,
+        },
+        { $set: setDoc },
+        { new: true },
+      )
+      .lean()
+      .exec();
+    if (!updated) {
+      throw new NotFoundException(`Attachment ${publicId} not found on client`);
+    }
+    return updated;
+  }
+
+  async removeAttachment(
+    clientId: string,
+    publicId: string,
+    user?: AuthenticatedUser,
+  ) {
+    if (user) await this.assertAccess(clientId, user);
+    const updated = await this.model
+      .findByIdAndUpdate(
+        clientId,
+        { $pull: { attachments: { publicId } } },
+        { new: true },
+      )
+      .lean()
+      .exec();
+    if (!updated) throw new NotFoundException(`Client ${clientId} not found`);
+    await this.audit.log({
+      userId: user?.userId,
+      userEmail: user?.email,
+      action: 'client.attachment.removed',
+      targetType: 'Client',
+      targetId: clientId,
+      details: { publicId },
+    });
+    return { deleted: true };
+  }
 }
