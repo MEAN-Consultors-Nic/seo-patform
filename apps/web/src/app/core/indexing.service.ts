@@ -43,6 +43,14 @@ export interface PullResult {
   summary: IndexingSummary;
 }
 
+export interface RecheckAllResult {
+  inspected: number;
+  updated: number;
+  failed: number;
+  quotaHit: boolean;
+  durationMs: number;
+}
+
 export interface RequestIndexingResult {
   notified: boolean;
   notifiedAt?: string;
@@ -95,6 +103,16 @@ export class IndexingService {
     return this.http.post<{ row: PageIndexStatus | null }>(
       `${this.base}/clients/${clientId}/indexing/recheck`,
       { url },
+    );
+  }
+
+  recheckAll(
+    clientId: string,
+    filter?: 'all' | 'indexed' | 'not-indexed',
+  ): Observable<RecheckAllResult> {
+    return this.http.post<RecheckAllResult>(
+      `${this.base}/clients/${clientId}/indexing/recheck-all`,
+      { filter: filter ?? 'all' },
     );
   }
 }

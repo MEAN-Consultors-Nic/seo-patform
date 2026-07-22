@@ -13,6 +13,7 @@ import {
   IndexingSummary,
   PageIndexStatus,
   PullResult,
+  RecheckAllResult,
 } from '../../../core/indexing.service';
 
 type StatusFilter = 'all' | 'indexed' | 'not_indexed' | 'orphan';
@@ -42,11 +43,19 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed' | 'orphan';
             </div>
           }
         </div>
-        <button class="btn-primary text-sm whitespace-nowrap"
-                [disabled]="pulling()"
-                (click)="runPull()">
-          {{ pulling() ? 'Pulling…' : '📥 Pull indexing status' }}
-        </button>
+        <div class="flex items-center gap-2 whitespace-nowrap">
+          <button class="btn-secondary text-sm"
+                  [disabled]="pulling() || rechecking()"
+                  title="Re-inspect the URLs already tracked without re-scanning the sitemap. Faster than a full pull; only refreshes existing rows."
+                  (click)="runRecheckAll()">
+            {{ rechecking() ? 'Rechecking…' : '🔄 Recheck all' }}
+          </button>
+          <button class="btn-primary text-sm"
+                  [disabled]="pulling() || rechecking()"
+                  (click)="runPull()">
+            {{ pulling() ? 'Pulling…' : '📥 Pull indexing status' }}
+          </button>
+        </div>
       </div>
 
       @if (clipboardHint(); as msg) {
@@ -71,6 +80,27 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed' | 'orphan';
           }
           <button class="text-[11px] text-ink-500 hover:text-ink-900 mt-2"
                   (click)="pullResult.set(null)">
+            Dismiss
+          </button>
+        </div>
+      }
+
+      <!-- Recheck-all result banner -->
+      @if (recheckResult(); as r) {
+        <div class="card border-l-4 border-sky-500 bg-sky-100/40 text-sm">
+          <div class="font-semibold text-ink-900 mb-1">
+            🔄 Rechecked {{ r.inspected }} URL(s) · {{ r.updated }} updated · {{ r.failed }} failed
+          </div>
+          <div class="text-xs text-ink-600">
+            Took {{ (r.durationMs / 1000) | number: '1.1-1' }}s.
+          </div>
+          @if (r.quotaHit) {
+            <div class="mt-2 text-xs text-warning-500">
+              ⚠ URL Inspection quota hit — some rows may not have been refreshed. Try again later.
+            </div>
+          }
+          <button class="text-[11px] text-ink-500 hover:text-ink-900 mt-2"
+                  (click)="recheckResult.set(null)">
             Dismiss
           </button>
         </div>
@@ -302,6 +332,8 @@ export class ClientIndexingTab implements OnChanges {
   loading = signal(false);
   pulling = signal(false);
   pullResult = signal<PullResult | null>(null);
+  rechecking = signal(false);
+  recheckResult = signal<RecheckAllResult | null>(null);
   error = signal<string | null>(null);
   filter = signal<StatusFilter>('all');
   search = signal('');
@@ -345,6 +377,33 @@ export class ClientIndexingTab implements OnChanges {
     });
     this.svc.summary(this.clientId).subscribe({
       next: (s) => this.summary.set(s),
+    });
+  }
+
+  /**
+   * Re-inspect every URL already tracked for this client without
+   * re-fetching the sitemap / GSC catalog. Faster than a full pull
+   * when the user only wants freshness on the rows they can already
+   * see; used to confirm indexation changes after a batch of
+   * request-indexing calls or a few hours after publishing.
+   */
+  runRecheckAll() {
+    if (!this.clientId) return;
+    this.rechecking.set(true);
+    this.recheckResult.set(null);
+    this.error.set(null);
+    this.svc.recheckAll(this.clientId).subscribe({
+      next: (res) => {
+        this.recheckResult.set(res);
+        this.rechecking.set(false);
+        this.loadAll();
+      },
+      error: (err) => {
+        this.rechecking.set(false);
+        const raw =
+          err?.error?.message || err?.message || err?.statusText || '';
+        this.error.set(raw || 'Recheck failed.');
+      },
     });
   }
 

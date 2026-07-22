@@ -443,6 +443,156 @@ export class IndexingService {
     return { row: row as PageIndexStatus | null };
   }
 
+  /**
+   * Re-inspects every existing row for a client without re-fetching
+   * the sitemap or GSC catalog. Cheaper than pullForClient() when
+   * the reader just wants freshness on URLs already tracked — no
+   * new URLs are added. Uses the same concurrency + quota-hit
+   * semantics as the pull. Optional `filter` narrows to only rows
+   * matching a verdict bucket (e.g. re-check just "not-indexed"
+   * pages after requesting indexing on a batch).
+   */
+  async recheckAllForClient(
+    clientId: string,
+    user: AuthenticatedUser,
+    filter?: 'all' | 'indexed' | 'not-indexed',
+  ): Promise<{
+    inspected: number;
+    updated: number;
+    failed: number;
+    quotaHit: boolean;
+    durationMs: number;
+  }> {
+    await this.clients.assertAccess(clientId, user);
+    const client = await this.clientModel.findById(clientId).lean().exec();
+    if (!client) throw new NotFoundException('Client not found');
+    if (!client.gscSiteUrl) {
+      throw new BadRequestException(
+        'Client has no gscSiteUrl configured. Set it in Edit client → Integrations.',
+      );
+    }
+
+    const started = Date.now();
+    const query: Record<string, unknown> = {
+      clientId: new Types.ObjectId(clientId),
+    };
+    if (filter === 'indexed') query.verdict = 'PASS';
+    else if (filter === 'not-indexed') query.verdict = { $ne: 'PASS' };
+
+    // Prioritize the least-recently-checked rows so repeated calls
+    // eventually cover the full inventory. Cap at MAX_PER_PULL so a
+    // huge site doesn't blow past the platform request timeout.
+    const MAX_PER_RECHECK = 30;
+    const CONCURRENCY = 6;
+    const rows = (await this.model
+      .find(query, { url: 1 })
+      .sort({ lastCheckedAt: 1 })
+      .limit(MAX_PER_RECHECK)
+      .lean()
+      .exec()) as Array<{ url: string }>;
+
+    if (rows.length === 0) {
+      return {
+        inspected: 0,
+        updated: 0,
+        failed: 0,
+        quotaHit: false,
+        durationMs: Date.now() - started,
+      };
+    }
+
+    const auth = await this.oauth.getAuthorizedClient(user.userId);
+    const sc = google.searchconsole({ version: 'v1', auth });
+
+    let updated = 0;
+    let failed = 0;
+    let quotaHit = false;
+
+    const inspectOne = async (url: string) => {
+      if (quotaHit) return;
+      try {
+        const existing = await this.model
+          .findOne({ clientId: new Types.ObjectId(clientId), url })
+          .lean()
+          .exec();
+        const inspectionRes = await sc.urlInspection.index.inspect({
+          requestBody: { inspectionUrl: url, siteUrl: client.gscSiteUrl },
+        });
+        const r = inspectionRes.data.inspectionResult?.indexStatusResult;
+        if (!r) {
+          failed++;
+          return;
+        }
+        const newVerdict =
+          (r.verdict as
+            | 'PASS'
+            | 'NEUTRAL'
+            | 'FAIL'
+            | 'VERDICT_UNSPECIFIED') || 'VERDICT_UNSPECIFIED';
+        const lastCrawlTime = r.lastCrawlTime
+          ? new Date(r.lastCrawlTime)
+          : undefined;
+        const transitionToIndexed =
+          newVerdict === 'PASS' &&
+          !existing?.firstIndexedAt &&
+          (!existing?.previousVerdict || existing.previousVerdict !== 'PASS');
+        await this.model
+          .updateOne(
+            { clientId: new Types.ObjectId(clientId), url },
+            {
+              $set: {
+                verdict: newVerdict,
+                coverageState: r.coverageState || undefined,
+                robotsTxtState: r.robotsTxtState || undefined,
+                indexingState: r.indexingState || undefined,
+                pageFetchState: r.pageFetchState || undefined,
+                lastCrawlTime,
+                googleCanonical: r.googleCanonical || undefined,
+                userCanonical: r.userCanonical || undefined,
+                canonicalMismatch:
+                  !!r.googleCanonical &&
+                  !!r.userCanonical &&
+                  r.googleCanonical !== r.userCanonical,
+                referringUrls: r.referringUrls || [],
+                isOrphan: !(r.referringUrls && r.referringUrls.length > 0),
+                previousVerdict: existing?.verdict,
+                lastCheckedAt: new Date(),
+                ...(transitionToIndexed
+                  ? { firstIndexedAt: new Date() }
+                  : {}),
+              },
+            },
+          )
+          .exec();
+        updated++;
+      } catch (err) {
+        const msg = (err as Error).message || 'inspection failed';
+        this.logger.warn(`Recheck-all inspection failed for ${url}: ${msg}`);
+        failed++;
+        if (msg.includes('429') || msg.toLowerCase().includes('quota')) {
+          quotaHit = true;
+        }
+      }
+    };
+
+    let cursor = 0;
+    const workers = Array.from({ length: CONCURRENCY }, async () => {
+      while (cursor < rows.length && !quotaHit) {
+        const i = cursor++;
+        await inspectOne(rows[i].url);
+      }
+    });
+    await Promise.all(workers);
+
+    return {
+      inspected: rows.length,
+      updated,
+      failed,
+      quotaHit,
+      durationMs: Date.now() - started,
+    };
+  }
+
   async requestIndexing(
     clientId: string,
     url: string,
