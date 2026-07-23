@@ -1,5 +1,13 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnChanges, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  HostListener,
+  Input,
+  OnChanges,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
   Client,
@@ -261,17 +269,45 @@ function daysAgoIso(days: number): string {
                     </button>
                   </div>
                 </td>
-                <td class="px-4 py-2 text-right whitespace-nowrap">
-                  <app-usearchfrom-button
-                    [keyword]="k.text"
-                    [location]="defaultSearchLocation()"
-                    buttonClass="text-ink-500 hover:text-brand-500 mr-2 text-sm"></app-usearchfrom-button>
-                  <button class="text-ink-500 hover:text-brand-500 mr-2"
-                          title="Edit keyword"
-                          (click)="openEditModal(k)">✎</button>
-                  <button class="text-red-500 hover:text-red-700"
-                          title="Remove keyword"
-                          (click)="remove(k)">×</button>
+                <td class="px-4 py-2 text-right whitespace-nowrap relative">
+                  <button type="button"
+                          (click)="toggleMenu(k._id!, $event)"
+                          [class.bg-ink-100]="menuOpenId() === k._id"
+                          class="w-7 h-7 rounded-md inline-flex items-center justify-center text-ink-500 hover:bg-ink-100 hover:text-ink-900 transition"
+                          aria-label="Keyword actions">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                      <circle cx="3" cy="8" r="1.5" />
+                      <circle cx="8" cy="8" r="1.5" />
+                      <circle cx="13" cy="8" r="1.5" />
+                    </svg>
+                  </button>
+                  @if (menuOpenId() === k._id) {
+                    <div (click)="$event.stopPropagation()"
+                         class="absolute right-2 top-9 z-20 w-56 bg-white border border-ink-200 rounded-md shadow-elevated py-1 text-left">
+                      <div class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-400">
+                        Actions
+                      </div>
+                      <div class="px-3 py-1.5 hover:bg-ink-50 cursor-pointer text-sm text-ink-700 flex items-center gap-2">
+                        <app-usearchfrom-button
+                          [keyword]="k.text"
+                          [location]="defaultSearchLocation()"
+                          buttonClass="text-sm text-ink-700 hover:text-brand-500 flex items-center gap-2 w-full text-left"></app-usearchfrom-button>
+                      </div>
+                      <button type="button"
+                              (click)="openEditModal(k); closeMenu()"
+                              class="w-full text-left px-3 py-2 hover:bg-ink-50 text-sm text-ink-700 flex items-center gap-2">
+                        <span class="text-brand-500">✎</span>
+                        Edit keyword
+                      </button>
+                      <div class="border-t border-ink-100 my-1"></div>
+                      <button type="button"
+                              (click)="remove(k); closeMenu()"
+                              class="w-full text-left px-3 py-2 hover:bg-danger-100 text-sm text-danger-500 flex items-center gap-2">
+                        <span>🗑</span>
+                        Remove keyword
+                      </button>
+                    </div>
+                  }
                 </td>
               </tr>
             }
@@ -719,6 +755,24 @@ export class ClientKeywordsTab implements OnChanges {
     this.searchTerm.set('');
     this.clusterFilter.set('');
     this.currentPage.set(1);
+  }
+
+  // Per-row contextual menu state. Same pattern as the tasks / content
+  // rows: only one open at a time; outside-click closes.
+  menuOpenId = signal<string | null>(null);
+
+  toggleMenu(id: string, ev: MouseEvent) {
+    ev.stopPropagation();
+    this.menuOpenId.set(this.menuOpenId() === id ? null : id);
+  }
+
+  closeMenu() {
+    this.menuOpenId.set(null);
+  }
+
+  @HostListener('document:click')
+  onDocClick() {
+    if (this.menuOpenId()) this.menuOpenId.set(null);
   }
 
   // Edit-keyword modal state
