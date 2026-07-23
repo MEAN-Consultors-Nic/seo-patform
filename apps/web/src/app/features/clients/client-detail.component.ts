@@ -406,14 +406,19 @@ export class ClientDetailComponent implements OnInit {
       { key: 'content', label: 'Content', group: 'work' },
       { key: 'emails', label: 'Emails', group: 'work' },
 
+      // SEO tabs ordered by day-to-day priority: performance insights
+      // first, then health checks, then keyword strategy, then the
+      // supporting tools (competitors / backlinks / KPI trend / service
+      // areas). Reorder here to change the sidebar order — same
+      // sequence drives the render-case switch below via key lookup.
+      { key: 'gsc-insights', label: 'GSC Insights', group: 'seo' },
+      { key: 'indexing', label: 'Indexing', group: 'seo' },
+      { key: 'cannibalization', label: 'Cannibalization', group: 'seo' },
       { key: 'keywords', label: 'Keywords', group: 'seo' },
       { key: 'positions', label: 'Position Tracker', group: 'seo' },
       { key: 'competitors', label: 'Competitors', group: 'seo' },
       { key: 'backlinks', label: 'Backlinks', group: 'seo' },
       { key: 'kpis', label: 'KPI History', group: 'seo' },
-      { key: 'gsc-insights', label: 'GSC Insights', group: 'seo' },
-      { key: 'indexing', label: 'Indexing', group: 'seo' },
-      { key: 'cannibalization', label: 'Cannibalization', group: 'seo' },
       { key: 'service-areas', label: 'Service Areas', group: 'seo' },
 
       { key: 'ppc-campaigns', label: 'Campaigns', group: 'ppc' },
