@@ -169,6 +169,41 @@ export class GoogleIntegrationsController {
   }
 
   /**
+   * Top values for a dimension across a date range. Powers the
+   * Country / Device picker in the performance chart's filter modal
+   * so the operator picks from an enumerated list of what actually
+   * shows up in this client's data instead of typing free-form.
+   */
+  @Get('gsc/top-values')
+  async gscTopValues(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('clientId') clientId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('dimension') dimension: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    if (!clientId || !from || !to || !dimension)
+      throw new BadRequestException(
+        'clientId, from, to, dimension are required',
+      );
+    if (!['query', 'page', 'country', 'device'].includes(dimension)) {
+      throw new BadRequestException(
+        'dimension must be query / page / country / device',
+      );
+    }
+    const limit = limitRaw ? Math.max(1, Math.min(200, Number(limitRaw))) : 50;
+    return this.svc.gscTopDimensionValues(
+      clientId,
+      user,
+      from,
+      to,
+      dimension as 'query' | 'page' | 'country' | 'device',
+      limit,
+    );
+  }
+
+  /**
    * Drill-down: top rows for a single day, grouped by the requested
    * dimension. Used by the click-on-a-date modal on the performance
    * chart.

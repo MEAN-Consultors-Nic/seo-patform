@@ -241,6 +241,32 @@ export class GoogleIntegrationsService {
     };
   }
 
+  async gscTopDimensionValues(
+    clientId: string,
+    user: AuthenticatedUser,
+    from: string,
+    to: string,
+    dimension: 'query' | 'page' | 'country' | 'device',
+    limit?: number,
+  ) {
+    const client = await this.clients.findOne(clientId, user);
+    if (!client.gscSiteUrl) {
+      throw new BadRequestException(
+        'GSC site URL is not configured for this client.',
+      );
+    }
+    const tokenUserId = this.resolveTokenUserId(client, user);
+    const rows = await this.gsc.topDimensionValues(
+      tokenUserId,
+      client.gscSiteUrl,
+      from,
+      to,
+      dimension,
+      limit,
+    );
+    return { rows, dimension, range: { from, to } };
+  }
+
   async gscTopForDate(
     clientId: string,
     user: AuthenticatedUser,

@@ -18,7 +18,9 @@ import {
   GscTimeseriesResponse,
   GscTimeseriesRow,
   GscTopForDateResponse,
+  GscTopValueRow,
 } from '../../../core/google-integrations.service';
+import { countryDisplayName } from '../../../shared/country-names';
 
 type Preset = '7d' | '28d' | '3m' | 'custom';
 
@@ -101,7 +103,7 @@ interface KpiCard {
         }
         <button type="button"
                 class="text-[11px] font-semibold px-2 py-1 rounded border border-dashed border-ink-300 text-ink-500 hover:border-brand-500 hover:text-brand-500"
-                (click)="filterModalOpen.set(true)">
+                (click)="openFilterModal()">
           + Add filter
         </button>
       </div>
@@ -166,13 +168,15 @@ interface KpiCard {
     @if (filterModalOpen()) {
       <div class="fixed inset-0 bg-ink-900/60 z-[9999] flex items-center justify-center p-4"
            (click)="filterModalOpen.set(false)">
-        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-5"
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-5 max-h-[85vh] overflow-y-auto"
              (click)="$event.stopPropagation()">
           <h4 class="text-base font-bold text-ink-900 mb-3">Add filter</h4>
           <div class="grid grid-cols-2 gap-2 mb-3">
             <div>
               <label class="label">Dimension</label>
-              <select class="input input-sm" [(ngModel)]="filterDraft.dimension">
+              <select class="input input-sm"
+                      [ngModel]="filterDraft.dimension"
+                      (ngModelChange)="onFilterDimensionChange($event)">
                 <option value="query">Query</option>
                 <option value="page">Page</option>
                 <option value="country">Country</option>
@@ -189,14 +193,70 @@ interface KpiCard {
               </select>
             </div>
           </div>
+
+          <!-- Value input branches by dimension. Enumerable dimensions
+               (country / device) get a picker of values that actually
+               show up in the client's data — same UX as GSC console's
+               own Country filter. Free-text dimensions (query / page)
+               keep the input field. -->
           <label class="label">Value</label>
-          <input class="input input-sm w-full"
-                 [(ngModel)]="filterDraft.expression"
-                 placeholder="e.g. brand name / /pricing / usa / mobile"
-                 (keyup.enter)="commitFilter()" />
-          <div class="text-[11px] text-ink-500 mt-1 leading-tight">
-            Devices are DESKTOP / MOBILE / TABLET (case-insensitive). Countries use ISO 3-letter codes (usa, mex, esp).
-          </div>
+
+          @if (filterDraft.dimension === 'country') {
+            @if (topValuesLoading()) {
+              <div class="text-xs text-ink-500 italic py-3 text-center">
+                Loading countries with impressions…
+              </div>
+            } @else if (topValues().length === 0) {
+              <div class="text-xs text-ink-400 italic py-3 text-center">
+                No country data for the current range. Try widening the timeframe.
+              </div>
+            } @else {
+              <div class="border border-ink-200 rounded-md max-h-64 overflow-y-auto">
+                @for (v of topValues(); track v.key) {
+                  <label class="flex items-center justify-between px-3 py-1.5 hover:bg-ink-50 cursor-pointer border-b border-ink-100 last:border-0">
+                    <span class="flex items-center gap-2">
+                      <input type="radio" name="countryPick"
+                             [value]="v.key"
+                             [checked]="filterDraft.expression === v.key"
+                             (change)="filterDraft.expression = v.key" />
+                      <span class="text-sm text-ink-900">
+                        {{ countryName(v.key) }}
+                        <span class="text-[10px] text-ink-400 font-mono ml-1">{{ v.key.toUpperCase() }}</span>
+                      </span>
+                    </span>
+                    <span class="text-[10px] text-ink-500 font-semibold">
+                      {{ v.impressions | number }} impr
+                    </span>
+                  </label>
+                }
+              </div>
+            }
+          } @else if (filterDraft.dimension === 'device') {
+            <div class="border border-ink-200 rounded-md">
+              @for (d of deviceOptions; track d.value) {
+                <label class="flex items-center px-3 py-2 hover:bg-ink-50 cursor-pointer border-b border-ink-100 last:border-0">
+                  <input type="radio" name="devicePick"
+                         [value]="d.value"
+                         [checked]="filterDraft.expression === d.value"
+                         (change)="filterDraft.expression = d.value" />
+                  <span class="ml-2 text-sm text-ink-900">{{ d.label }}</span>
+                </label>
+              }
+            </div>
+          } @else {
+            <input class="input input-sm w-full"
+                   [(ngModel)]="filterDraft.expression"
+                   placeholder="e.g. brand name, /pricing, /blog/…"
+                   (keyup.enter)="commitFilter()" />
+            <div class="text-[11px] text-ink-500 mt-1 leading-tight">
+              @if (filterDraft.dimension === 'query') {
+                Matches the search query text (case-insensitive substring by default).
+              } @else {
+                Matches the URL path or full URL of the page.
+              }
+            </div>
+          }
+
           <div class="flex justify-end gap-2 mt-4 pt-3 border-t border-ink-100">
             <button class="btn-secondary text-xs" (click)="filterModalOpen.set(false)">Cancel</button>
             <button class="btn-primary text-xs"
@@ -309,6 +369,22 @@ export class GscPerformanceChartComponent implements OnChanges {
     operator: 'contains',
     expression: '',
   };
+
+  // Enumerable dimension picker state. Country populates from GSC on
+  // demand; device is a fixed short list because Google publishes
+  // exactly three (DESKTOP / MOBILE / TABLET) and the endpoint would
+  // return the same three every time.
+  topValues = signal<GscTopValueRow[]>([]);
+  topValuesLoading = signal(false);
+  readonly deviceOptions: { value: string; label: string }[] = [
+    { value: 'DESKTOP', label: '🖥️  Desktop' },
+    { value: 'MOBILE', label: '📱  Mobile' },
+    { value: 'TABLET', label: '💻  Tablet' },
+  ];
+
+  countryName(code: string): string {
+    return countryDisplayName(code);
+  }
 
   drillDown = signal<GscTopForDateResponse | null>(null);
   drillDimension = signal<GscDrillDimension>('query');
@@ -435,6 +511,53 @@ export class GscPerformanceChartComponent implements OnChanges {
     if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
     if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
     return `${n}`;
+  }
+
+  openFilterModal() {
+    this.filterDraft = {
+      dimension: 'query',
+      operator: 'contains',
+      expression: '',
+    };
+    this.topValues.set([]);
+    this.topValuesLoading.set(false);
+    this.filterModalOpen.set(true);
+  }
+
+  /**
+   * Called when the user changes the Dimension select in the filter
+   * modal. Resets the expression + operator to what makes sense for
+   * the picked dimension and — for enumerable dimensions — fetches
+   * the list of values that actually appear in the client's data.
+   */
+  onFilterDimensionChange(dim: GscDrillDimension) {
+    this.filterDraft = {
+      dimension: dim,
+      operator: dim === 'country' || dim === 'device' ? 'equals' : 'contains',
+      expression: '',
+    };
+    if (dim === 'country') {
+      this.loadTopValuesForFilter('country');
+    } else {
+      this.topValues.set([]);
+    }
+  }
+
+  private loadTopValuesForFilter(dim: 'country' | 'query' | 'page' | 'device') {
+    if (!this.clientId || !this.from() || !this.to()) return;
+    this.topValuesLoading.set(true);
+    this.topValues.set([]);
+    this.svc
+      .gscTopValues(this.clientId, this.from(), this.to(), dim, 50)
+      .subscribe({
+        next: (res) => {
+          this.topValues.set(res.rows);
+          this.topValuesLoading.set(false);
+        },
+        error: () => {
+          this.topValuesLoading.set(false);
+        },
+      });
   }
 
   commitFilter() {

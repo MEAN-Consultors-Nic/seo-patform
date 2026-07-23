@@ -65,6 +65,18 @@ export interface GscTopForDateResponse {
   dimension: GscDrillDimension;
 }
 
+export interface GscTopValueRow {
+  key: string;
+  clicks: number;
+  impressions: number;
+}
+
+export interface GscTopValuesResponse {
+  rows: GscTopValueRow[];
+  dimension: GscDrillDimension;
+  range: { from: string; to: string };
+}
+
 export interface GoogleKpisResult {
   kpis: ReportKpis;
   sources: { gsc: boolean; ga4: boolean; gbp?: boolean; warnings: string[] };
@@ -165,6 +177,25 @@ export class GoogleIntegrationsService {
     if (filters && filters.length) qs.set('filters', JSON.stringify(filters));
     return this.http.get<GscTimeseriesResponse>(
       `${this.base}/google/gsc/timeseries?${qs.toString()}`,
+    );
+  }
+
+  gscTopValues(
+    clientId: string,
+    from: string,
+    to: string,
+    dimension: GscDrillDimension,
+    limit = 50,
+  ): Observable<GscTopValuesResponse> {
+    const qs = new URLSearchParams({
+      clientId,
+      from,
+      to,
+      dimension,
+      limit: String(limit),
+    });
+    return this.http.get<GscTopValuesResponse>(
+      `${this.base}/google/gsc/top-values?${qs.toString()}`,
     );
   }
 

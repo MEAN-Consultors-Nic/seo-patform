@@ -419,6 +419,41 @@ export class GscService {
     }));
   }
 
+  /**
+   * Top values for a single dimension across a date range. Used by the
+   * performance chart's "Add filter" modal to populate a Country
+   * picker (or any other enumerable dimension) with only the values
+   * that actually show up in the client's data — mirrors GSC
+   * console's Country filter which lists just the countries that
+   * received impressions for the site.
+   */
+  async topDimensionValues(
+    userId: string,
+    siteUrl: string,
+    startDate: string,
+    endDate: string,
+    dimension: 'query' | 'page' | 'country' | 'device',
+    limit = 50,
+  ): Promise<Array<{ key: string; clicks: number; impressions: number }>> {
+    if (!siteUrl) throw new BadRequestException('Missing siteUrl');
+    const auth = await this.oauth.getAuthorizedClient(userId);
+    const sc = google.searchconsole({ version: 'v1', auth });
+    const res = await sc.searchanalytics.query({
+      siteUrl,
+      requestBody: {
+        startDate,
+        endDate,
+        dimensions: [dimension],
+        rowLimit: limit,
+      },
+    });
+    return (res.data.rows || []).map((r) => ({
+      key: r.keys?.[0] ?? '',
+      clicks: r.clicks ?? 0,
+      impressions: r.impressions ?? 0,
+    }));
+  }
+
   private buildFilterGroups(
     filters?: Array<{
       dimension: 'query' | 'page' | 'country' | 'device';
