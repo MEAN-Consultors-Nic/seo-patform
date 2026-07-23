@@ -201,10 +201,13 @@ function daysAgoIso(days: number): string {
       </div>
 
       <div class="card overflow-x-auto p-0">
-        <table class="w-full text-sm min-w-[720px]">
+        <!-- min-w bumped from 720 to 900 so the Keyword column has
+             enough real estate to render longer phrases without
+             breaking every word onto its own line. -->
+        <table class="w-full text-sm min-w-[900px]">
           <thead class="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500">
             <tr>
-              <th class="px-4 py-2 text-left">Keyword</th>
+              <th class="px-4 py-2 text-left min-w-[240px]">Keyword</th>
               <th class="px-4 py-2 text-left">Cluster</th>
               <th class="px-4 py-2 text-right">Vol.</th>
               <th class="px-4 py-2 text-right">KD</th>
@@ -218,9 +221,9 @@ function daysAgoIso(days: number): string {
           <tbody>
             @for (k of pagedKeywords(); track k._id) {
               <tr class="border-b border-slate-100 hover:bg-slate-50">
-                <td class="px-4 py-2">
-                  <div class="flex items-center gap-2">
-                    <span class="font-medium text-navy-700">{{ k.text }}</span>
+                <td class="px-4 py-2 min-w-[240px]">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-medium text-navy-700 break-normal">{{ k.text }}</span>
                     @if (k.source === 'gsc') {
                       <span class="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-sky-50 text-sky-600"
                             [title]="'Imported from GSC ' + (k.gscPulledAt | date: 'mediumDate') +
@@ -239,10 +242,12 @@ function daysAgoIso(days: number): string {
                 <td class="px-4 py-2 text-right">{{ k.difficulty ?? '—' }}</td>
                 <td class="px-4 py-2 text-right font-semibold">
                   <span [ngClass]="positionClass(k.currentPosition)">
-                    {{ k.currentPosition ?? '—' }}
+                    {{ k.currentPosition !== undefined ? (k.currentPosition | number: '1.0-1') : '—' }}
                   </span>
                 </td>
-                <td class="px-4 py-2 text-right text-slate-400">{{ k.previousPosition ?? '—' }}</td>
+                <td class="px-4 py-2 text-right text-slate-400">
+                  {{ k.previousPosition !== undefined ? (k.previousPosition | number: '1.0-1') : '—' }}
+                </td>
                 <td class="px-4 py-2 text-right text-xs" [ngClass]="deltaClass(k)">
                   {{ delta(k) }}
                 </td>
@@ -929,9 +934,13 @@ export class ClientKeywordsTab implements OnChanges {
 
   delta(k: Keyword): string {
     if (k.currentPosition === undefined || k.previousPosition === undefined) return '—';
-    const diff = k.previousPosition - k.currentPosition;
+    // Positions arrive from GSC as one-decimal averages, but IEEE 754
+    // subtraction leaves noise (0.7 - 1.4 = 0.7000000000000002).
+    // Round to a tenth to match the source resolution.
+    const diff = Math.round((k.previousPosition - k.currentPosition) * 10) / 10;
     if (diff === 0) return '0';
-    return diff > 0 ? `▲ ${diff}` : `▼ ${Math.abs(diff)}`;
+    const abs = Math.abs(diff).toFixed(1);
+    return diff > 0 ? `▲ ${abs}` : `▼ ${abs}`;
   }
 
   deltaClass(k: Keyword): string {
