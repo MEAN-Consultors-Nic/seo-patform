@@ -16,6 +16,7 @@ import { ClientKeywordsTab } from './tabs/keywords-tab.component';
 import { ClientKpiHistoryTab } from './tabs/kpi-history-tab.component';
 import { ClientKnowledgeTab } from './tabs/knowledge-tab.component';
 import { ClientFilesTabComponent } from './tabs/files-tab.component';
+import { ClientLinkGraphTab } from './tabs/link-graph-tab.component';
 import { ClientContactsTab } from './tabs/contacts-tab.component';
 import { ClientCompetitorsTab } from './tabs/competitors-tab.component';
 import { ClientBacklinksTab } from './tabs/backlinks-tab.component';
@@ -61,6 +62,7 @@ type TabKey =
   | 'indexing'
   | 'cannibalization'
   | 'service-areas'
+  | 'link-graph'
   | 'ppc-campaigns'
   | 'web-ops'
   | 'ecommerce'
@@ -107,6 +109,7 @@ const GROUPS: GroupDef[] = [
     ClientKpiHistoryTab,
     ClientKnowledgeTab,
     ClientFilesTabComponent,
+    ClientLinkGraphTab,
     ClientContactsTab,
     ClientCompetitorsTab,
     ClientBacklinksTab,
@@ -338,6 +341,9 @@ const GROUPS: GroupDef[] = [
           @case ('cannibalization') {
             <app-client-cannibalization-tab [clientId]="c._id!" [gscSiteUrl]="c.gscSiteUrl" />
           }
+          @case ('link-graph') {
+            <app-client-link-graph-tab [clientId]="c._id!" />
+          }
           @case ('service-areas') {
             <app-client-service-areas-tab [client]="c" />
           }
@@ -414,6 +420,7 @@ export class ClientDetailComponent implements OnInit {
       { key: 'gsc-insights', label: 'GSC Insights', group: 'seo' },
       { key: 'indexing', label: 'Indexing', group: 'seo' },
       { key: 'cannibalization', label: 'Cannibalization', group: 'seo' },
+      { key: 'link-graph', label: 'Link Graph', group: 'seo' },
       { key: 'keywords', label: 'Keywords', group: 'seo' },
       { key: 'positions', label: 'Position Tracker', group: 'seo' },
       { key: 'competitors', label: 'Competitors', group: 'seo' },

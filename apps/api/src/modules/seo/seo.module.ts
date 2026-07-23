@@ -5,6 +5,7 @@ import { BacklinksModule } from '../backlinks/backlinks.module';
 import { ContentModule } from '../content/content.module';
 import { CannibalizationModule } from '../cannibalization/cannibalization.module';
 import { IndexingModule } from '../indexing/indexing.module';
+import { LinkGraphModule } from '../link-graph/link-graph.module';
 
 /**
  * SEO domain barrel — everything strictly about SEO work: keyword
@@ -22,6 +23,7 @@ import { IndexingModule } from '../indexing/indexing.module';
     ContentModule,
     CannibalizationModule,
     IndexingModule,
+    LinkGraphModule,
   ],
   exports: [
     KeywordsModule,
@@ -30,6 +32,7 @@ import { IndexingModule } from '../indexing/indexing.module';
     ContentModule,
     CannibalizationModule,
     IndexingModule,
+    LinkGraphModule,
   ],
 })
 export class SeoModule {}
