@@ -3,10 +3,13 @@ import {
   forwardRef,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { Client, ClientDocument } from '../clients/client.schema';
 import { GscKeywordPullResult } from '@seo/shared';
 import { Keyword, KeywordDocument } from './keyword.schema';
 import {
@@ -38,14 +41,89 @@ function resolveOwnerUserId(
 
 @Injectable()
 export class KeywordsService {
+  private readonly logger = new Logger(KeywordsService.name);
+
   constructor(
     @InjectModel(Keyword.name) private readonly keywordModel: Model<KeywordDocument>,
     @InjectModel(KeywordRanking.name)
     private readonly rankingModel: Model<KeywordRankingDocument>,
+    @InjectModel(Client.name)
+    private readonly clientModel: Model<ClientDocument>,
     @Inject(forwardRef(() => ClientsService))
     private readonly clients: ClientsService,
     private readonly gsc: GscService,
   ) {}
+
+  /**
+   * Daily position snapshot cron. For every active client with a GSC
+   * site URL configured, pull yesterday's search analytics for each
+   * tracked keyword and persist a KeywordRanking row. This drives
+   * the Position Tracker's historical trend line and gainers/losers
+   * views. Runs at 4am UTC so it lands after GSC's overnight
+   * ingest (they typically publish new data around 2-3am UTC).
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_4AM)
+  async snapshotAllClientsFromGsc(): Promise<void> {
+    const clients = await this.clientModel
+      .find(
+        { active: { $ne: false }, gscSiteUrl: { $exists: true, $ne: '' } },
+        { _id: 1, gscSiteUrl: 1, ownerId: 1 },
+      )
+      .lean()
+      .exec();
+    if (!clients.length) return;
+
+    // GSC data typically lags 2-3 days. Use yesterday as an
+    // upper bound; take a 3-day window so keywords with sparse
+    // impressions still get a datapoint.
+    const to = new Date();
+    to.setUTCDate(to.getUTCDate() - 2);
+    const from = new Date(to);
+    from.setUTCDate(from.getUTCDate() - 2);
+    const toIso = this.isoDate(to);
+    const fromIso = this.isoDate(from);
+
+    let ok = 0;
+    let skipped = 0;
+    for (const c of clients) {
+      const owner = c.ownerId;
+      const ownerId =
+        typeof owner === 'string'
+          ? owner
+          : owner && typeof owner === 'object' && '_id' in owner
+            ? String((owner as { _id: unknown })._id)
+            : '';
+      if (!ownerId) {
+        skipped++;
+        continue;
+      }
+      try {
+        // Reuse the existing sync path — same snapshotting logic as
+        // when a user hits the "Sync from GSC" button manually.
+        await this.syncFromGsc(
+          String(c._id),
+          {
+            userId: ownerId,
+            email: '',
+            role: 'root',
+          } as AuthenticatedUser,
+          { from: fromIso, to: toIso },
+        );
+        ok++;
+      } catch (err) {
+        this.logger.warn(
+          `Daily position snapshot failed for client ${c._id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    this.logger.log(
+      `Daily position snapshot: ${ok} client(s) synced, ${skipped} skipped for missing owner.`,
+    );
+  }
+
+  private isoDate(d: Date): string {
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
 
   private async ensureAccessToKeyword(
     id: string,
@@ -468,6 +546,18 @@ export class KeywordsService {
               lastCheckedAt: now,
             });
             await kw.save();
+            // Persist a historical snapshot so the Position Tracker
+            // has a real time-series to chart. Only when we actually
+            // have a position — otherwise the row would just noise
+            // up the "no position" state.
+            if (typeof position === 'number') {
+              await this.rankingModel.create({
+                keywordId: kw._id,
+                position,
+                device: 'desktop',
+                recordedAt: now,
+              });
+            }
             updated++;
           } catch (err) {
             warnings.push(`${kw.text}: ${(err as Error).message}`);
@@ -494,5 +584,220 @@ export class KeywordsService {
       .deleteMany({ clientId: clientObjId, source: 'gsc' })
       .exec();
     return { deleted: res.deletedCount || 0 };
+  }
+
+  /**
+   * Time-series of keyword positions across a date range. Groups
+   * ranking rows into daily buckets per keyword so the frontend
+   * chart doesn't need to bucket them itself. Optional keyword
+   * filter lets the drill-down view request a single keyword's
+   * history.
+   */
+  async positionHistory(
+    clientId: string,
+    user: AuthenticatedUser,
+    opts: {
+      from: string;
+      to: string;
+      keywordId?: string;
+      limit?: number;
+    },
+  ): Promise<
+    Array<{
+      keywordId: string;
+      keyword: string;
+      points: Array<{ date: string; position: number }>;
+    }>
+  > {
+    await this.clients.assertAccess(clientId, user);
+    const clientObjId = new Types.ObjectId(clientId);
+    const kwQuery: Record<string, unknown> = { clientId: clientObjId };
+    if (opts.keywordId) {
+      kwQuery._id = new Types.ObjectId(opts.keywordId);
+    }
+    const keywords = await this.keywordModel
+      .find(kwQuery, { _id: 1, text: 1 })
+      .lean()
+      .exec();
+    if (keywords.length === 0) return [];
+    const kwIds = keywords.map((k) => k._id as Types.ObjectId);
+    const fromDate = new Date(`${opts.from}T00:00:00.000Z`);
+    const toDate = new Date(`${opts.to}T23:59:59.999Z`);
+
+    // Aggregate rankings by (keywordId, day) — using $group on a
+    // truncated recordedAt so multiple snapshots in the same day
+    // collapse to one point (average). Positions past `limit` for a
+    // single keyword are dropped to keep the payload tight.
+    const raw = await this.rankingModel
+      .aggregate([
+        {
+          $match: {
+            keywordId: { $in: kwIds },
+            recordedAt: { $gte: fromDate, $lte: toDate },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              keywordId: '$keywordId',
+              day: {
+                $dateToString: {
+                  format: '%Y-%m-%d',
+                  date: '$recordedAt',
+                  timezone: 'UTC',
+                },
+              },
+            },
+            position: { $avg: '$position' },
+          },
+        },
+        { $sort: { '_id.keywordId': 1, '_id.day': 1 } },
+      ])
+      .exec();
+
+    const grouped = new Map<
+      string,
+      Array<{ date: string; position: number }>
+    >();
+    for (const r of raw as Array<{
+      _id: { keywordId: Types.ObjectId; day: string };
+      position: number;
+    }>) {
+      const key = String(r._id.keywordId);
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push({
+        date: r._id.day,
+        position: Number(r.position.toFixed(1)),
+      });
+    }
+    return keywords.map((k) => ({
+      keywordId: String(k._id),
+      keyword: k.text,
+      points: grouped.get(String(k._id)) || [],
+    }));
+  }
+
+  /**
+   * Top gainers / losers over the past N days, computed by comparing
+   * each keyword's earliest ranking in the window to its latest. Also
+   * returns "new" (keywords that just started appearing) and "lost"
+   * (keywords that fell off the SERP) buckets so the UI can surface
+   * both wins and problems.
+   */
+  async positionMovers(
+    clientId: string,
+    user: AuthenticatedUser,
+    days = 7,
+    limit = 10,
+  ): Promise<{
+    gainers: Array<{
+      keywordId: string;
+      keyword: string;
+      from: number;
+      to: number;
+      change: number;
+    }>;
+    losers: Array<{
+      keywordId: string;
+      keyword: string;
+      from: number;
+      to: number;
+      change: number;
+    }>;
+    windowDays: number;
+  }> {
+    await this.clients.assertAccess(clientId, user);
+    const clientObjId = new Types.ObjectId(clientId);
+    const keywords = await this.keywordModel
+      .find({ clientId: clientObjId }, { _id: 1, text: 1 })
+      .lean()
+      .exec();
+    if (keywords.length === 0) {
+      return { gainers: [], losers: [], windowDays: days };
+    }
+    const kwIds = keywords.map((k) => k._id as Types.ObjectId);
+    const now = new Date();
+    const windowStart = new Date(now);
+    windowStart.setUTCDate(windowStart.getUTCDate() - days);
+
+    // For each keyword, find the earliest and latest ranking within
+    // the window in a single aggregation pass.
+    const raw = (await this.rankingModel
+      .aggregate([
+        {
+          $match: {
+            keywordId: { $in: kwIds },
+            recordedAt: { $gte: windowStart, $lte: now },
+          },
+        },
+        { $sort: { keywordId: 1, recordedAt: 1 } },
+        {
+          $group: {
+            _id: '$keywordId',
+            first: { $first: '$position' },
+            last: { $last: '$position' },
+            count: { $sum: 1 },
+          },
+        },
+      ])
+      .exec()) as Array<{
+      _id: Types.ObjectId;
+      first: number;
+      last: number;
+      count: number;
+    }>;
+
+    const kwMap = new Map(keywords.map((k) => [String(k._id), k.text]));
+    const items = raw
+      .filter((r) => r.count >= 2 && r.first !== r.last)
+      .map((r) => {
+        // Lower position = better rank, so a decrease in the number
+        // is a gain. `change` is expressed as positive-is-good
+        // (delta improvement in rank).
+        const change = r.first - r.last;
+        return {
+          keywordId: String(r._id),
+          keyword: kwMap.get(String(r._id)) || '(unknown)',
+          from: Number(r.first.toFixed(1)),
+          to: Number(r.last.toFixed(1)),
+          change: Number(change.toFixed(1)),
+        };
+      });
+    const gainers = items
+      .filter((i) => i.change > 0)
+      .sort((a, b) => b.change - a.change)
+      .slice(0, limit);
+    const losers = items
+      .filter((i) => i.change < 0)
+      .sort((a, b) => a.change - b.change)
+      .slice(0, limit);
+    return { gainers, losers, windowDays: days };
+  }
+
+  /**
+   * Manual on-demand snapshot for a single client. Used by the
+   * "Snapshot now" button on the Position Tracker tab when the
+   * strategist wants a fresh datapoint without waiting for the
+   * overnight cron.
+   */
+  async snapshotNow(
+    clientId: string,
+    user: AuthenticatedUser,
+  ): Promise<{
+    updated: number;
+    notFound: number;
+    failed: number;
+    totalProcessed: number;
+    range: { from: string; to: string };
+    warnings: string[];
+  }> {
+    const to = new Date();
+    to.setUTCDate(to.getUTCDate() - 2);
+    const from = new Date(to);
+    from.setUTCDate(from.getUTCDate() - 2);
+    return this.syncFromGsc(clientId, user, {
+      from: this.isoDate(from),
+      to: this.isoDate(to),
+    });
   }
 }

@@ -1,4 +1,4 @@
-import { CommonModule, DatePipe } from '@angular/common';
+import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
 import {
   AfterViewInit,
   Component,
@@ -6,13 +6,32 @@ import {
   Input,
   OnChanges,
   ViewChild,
+  computed,
   inject,
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Chart, registerables } from 'chart.js';
+import { NgApexchartsModule } from 'ng-apexcharts';
+import type { ApexOptions } from 'ng-apexcharts';
 import { Keyword, KeywordMovement, KeywordRanking } from '@seo/shared';
 import { KeywordsService } from '../../../core/keywords.service';
+
+type HistoryRange = '7d' | '28d' | '90d';
+
+interface PositionHistorySeries {
+  keywordId: string;
+  keyword: string;
+  points: Array<{ date: string; position: number }>;
+}
+
+interface Mover {
+  keywordId: string;
+  keyword: string;
+  from: number;
+  to: number;
+  change: number;
+}
 
 interface Movements {
   gainers: KeywordMovement[];
@@ -26,9 +45,162 @@ Chart.register(...registerables);
 @Component({
   selector: 'app-client-position-tracker-tab',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe],
+  imports: [CommonModule, FormsModule, DatePipe, DecimalPipe, NgApexchartsModule],
   template: `
     <div class="space-y-4">
+      <!-- Position history panel. Anchored to a daily snapshot cron
+           that runs at 4am UTC per client — see
+           KeywordsService.snapshotAllClientsFromGsc. The "Snapshot
+           now" button lets a strategist trigger the same sync
+           immediately when they don't want to wait for the overnight
+           run. -->
+      <div class="card space-y-3">
+        <div class="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h3 class="text-sm font-semibold text-ink-900">Position history</h3>
+            <p class="text-[11px] text-ink-500">
+              Daily average position pulled from GSC. Snapshots run
+              automatically at 4am UTC.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="inline-flex rounded-md border border-ink-200 p-0.5 bg-white">
+              @for (r of historyRanges; track r.key) {
+                <button type="button"
+                        class="px-2.5 py-1 text-[11px] font-semibold rounded transition"
+                        [class.bg-ink-900]="historyRange() === r.key"
+                        [class.text-white]="historyRange() === r.key"
+                        [class.text-ink-600]="historyRange() !== r.key"
+                        (click)="setHistoryRange(r.key)">
+                  {{ r.label }}
+                </button>
+              }
+            </div>
+            <button type="button"
+                    class="btn-secondary text-xs"
+                    [disabled]="snapshotting()"
+                    (click)="runSnapshotNow()">
+              {{ snapshotting() ? 'Snapping…' : '📸 Snapshot now' }}
+            </button>
+          </div>
+        </div>
+
+        @if (snapshotResult(); as res) {
+          <div class="text-xs text-positive-500 bg-positive-100/40 border-l-4 border-positive-500 px-3 py-2">
+            ✓ Updated {{ res.updated }} keyword(s) · {{ res.notFound }} without GSC data · {{ res.failed }} failed.
+          </div>
+        }
+
+        <!-- Gainers / Losers over the range -->
+        @if (moversLoading()) {
+          <div class="py-4 text-center text-xs text-ink-400 italic">Loading movers…</div>
+        } @else {
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="rounded-md border border-positive-500/30 bg-positive-100/20 p-3">
+              <h4 class="text-xs font-bold text-positive-500 uppercase tracking-wider mb-2">
+                ▲ Gainers ({{ movers()?.gainers?.length || 0 }})
+              </h4>
+              @if (movers()?.gainers?.length) {
+                <ul class="space-y-1">
+                  @for (m of movers()?.gainers; track m.keywordId) {
+                    <li class="flex items-center justify-between text-xs">
+                      <span class="text-ink-900 truncate max-w-[200px]" [title]="m.keyword">
+                        {{ m.keyword }}
+                      </span>
+                      <span class="text-ink-500 whitespace-nowrap">
+                        {{ m.from | number: '1.0-1' }} → {{ m.to | number: '1.0-1' }}
+                        <span class="text-positive-500 font-semibold ml-1">−{{ m.change | number: '1.0-1' }}</span>
+                      </span>
+                    </li>
+                  }
+                </ul>
+              } @else {
+                <div class="text-xs text-ink-400 italic">No positive moves in the window.</div>
+              }
+            </div>
+            <div class="rounded-md border border-danger-500/30 bg-danger-100/20 p-3">
+              <h4 class="text-xs font-bold text-danger-500 uppercase tracking-wider mb-2">
+                ▼ Losers ({{ movers()?.losers?.length || 0 }})
+              </h4>
+              @if (movers()?.losers?.length) {
+                <ul class="space-y-1">
+                  @for (m of movers()?.losers; track m.keywordId) {
+                    <li class="flex items-center justify-between text-xs">
+                      <span class="text-ink-900 truncate max-w-[200px]" [title]="m.keyword">
+                        {{ m.keyword }}
+                      </span>
+                      <span class="text-ink-500 whitespace-nowrap">
+                        {{ m.from | number: '1.0-1' }} → {{ m.to | number: '1.0-1' }}
+                        <span class="text-danger-500 font-semibold ml-1">+{{ (-m.change) | number: '1.0-1' }}</span>
+                      </span>
+                    </li>
+                  }
+                </ul>
+              } @else {
+                <div class="text-xs text-ink-400 italic">No drops in the window.</div>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- Multi-keyword trend chart -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="text-xs font-semibold text-ink-700 uppercase tracking-wider">
+              Trend · {{ activeSeries().length }} keyword(s)
+            </h4>
+            <div class="text-[10px] text-ink-500">
+              Y axis is search rank (lower = better)
+            </div>
+          </div>
+
+          <!-- Keyword pills — click to toggle on/off in the chart -->
+          @if (historyAll().length > 0) {
+            <div class="flex flex-wrap gap-1 mb-3 max-h-24 overflow-y-auto">
+              @for (s of historyAll(); track s.keywordId) {
+                <button type="button"
+                        class="text-[11px] px-2 py-0.5 rounded border transition"
+                        [class.bg-ink-900]="isSelected(s.keywordId)"
+                        [class.text-white]="isSelected(s.keywordId)"
+                        [class.border-ink-900]="isSelected(s.keywordId)"
+                        [class.text-ink-600]="!isSelected(s.keywordId)"
+                        [class.border-ink-200]="!isSelected(s.keywordId)"
+                        [class.hover:bg-ink-100]="!isSelected(s.keywordId)"
+                        (click)="toggleSeries(s.keywordId)">
+                  {{ s.keyword }}
+                  <span class="text-[9px] opacity-70 ml-1">{{ s.points.length }}pt</span>
+                </button>
+              }
+            </div>
+          }
+
+          @if (historyLoading()) {
+            <div class="py-12 text-center text-xs text-ink-400 italic">Loading history…</div>
+          } @else if (activeSeries().length > 0) {
+            <apx-chart
+              [series]="chartSeries()"
+              [chart]="chartOpts.chart!"
+              [stroke]="chartOpts.stroke!"
+              [xaxis]="chartOpts.xaxis!"
+              [yaxis]="chartOpts.yaxis!"
+              [tooltip]="chartOpts.tooltip!"
+              [colors]="chartOpts.colors!"
+              [grid]="chartOpts.grid!"
+              [legend]="chartOpts.legend!"
+              [markers]="chartOpts.markers!"
+              [dataLabels]="chartOpts.dataLabels!" />
+          } @else if (historyAll().length > 0) {
+            <div class="py-8 text-center text-xs text-ink-400 italic">
+              Pick one or more keywords above to plot.
+            </div>
+          } @else {
+            <div class="py-8 text-center text-xs text-ink-400 italic">
+              No history yet. Click "Snapshot now" to capture a first datapoint.
+            </div>
+          }
+        </div>
+      </div>
+
       <!-- Movements summary -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div class="stat-card">
@@ -270,6 +442,25 @@ export class ClientPositionTrackerTab implements OnChanges, AfterViewInit {
   urlEvents = signal<Array<{ from?: string; to: string; date: string }>>([]);
   Math = Math;
 
+  // History panel state
+  readonly historyRanges: { key: HistoryRange; label: string; days: number }[] = [
+    { key: '7d', label: '7d', days: 7 },
+    { key: '28d', label: '28d', days: 28 },
+    { key: '90d', label: '90d', days: 90 },
+  ];
+  historyRange = signal<HistoryRange>('28d');
+  historyAll = signal<PositionHistorySeries[]>([]);
+  historyLoading = signal(false);
+  selectedKeywordIds = signal<Set<string>>(new Set());
+  movers = signal<{ gainers: Mover[]; losers: Mover[]; windowDays: number } | null>(null);
+  moversLoading = signal(false);
+  snapshotting = signal(false);
+  snapshotResult = signal<{
+    updated: number;
+    notFound: number;
+    failed: number;
+  } | null>(null);
+
   record = {
     keywordId: '',
     position: null as number | null,
@@ -289,6 +480,175 @@ export class ClientPositionTrackerTab implements OnChanges, AfterViewInit {
     this.svc.byClient(this.clientId).subscribe((k) => this.keywords.set(k));
     this.svc.movements(this.clientId).subscribe((m) => this.movements.set(m as unknown as Movements));
     this.svc.volatility(this.clientId).subscribe((v) => this.volatility.set(v));
+    this.loadHistoryPanel();
+  }
+
+  private loadHistoryPanel() {
+    const days = this.currentRangeDays();
+    const to = new Date();
+    const from = new Date(to);
+    from.setUTCDate(from.getUTCDate() - days);
+    const fromIso = this.iso(from);
+    const toIso = this.iso(to);
+
+    this.historyLoading.set(true);
+    this.svc.positionHistory(this.clientId, fromIso, toIso).subscribe({
+      next: (list) => {
+        // Sort by number of datapoints desc so the most-tracked
+        // keywords sit at the top of the picker.
+        const sorted = [...list].sort(
+          (a, b) => b.points.length - a.points.length,
+        );
+        this.historyAll.set(sorted);
+        // Auto-select the top 5 keywords with data so the chart
+        // renders something meaningful on first load.
+        if (this.selectedKeywordIds().size === 0) {
+          const top = new Set(
+            sorted
+              .filter((s) => s.points.length > 0)
+              .slice(0, 5)
+              .map((s) => s.keywordId),
+          );
+          this.selectedKeywordIds.set(top);
+        }
+        this.historyLoading.set(false);
+      },
+      error: () => this.historyLoading.set(false),
+    });
+
+    this.moversLoading.set(true);
+    this.svc.positionMovers(this.clientId, days).subscribe({
+      next: (m) => {
+        this.movers.set(m);
+        this.moversLoading.set(false);
+      },
+      error: () => this.moversLoading.set(false),
+    });
+  }
+
+  private currentRangeDays(): number {
+    const r = this.historyRanges.find((rr) => rr.key === this.historyRange());
+    return r ? r.days : 28;
+  }
+
+  private iso(d: Date): string {
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  setHistoryRange(r: HistoryRange) {
+    this.historyRange.set(r);
+    // Range change resets the selection so the auto-top-5 recomputes
+    // for the new data slice.
+    this.selectedKeywordIds.set(new Set());
+    this.loadHistoryPanel();
+  }
+
+  isSelected(keywordId: string): boolean {
+    return this.selectedKeywordIds().has(keywordId);
+  }
+
+  toggleSeries(keywordId: string) {
+    this.selectedKeywordIds.update((current) => {
+      const next = new Set(current);
+      if (next.has(keywordId)) {
+        next.delete(keywordId);
+      } else {
+        next.add(keywordId);
+      }
+      return next;
+    });
+  }
+
+  activeSeries = computed(() =>
+    this.historyAll().filter(
+      (s) => this.selectedKeywordIds().has(s.keywordId) && s.points.length > 0,
+    ),
+  );
+
+  chartSeries = computed(() =>
+    this.activeSeries().map((s) => ({
+      name: s.keyword,
+      data: s.points.map((p) => ({ x: p.date, y: p.position })),
+    })),
+  );
+
+  readonly seriesColors = [
+    '#1E40AF',
+    '#059669',
+    '#DC2626',
+    '#7C3AED',
+    '#D97706',
+    '#0891B2',
+    '#DB2777',
+    '#65A30D',
+  ];
+
+  get chartOpts(): Partial<ApexOptions> {
+    return {
+      chart: {
+        type: 'line',
+        height: 300,
+        toolbar: { show: false },
+        zoom: { enabled: false },
+        fontFamily: 'Inter, system-ui, sans-serif',
+        animations: { enabled: true, speed: 400 },
+      },
+      stroke: { curve: 'smooth', width: 2 },
+      colors: this.seriesColors,
+      dataLabels: { enabled: false },
+      grid: {
+        borderColor: '#F0F2F5',
+        strokeDashArray: 4,
+      },
+      xaxis: {
+        type: 'datetime',
+        labels: {
+          style: { colors: '#6B7280', fontSize: '11px' },
+        },
+        axisBorder: { show: false },
+      },
+      yaxis: {
+        reversed: true,
+        min: 1,
+        labels: {
+          style: { colors: '#6B7280', fontSize: '11px' },
+          formatter: (v: number) => (v ? v.toFixed(0) : ''),
+        },
+      },
+      tooltip: {
+        theme: 'light',
+        x: { format: 'MMM d, yyyy' },
+        shared: true,
+        intersect: false,
+      },
+      legend: {
+        position: 'top',
+        horizontalAlign: 'left',
+        fontSize: '11px',
+        fontFamily: 'Inter, system-ui, sans-serif',
+      },
+      markers: { size: 3, hover: { size: 6 } },
+    };
+  }
+
+  runSnapshotNow() {
+    this.snapshotting.set(true);
+    this.snapshotResult.set(null);
+    this.svc.snapshotNow(this.clientId).subscribe({
+      next: (res) => {
+        this.snapshotting.set(false);
+        this.snapshotResult.set({
+          updated: res.updated,
+          notFound: res.notFound,
+          failed: res.failed,
+        });
+        setTimeout(() => this.snapshotResult.set(null), 6000);
+        this.loadHistoryPanel();
+      },
+      error: () => {
+        this.snapshotting.set(false);
+      },
+    });
   }
 
   canRecord(): boolean {

@@ -122,4 +122,94 @@ export class KeywordsService {
       warnings: string[];
     }>(`${this.base}/keywords/sync-gsc`, dto);
   }
+
+  /**
+   * Historical position time series for a client's keywords. One
+   * series per keyword bucketed by day.
+   */
+  positionHistory(
+    clientId: string,
+    from: string,
+    to: string,
+    keywordId?: string,
+  ): Observable<
+    Array<{
+      keywordId: string;
+      keyword: string;
+      points: Array<{ date: string; position: number }>;
+    }>
+  > {
+    const qs = new URLSearchParams({ from, to });
+    if (keywordId) qs.set('keywordId', keywordId);
+    return this.http.get<
+      Array<{
+        keywordId: string;
+        keyword: string;
+        points: Array<{ date: string; position: number }>;
+      }>
+    >(`${this.base}/keywords/position-history/${clientId}?${qs.toString()}`);
+  }
+
+  /**
+   * Top gainers / losers over the past N days.
+   */
+  positionMovers(
+    clientId: string,
+    days = 7,
+  ): Observable<{
+    gainers: Array<{
+      keywordId: string;
+      keyword: string;
+      from: number;
+      to: number;
+      change: number;
+    }>;
+    losers: Array<{
+      keywordId: string;
+      keyword: string;
+      from: number;
+      to: number;
+      change: number;
+    }>;
+    windowDays: number;
+  }> {
+    return this.http.get<{
+      gainers: Array<{
+        keywordId: string;
+        keyword: string;
+        from: number;
+        to: number;
+        change: number;
+      }>;
+      losers: Array<{
+        keywordId: string;
+        keyword: string;
+        from: number;
+        to: number;
+        change: number;
+      }>;
+      windowDays: number;
+    }>(`${this.base}/keywords/position-movers/${clientId}?days=${days}`);
+  }
+
+  /**
+   * On-demand snapshot without waiting for the overnight cron.
+   */
+  snapshotNow(clientId: string): Observable<{
+    updated: number;
+    notFound: number;
+    failed: number;
+    totalProcessed: number;
+    range: { from: string; to: string };
+    warnings: string[];
+  }> {
+    return this.http.post<{
+      updated: number;
+      notFound: number;
+      failed: number;
+      totalProcessed: number;
+      range: { from: string; to: string };
+      warnings: string[];
+    }>(`${this.base}/keywords/snapshot-now`, { clientId });
+  }
 }
