@@ -182,6 +182,95 @@ export class GoogleIntegrationsService {
     return { topPages, byDevice, byCountry, sitemapHealth, range: { from, to } };
   }
 
+  async gscTimeseries(
+    clientId: string,
+    user: AuthenticatedUser,
+    from: string,
+    to: string,
+    type?: 'web' | 'image' | 'video' | 'news' | 'discover' | 'googleNews',
+    filters?: Array<{
+      dimension: 'query' | 'page' | 'country' | 'device';
+      operator?: 'equals' | 'contains' | 'notContains' | 'notEquals';
+      expression: string;
+    }>,
+  ) {
+    const client = await this.clients.findOne(clientId, user);
+    if (!client.gscSiteUrl) {
+      throw new BadRequestException(
+        'GSC site URL is not configured for this client.',
+      );
+    }
+    const tokenUserId = this.resolveTokenUserId(client, user);
+    const rows = await this.gsc.dailyTimeseries(
+      tokenUserId,
+      client.gscSiteUrl,
+      from,
+      to,
+      type,
+      filters,
+    );
+    // Also compute the top-line totals so the KPI cards on the frontend
+    // don't need a second round-trip — cheap since we already have the
+    // daily rows in memory.
+    const totals = rows.reduce(
+      (acc, r) => {
+        acc.clicks += r.clicks;
+        acc.impressions += r.impressions;
+        return acc;
+      },
+      { clicks: 0, impressions: 0 },
+    );
+    const ctr =
+      totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
+    // Average position is impressions-weighted like GSC does it.
+    const weightedPos = rows.reduce(
+      (acc, r) => acc + r.position * r.impressions,
+      0,
+    );
+    const avgPosition =
+      totals.impressions > 0 ? weightedPos / totals.impressions : 0;
+    return {
+      rows,
+      totals: {
+        clicks: totals.clicks,
+        impressions: totals.impressions,
+        ctr,
+        avgPosition,
+      },
+      range: { from, to },
+    };
+  }
+
+  async gscTopForDate(
+    clientId: string,
+    user: AuthenticatedUser,
+    date: string,
+    dimension: 'query' | 'page' | 'country' | 'device',
+    type?: 'web' | 'image' | 'video' | 'news' | 'discover' | 'googleNews',
+    filters?: Array<{
+      dimension: 'query' | 'page' | 'country' | 'device';
+      operator?: 'equals' | 'contains' | 'notContains' | 'notEquals';
+      expression: string;
+    }>,
+  ) {
+    const client = await this.clients.findOne(clientId, user);
+    if (!client.gscSiteUrl) {
+      throw new BadRequestException(
+        'GSC site URL is not configured for this client.',
+      );
+    }
+    const tokenUserId = this.resolveTokenUserId(client, user);
+    const rows = await this.gsc.topForDate(
+      tokenUserId,
+      client.gscSiteUrl,
+      date,
+      dimension,
+      type,
+      filters,
+    );
+    return { rows, date, dimension };
+  }
+
   async ecommerceForClient(
     clientId: string,
     user: AuthenticatedUser,

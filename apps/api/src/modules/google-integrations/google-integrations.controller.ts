@@ -138,6 +138,112 @@ export class GoogleIntegrationsController {
     return this.svc.gscBreakdown(clientId, user, from, to);
   }
 
+  /**
+   * Daily time series for the client's GSC site. Powers the GSC
+   * console-style performance chart on the client detail tab. Filters
+   * are passed as compact JSON so the client-side form can encode
+   * an arbitrary combination of query / page / country / device
+   * without shape gymnastics on the URL.
+   */
+  @Get('gsc/timeseries')
+  async gscTimeseries(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('clientId') clientId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('type') type?: string,
+    @Query('filters') filtersJson?: string,
+  ) {
+    if (!clientId || !from || !to)
+      throw new BadRequestException('clientId, from, to are required');
+    const filters = filtersJson ? this.parseFilters(filtersJson) : undefined;
+    return this.svc.gscTimeseries(
+      clientId,
+      user,
+      from,
+      to,
+      (type as 'web' | 'image' | 'video' | 'news' | 'discover' | 'googleNews') ||
+        undefined,
+      filters,
+    );
+  }
+
+  /**
+   * Drill-down: top rows for a single day, grouped by the requested
+   * dimension. Used by the click-on-a-date modal on the performance
+   * chart.
+   */
+  @Get('gsc/top-for-date')
+  async gscTopForDate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('clientId') clientId: string,
+    @Query('date') date: string,
+    @Query('dimension') dimension: string,
+    @Query('type') type?: string,
+    @Query('filters') filtersJson?: string,
+  ) {
+    if (!clientId || !date || !dimension)
+      throw new BadRequestException(
+        'clientId, date, dimension are required',
+      );
+    if (!['query', 'page', 'country', 'device'].includes(dimension)) {
+      throw new BadRequestException(
+        'dimension must be query / page / country / device',
+      );
+    }
+    const filters = filtersJson ? this.parseFilters(filtersJson) : undefined;
+    return this.svc.gscTopForDate(
+      clientId,
+      user,
+      date,
+      dimension as 'query' | 'page' | 'country' | 'device',
+      (type as 'web' | 'image' | 'video' | 'news' | 'discover' | 'googleNews') ||
+        undefined,
+      filters,
+    );
+  }
+
+  private parseFilters(
+    raw: string,
+  ):
+    | Array<{
+        dimension: 'query' | 'page' | 'country' | 'device';
+        operator?: 'equals' | 'contains' | 'notContains' | 'notEquals';
+        expression: string;
+      }>
+    | undefined {
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return undefined;
+      return parsed
+        .filter(
+          (f: unknown) =>
+            !!f &&
+            typeof f === 'object' &&
+            'dimension' in (f as object) &&
+            'expression' in (f as object),
+        )
+        .map(
+          (f: {
+            dimension: string;
+            operator?: string;
+            expression: string;
+          }) => ({
+            dimension: f.dimension as 'query' | 'page' | 'country' | 'device',
+            operator: f.operator as
+              | 'equals'
+              | 'contains'
+              | 'notContains'
+              | 'notEquals'
+              | undefined,
+            expression: f.expression,
+          }),
+        );
+    } catch {
+      return undefined;
+    }
+  }
+
   @Get('ga4/ecommerce')
   async ga4Ecommerce(
     @CurrentUser() user: AuthenticatedUser,

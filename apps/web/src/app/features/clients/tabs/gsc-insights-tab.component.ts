@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { GscBreakdown } from '@seo/shared';
 import { GoogleIntegrationsService } from '../../../core/google-integrations.service';
+import { GscPerformanceChartComponent } from './gsc-performance-chart.component';
 
 function todayIso(): string {
   const d = new Date();
@@ -19,9 +20,14 @@ function daysAgoIso(days: number): string {
 @Component({
   selector: 'app-client-gsc-insights-tab',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, DatePipe, DecimalPipe],
+  imports: [CommonModule, FormsModule, RouterLink, DatePipe, DecimalPipe, GscPerformanceChartComponent],
   template: `
     <div class="space-y-4">
+      <!-- Performance panel (GSC console-style dual-axis chart with
+           filters + drill-down). Lives above the existing breakdown
+           cards so the reader sees the top-line curve first. -->
+      <app-gsc-performance-chart [clientId]="clientId" />
+
       <div class="card flex flex-col md:flex-row md:items-end md:justify-between gap-3">
         <div>
           <h2 class="text-base font-semibold text-ink-900">GSC Insights</h2>

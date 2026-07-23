@@ -314,4 +314,130 @@ export class GscService {
       position: r.position ?? 0,
     }));
   }
+
+  /**
+   * Daily time series between two dates. Powers the performance
+   * chart on GSC Insights — mirrors the top-of-dashboard clicks /
+   * impressions / CTR / avg position curves in the GSC console.
+   *
+   * `type` maps to Google's search-type buckets (web / image / video
+   * / news / discover / googleNews). `filters` is a compact list
+   * translated into GSC dimensionFilterGroups so the caller can
+   * narrow to a specific query, page, country, or device.
+   */
+  async dailyTimeseries(
+    userId: string,
+    siteUrl: string,
+    startDate: string,
+    endDate: string,
+    type?: 'web' | 'image' | 'video' | 'news' | 'discover' | 'googleNews',
+    filters?: Array<{
+      dimension: 'query' | 'page' | 'country' | 'device';
+      operator?: 'equals' | 'contains' | 'notContains' | 'notEquals';
+      expression: string;
+    }>,
+  ): Promise<
+    Array<{
+      date: string;
+      clicks: number;
+      impressions: number;
+      ctr: number;
+      position: number;
+    }>
+  > {
+    if (!siteUrl) throw new BadRequestException('Missing siteUrl');
+    const auth = await this.oauth.getAuthorizedClient(userId);
+    const sc = google.searchconsole({ version: 'v1', auth });
+    const res = await sc.searchanalytics.query({
+      siteUrl,
+      requestBody: {
+        startDate,
+        endDate,
+        dimensions: ['date'],
+        rowLimit: 25000,
+        type: type ?? undefined,
+        dimensionFilterGroups: this.buildFilterGroups(filters),
+      },
+    });
+    return (res.data.rows || [])
+      .map((r) => ({
+        date: r.keys?.[0] ?? '',
+        clicks: r.clicks ?? 0,
+        impressions: r.impressions ?? 0,
+        ctr: (r.ctr ?? 0) * 100,
+        position: r.position ?? 0,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  /**
+   * Top rows for a single day, grouped by the requested dimension
+   * (query / page / country / device). Used by the drill-down modal
+   * that opens when the user clicks a point on the daily chart.
+   */
+  async topForDate(
+    userId: string,
+    siteUrl: string,
+    date: string,
+    dimension: 'query' | 'page' | 'country' | 'device',
+    type?: 'web' | 'image' | 'video' | 'news' | 'discover' | 'googleNews',
+    filters?: Array<{
+      dimension: 'query' | 'page' | 'country' | 'device';
+      operator?: 'equals' | 'contains' | 'notContains' | 'notEquals';
+      expression: string;
+    }>,
+    limit = 25,
+  ): Promise<
+    Array<{
+      key: string;
+      clicks: number;
+      impressions: number;
+      ctr: number;
+      position: number;
+    }>
+  > {
+    if (!siteUrl) throw new BadRequestException('Missing siteUrl');
+    const auth = await this.oauth.getAuthorizedClient(userId);
+    const sc = google.searchconsole({ version: 'v1', auth });
+    const res = await sc.searchanalytics.query({
+      siteUrl,
+      requestBody: {
+        startDate: date,
+        endDate: date,
+        dimensions: [dimension],
+        rowLimit: limit,
+        type: type ?? undefined,
+        dimensionFilterGroups: this.buildFilterGroups(filters),
+      },
+    });
+    return (res.data.rows || []).map((r) => ({
+      key: r.keys?.[0] ?? '',
+      clicks: r.clicks ?? 0,
+      impressions: r.impressions ?? 0,
+      ctr: (r.ctr ?? 0) * 100,
+      position: r.position ?? 0,
+    }));
+  }
+
+  private buildFilterGroups(
+    filters?: Array<{
+      dimension: 'query' | 'page' | 'country' | 'device';
+      operator?: 'equals' | 'contains' | 'notContains' | 'notEquals';
+      expression: string;
+    }>,
+  ): Array<{ filters: Array<{ dimension: string; operator: string; expression: string }> }> | undefined {
+    if (!filters?.length) return undefined;
+    // Combine all filters into a single AND group. GSC treats each
+    // group as OR and the entries inside as AND — we always want AND
+    // across the filter chips the user set.
+    return [
+      {
+        filters: filters.map((f) => ({
+          dimension: f.dimension,
+          operator: f.operator ?? 'contains',
+          expression: f.expression,
+        })),
+      },
+    ];
+  }
 }

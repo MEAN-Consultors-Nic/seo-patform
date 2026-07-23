@@ -10,6 +10,61 @@ import {
 } from '@seo/shared';
 import { API_BASE_URL } from './api.config';
 
+export type GscSearchType =
+  | 'web'
+  | 'image'
+  | 'video'
+  | 'news'
+  | 'discover'
+  | 'googleNews';
+
+export type GscDrillDimension = 'query' | 'page' | 'country' | 'device';
+
+export type GscFilterOperator =
+  | 'equals'
+  | 'contains'
+  | 'notContains'
+  | 'notEquals';
+
+export interface GscFilter {
+  dimension: GscDrillDimension;
+  operator?: GscFilterOperator;
+  expression: string;
+}
+
+export interface GscTimeseriesRow {
+  date: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+export interface GscTimeseriesResponse {
+  rows: GscTimeseriesRow[];
+  totals: {
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    avgPosition: number;
+  };
+  range: { from: string; to: string };
+}
+
+export interface GscTopForDateRow {
+  key: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+export interface GscTopForDateResponse {
+  rows: GscTopForDateRow[];
+  date: string;
+  dimension: GscDrillDimension;
+}
+
 export interface GoogleKpisResult {
   kpis: ReportKpis;
   sources: { gsc: boolean; ga4: boolean; gbp?: boolean; warnings: string[] };
@@ -95,6 +150,36 @@ export class GoogleIntegrationsService {
     const qs = new URLSearchParams({ clientId, from, to });
     return this.http.get<GscBreakdown>(
       `${this.base}/google/gsc/breakdown?${qs.toString()}`,
+    );
+  }
+
+  gscTimeseries(
+    clientId: string,
+    from: string,
+    to: string,
+    type?: GscSearchType,
+    filters?: GscFilter[],
+  ): Observable<GscTimeseriesResponse> {
+    const qs = new URLSearchParams({ clientId, from, to });
+    if (type) qs.set('type', type);
+    if (filters && filters.length) qs.set('filters', JSON.stringify(filters));
+    return this.http.get<GscTimeseriesResponse>(
+      `${this.base}/google/gsc/timeseries?${qs.toString()}`,
+    );
+  }
+
+  gscTopForDate(
+    clientId: string,
+    date: string,
+    dimension: GscDrillDimension,
+    type?: GscSearchType,
+    filters?: GscFilter[],
+  ): Observable<GscTopForDateResponse> {
+    const qs = new URLSearchParams({ clientId, date, dimension });
+    if (type) qs.set('type', type);
+    if (filters && filters.length) qs.set('filters', JSON.stringify(filters));
+    return this.http.get<GscTopForDateResponse>(
+      `${this.base}/google/gsc/top-for-date?${qs.toString()}`,
     );
   }
 
