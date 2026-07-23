@@ -14,6 +14,12 @@ import {
 import { FormsModule } from '@angular/forms';
 import cytoscape from 'cytoscape';
 import type { Core, ElementDefinition, LayoutOptions } from 'cytoscape';
+import dagre from 'cytoscape-dagre';
+
+// Register the dagre extension once at module load. cytoscape.use() is
+// idempotent under the hood so re-imports of this component don't
+// re-register.
+cytoscape.use(dagre as unknown as cytoscape.Ext);
 import {
   LinkGraphNode,
   LinkGraphService,
@@ -182,8 +188,8 @@ const POLL_INTERVAL_MS = 3000;
 
           <div class="grid grid-cols-1 lg:grid-cols-4 gap-3">
             <!-- Graph canvas -->
-            <div class="lg:col-span-3 card p-0 relative min-h-[520px]">
-              <div #cy class="w-full h-[520px]"></div>
+            <div class="lg:col-span-3 card p-0 relative min-h-[640px]">
+              <div #cy class="w-full h-[640px]"></div>
             </div>
 
             <!-- Side panel: node detail OR aggregated tables -->
@@ -331,9 +337,14 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
   private pollTimer?: ReturnType<typeof setInterval>;
 
   readonly layouts: { key: LayoutKind; label: string }[] = [
+    // Tree first because it's the layout that reads like Screaming
+    // Frog's default — root on the left, children fanning out to the
+    // right with clearly labeled nodes. Radial is only useful when a
+    // site has real multi-level depth; most client sites are 1-2
+    // levels deep so radial collapses to a boring single ring.
+    { key: 'hierarchical', label: 'Tree' },
     { key: 'radial', label: 'Radial' },
     { key: 'force', label: 'Force' },
-    { key: 'hierarchical', label: 'Tree' },
   ];
   readonly sideTabs: { key: SideTab; label: string }[] = [
     { key: 'orphans', label: 'Orphans' },
@@ -349,8 +360,8 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
   error = signal<string | null>(null);
   selectedNode = signal<LinkGraphNode | null>(null);
 
-  layout = signal<LayoutKind>('radial');
-  colorBy = signal<ColorBy>('depth');
+  layout = signal<LayoutKind>('hierarchical');
+  colorBy = signal<ColorBy>('status');
   sizeBy = signal<SizeBy>('inbound');
   sideTab = signal<SideTab>('orphans');
 
@@ -552,12 +563,16 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
       ...snap.nodes.map((n) => ({
         data: {
           id: n.url,
-          label: n.title || this.shortPath(n.url),
+          // Label prefers the page title (like SF does), falls back to
+          // the URL path so unlabeled pages still tell you what they
+          // are.
+          label: (n.title && n.title.trim()) || this.shortPath(n.url),
           depth: n.depth,
           inbound: n.inboundCount,
           outbound: n.outboundCount,
           orphan: n.isOrphan,
           statusCode: n.statusCode ?? 0,
+          hasError: !!n.errorMessage,
         },
       })),
       ...snap.edges.map((e, i) => ({
@@ -601,45 +616,60 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
   private layoutOptions(): LayoutOptions {
     const kind = this.layout();
     if (kind === 'radial') {
+      // Concentric works well only when the site has real multi-level
+      // depth. Reversed levelWidth so root sits at the outermost ring
+      // is intentional — Cytoscape's concentric wants a "higher = more
+      // central" mapping and we invert with -depth so d0 is closest to
+      // center. minNodeSpacing chosen so 100+ nodes still don't
+      // overlap.
       return {
         name: 'concentric',
         concentric: (ele) => -(ele.data('depth') ?? 0),
         levelWidth: () => 1,
-        minNodeSpacing: 40,
+        minNodeSpacing: 60,
         animate: true,
         animationDuration: 600,
+        padding: 30,
       };
     }
     if (kind === 'hierarchical') {
+      // dagre gives a proper directed acyclic layout: root on the
+      // left, children fanning right, with dagre's own edge routing
+      // so overlapping links don't tangle. rankSep controls the
+      // horizontal breathing room between depth levels; nodeSep is
+      // the vertical space between siblings.
       return {
-        name: 'breadthfirst',
-        directed: true,
-        roots: (this.activeSnapshot()?.seedUrl
-          ? [this.activeSnapshot()!.seedUrl]
-          : undefined) as string[] | undefined,
-        spacingFactor: 0.9,
+        name: 'dagre',
+        rankDir: 'LR',
+        rankSep: 220,
+        nodeSep: 24,
+        edgeSep: 12,
         animate: true,
         animationDuration: 600,
-      } as LayoutOptions;
+        padding: 40,
+        fit: true,
+      } as unknown as LayoutOptions;
     }
     return {
       name: 'cose',
       animate: true,
       animationDuration: 600,
-      idealEdgeLength: 80,
-      nodeRepulsion: 8000,
+      idealEdgeLength: 120,
+      nodeRepulsion: 12000,
       gravity: 0.15,
+      padding: 40,
     } as LayoutOptions;
   }
 
   // Cytoscape's TS types split stylesheets into several union members
-  // (StylesheetCSS / StylesheetJson / StylesheetStyle) and none of
-  // them accept the `{ selector, style }` shape all the examples use
-  // cleanly. Widening to `unknown[]` bypasses the union noise — the
-  // runtime shape is well-documented and stable.
+  // and none of them accept the `{ selector, style }` shape all the
+  // examples use cleanly. Widening to `unknown[]` bypasses the union
+  // noise — the runtime shape is well-documented and stable.
   private buildStyle(): unknown[] {
     const colorBy = this.colorBy();
     const sizeBy = this.sizeBy();
+    const isTree = this.layout() === 'hierarchical';
+
     const depthColor = (d: number): string => {
       const palette = [
         '#0F172A', '#1E40AF', '#0891B2', '#059669', '#65A30D',
@@ -647,26 +677,64 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
       ];
       return palette[Math.min(palette.length - 1, Math.max(0, d))];
     };
-    const orphanColor = (o: boolean): string => (o ? '#F97316' : '#3B82F6');
-    const statusColor = (s: number): string => {
+    // Screaming Frog-inspired palette. Green when the URL crawled
+    // cleanly (2xx); orange for orphans; red on 4xx/5xx or crawl
+    // errors so problems are impossible to miss.
+    const orphanOrOkColor = (isOrphan: boolean, sc: number, hasError: boolean): string => {
+      if (hasError || (sc && sc >= 400)) return '#B91C1C';
+      if (isOrphan) return '#F97316';
+      return '#4D8B31';
+    };
+    const orphanColor = (o: boolean): string => (o ? '#F97316' : '#4D8B31');
+    const statusColor = (s: number, hasError: boolean): string => {
+      if (hasError) return '#B91C1C';
       if (!s) return '#9CA3AF';
-      if (s >= 500) return '#DC2626';
-      if (s >= 400) return '#F97316';
+      if (s >= 500) return '#B91C1C';
+      if (s >= 400) return '#DC2626';
       if (s >= 300) return '#EAB308';
-      return '#059669';
+      return '#4D8B31';
     };
+
     const sizeExpr = (n: { data: (k: string) => number }) => {
-      if (sizeBy === 'flat') return 28;
+      if (sizeBy === 'flat') return isTree ? 18 : 24;
       const v = sizeBy === 'inbound' ? n.data('inbound') : n.data('outbound');
-      return Math.max(16, Math.min(80, 16 + Math.sqrt(Math.max(0, v)) * 8));
+      const base = isTree ? 14 : 18;
+      const max = isTree ? 44 : 70;
+      return Math.max(base, Math.min(max, base + Math.sqrt(Math.max(0, v)) * 7));
     };
+
     const colorExpr = (n: {
-      data: (k: string) => number | boolean;
+      data: (k: string) => number | boolean | string;
     }): string => {
-      if (colorBy === 'orphan') return orphanColor(!!n.data('orphan'));
-      if (colorBy === 'status') return statusColor(Number(n.data('statusCode')));
+      const hasError = !!n.data('hasError');
+      if (colorBy === 'orphan')
+        return orphanOrOkColor(
+          !!n.data('orphan'),
+          Number(n.data('statusCode')),
+          hasError,
+        );
+      if (colorBy === 'status')
+        return statusColor(Number(n.data('statusCode')), hasError);
       return depthColor(Number(n.data('depth')));
     };
+
+    // Two label placements: on the tree layout, put the label to the
+    // right of each node like Screaming Frog does; on the other
+    // layouts drop it below to avoid overlap in the concentric ring.
+    const labelStyle = isTree
+      ? {
+          'text-valign': 'center',
+          'text-halign': 'right',
+          'text-margin-x': 8,
+          'text-max-width': '260px',
+        }
+      : {
+          'text-valign': 'bottom',
+          'text-halign': 'center',
+          'text-margin-y': 6,
+          'text-max-width': '160px',
+        };
+
     return [
       {
         selector: 'node',
@@ -675,33 +743,54 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
           width: sizeExpr as unknown as number,
           height: sizeExpr as unknown as number,
           label: 'data(label)',
-          'font-size': 10,
-          color: '#334155',
+          'font-size': isTree ? 11 : 10,
+          'font-family': 'Inter, system-ui, sans-serif',
+          'font-weight': 500,
+          color: '#111827',
           'text-outline-color': '#ffffff',
           'text-outline-width': 2,
-          'text-valign': 'bottom',
-          'text-margin-y': 4,
-          'text-max-width': '140px',
-          'text-wrap': 'wrap',
+          'text-wrap': 'ellipsis',
+          'text-events': 'yes',
+          'border-width': 2,
+          'border-color': '#ffffff',
+          ...labelStyle,
         },
       },
       {
         selector: 'node:selected',
         style: {
-          'border-width': 3,
+          'border-width': 4,
           'border-color': '#FF7A59',
+          'text-outline-color': '#FFF7ED',
+        },
+      },
+      {
+        selector: 'node[?orphan]',
+        style: {
+          'border-color': '#FED7AA',
+          'border-width': 2,
         },
       },
       {
         selector: 'edge',
         style: {
-          width: 1,
-          'line-color': '#CBD5E1',
-          'curve-style': 'straight',
-          'target-arrow-shape': 'triangle',
-          'target-arrow-color': '#CBD5E1',
+          width: 1.2,
+          'line-color': '#D1D5DB',
+          'curve-style': isTree ? 'bezier' : 'straight',
+          'control-point-step-size': 60,
+          'target-arrow-shape': isTree ? 'none' : 'triangle',
+          'target-arrow-color': '#D1D5DB',
           'arrow-scale': 0.7,
-          opacity: 0.55,
+          opacity: 0.7,
+        },
+      },
+      {
+        selector: 'edge:selected',
+        style: {
+          'line-color': '#FF7A59',
+          'target-arrow-color': '#FF7A59',
+          width: 2,
+          opacity: 1,
         },
       },
     ];
