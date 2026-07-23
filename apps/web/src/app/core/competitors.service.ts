@@ -24,4 +24,36 @@ export class CompetitorsService {
   remove(id: string) {
     return this.http.delete(`${this.base}/competitors/${id}`);
   }
+
+  addKeyword(
+    competitorId: string,
+    payload: {
+      keywordId: string;
+      position?: number;
+      rankingUrl?: string;
+      notes?: string;
+    },
+  ): Observable<Competitor> {
+    return this.http.post<Competitor>(
+      `${this.base}/competitors/${competitorId}/keywords`,
+      payload,
+    );
+  }
+
+  updateKeyword(
+    competitorId: string,
+    entryId: string,
+    patch: { position?: number; rankingUrl?: string; notes?: string },
+  ): Observable<Competitor> {
+    return this.http.patch<Competitor>(
+      `${this.base}/competitors/${competitorId}/keywords/${entryId}`,
+      patch,
+    );
+  }
+
+  removeKeyword(competitorId: string, entryId: string) {
+    return this.http.delete<{ deleted: true }>(
+      `${this.base}/competitors/${competitorId}/keywords/${entryId}`,
+    );
+  }
 }

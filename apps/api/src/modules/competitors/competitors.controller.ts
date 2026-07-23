@@ -52,4 +52,37 @@ export class CompetitorsController {
   remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.svc.remove(id, user);
   }
+
+  @Post(':id/keywords')
+  addKeyword(
+    @Param('id') id: string,
+    @Body() body: {
+      keywordId: string;
+      position?: number;
+      rankingUrl?: string;
+      notes?: string;
+    },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.svc.addKeyword(id, body, user);
+  }
+
+  @Patch(':id/keywords/:entryId')
+  updateKeyword(
+    @Param('id') id: string,
+    @Param('entryId') entryId: string,
+    @Body() body: { position?: number; rankingUrl?: string; notes?: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.svc.updateKeyword(id, entryId, body, user);
+  }
+
+  @Delete(':id/keywords/:entryId')
+  removeKeyword(
+    @Param('id') id: string,
+    @Param('entryId') entryId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.svc.removeKeyword(id, entryId, user);
+  }
 }

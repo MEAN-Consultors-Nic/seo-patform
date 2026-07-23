@@ -953,6 +953,17 @@ export interface KeywordVolatility {
   changesIn90Days: number;
 }
 
+export interface CompetitorKeyword {
+  _id?: string;
+  /** ObjectId of the keyword in the client's Keyword collection. */
+  keywordId: string;
+  position?: number;
+  previousPosition?: number;
+  rankingUrl?: string;
+  lastCheckedAt?: Date | string;
+  notes?: string;
+}
+
 export interface Competitor {
   _id?: string;
   clientId: string;
@@ -964,6 +975,8 @@ export interface Competitor {
   tags?: string[];
   /** When set, this competitor applies only to that service area. */
   serviceAreaName?: string;
+  /** Keywords this competitor is competing on. Manual association. */
+  keywords?: CompetitorKeyword[];
   createdAt?: Date;
   updatedAt?: Date;
 }
