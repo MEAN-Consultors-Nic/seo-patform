@@ -269,7 +269,26 @@ export class LinkGraphService {
         );
       }
 
-      // 4. Compute per-node inbound / outbound counts + orphan flag.
+      // 4a. Dedupe edges. A single page often links to another
+      // through the nav bar, footer, sidebar, and inline body copy —
+      // that's 4+ raw <a href> hits for the same (from, to) pair.
+      // Rendering all of them buries the graph in redundant lines
+      // and blows up dagre's edge-routing cost. Collapse to one
+      // edge per (from, to) — keep the first non-empty anchor
+      // encountered so context isn't lost.
+      const dedupedMap = new Map<string, { from: string; to: string; anchor?: string }>();
+      for (const e of ctx.edges) {
+        const key = `${e.from} ${e.to}`;
+        const existing = dedupedMap.get(key);
+        if (!existing) {
+          dedupedMap.set(key, { from: e.from, to: e.to, anchor: e.anchor });
+        } else if (!existing.anchor && e.anchor) {
+          existing.anchor = e.anchor;
+        }
+      }
+      ctx.edges = Array.from(dedupedMap.values());
+
+      // 4b. Compute per-node inbound / outbound counts + orphan flag.
       const inboundBy = new Map<string, number>();
       const outboundBy = new Map<string, number>();
       for (const e of ctx.edges) {

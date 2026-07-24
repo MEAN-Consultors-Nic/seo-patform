@@ -534,8 +534,17 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
   }
 
   setLayout(l: LayoutKind) {
+    const prev = this.layout();
     this.layout.set(l);
-    this.applyLayout();
+    // Switching in or out of Tree changes the edge set (spanning
+    // tree vs full) — cheaper to rebuild the graph than to swap
+    // elements mid-flight. Same-layout re-toggles just rerun the
+    // layout algorithm.
+    if (prev === 'hierarchical' || l === 'hierarchical') {
+      this.renderGraph();
+    } else {
+      this.applyLayout();
+    }
   }
 
   setColorBy(v: ColorBy) {
@@ -568,6 +577,49 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
     return v.replace(/(["\\])/g, '\\$1');
   }
 
+  /**
+   * BFS spanning tree of the crawl: each non-seed node gets exactly
+   * one incoming edge, chosen so its parent has the shallowest depth
+   * among nodes that link to it. Result is an N-1 edge tree that
+   * dagre can lay out instantly, regardless of how densely the raw
+   * graph cross-links via nav/footer boilerplate.
+   */
+  private spanningTreeEdges(
+    snap: LinkGraphSnapshotDetail,
+  ): Array<{ from: string; to: string; anchor?: string }> {
+    const depthByUrl = new Map<string, number>();
+    for (const n of snap.nodes) depthByUrl.set(n.url, n.depth);
+
+    // For each target, find its best parent = the incoming edge whose
+    // source has the smallest depth. Ties broken by lexicographic
+    // source URL so runs are deterministic.
+    const bestParent = new Map<string, { from: string; anchor?: string }>();
+    for (const e of snap.edges) {
+      if (e.from === e.to) continue;
+      const sourceDepth = depthByUrl.get(e.from);
+      const targetDepth = depthByUrl.get(e.to);
+      if (sourceDepth === undefined || targetDepth === undefined) continue;
+      // Only accept a parent that's strictly shallower than the target;
+      // that guarantees no cycles and the seed (depth 0) roots naturally.
+      if (sourceDepth >= targetDepth) continue;
+      const current = bestParent.get(e.to);
+      if (
+        !current ||
+        (depthByUrl.get(current.from) ?? Infinity) > sourceDepth ||
+        ((depthByUrl.get(current.from) ?? Infinity) === sourceDepth &&
+          e.from < current.from)
+      ) {
+        bestParent.set(e.to, { from: e.from, anchor: e.anchor });
+      }
+    }
+
+    return Array.from(bestParent.entries()).map(([to, p]) => ({
+      from: p.from,
+      to,
+      anchor: p.anchor,
+    }));
+  }
+
   shortPath(url: string): string {
     try {
       const u = new URL(url);
@@ -591,14 +643,34 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
     // straight from the previous state into a frozen main thread and
     // Chrome pops "page unresponsive".
     this.graphRendering.set(true);
+    const willRenderTree = this.layout() === 'hierarchical';
+    // Tree collapses to a spanning tree of ~N-1 edges; other layouts
+    // render the full raw edge count. Reflect that in the overlay so
+    // the reader knows why "10k edges" turned into "165 edges" on
+    // the Tree view.
+    const edgeCount = willRenderTree
+      ? Math.max(0, snap.nodes.length - 1)
+      : snap.edges.length;
     this.renderProgress.set(
-      `Building ${snap.nodes.length} nodes · ${snap.edges.length} edges…`,
+      `Building ${snap.nodes.length} nodes · ${edgeCount} edges…`,
     );
 
     setTimeout(() => this.doRender(snap, container), 30);
   }
 
   private doRender(snap: LinkGraphSnapshotDetail, container: HTMLElement) {
+    // Tree layouts choke when a site's nav/footer forms an all-to-all
+    // subgraph (166 pages × avg 66 outbound = ~11k edges dagre has to
+    // route). For Tree mode we collapse to a BFS spanning tree — each
+    // non-root node keeps a single incoming edge from its shallowest
+    // neighbor — so the tree renders in ~N-1 edges instead of the raw
+    // multi-thousand. Radial + Force keep the full edge set since
+    // their layouts don't route per-edge.
+    const isTree = this.layout() === 'hierarchical';
+    const renderEdges = isTree
+      ? this.spanningTreeEdges(snap)
+      : snap.edges;
+
     const elements: ElementDefinition[] = [
       ...snap.nodes.map((n) => ({
         data: {
@@ -615,7 +687,7 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
           hasError: !!n.errorMessage,
         },
       })),
-      ...snap.edges.map((e, i) => ({
+      ...renderEdges.map((e, i) => ({
         data: {
           id: `e${i}`,
           source: e.from,
