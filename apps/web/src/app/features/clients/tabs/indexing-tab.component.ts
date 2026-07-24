@@ -14,6 +14,7 @@ import {
   PageIndexStatus,
   PullResult,
   RecheckAllResult,
+  RequestIndexingResult,
 } from '../../../core/indexing.service';
 
 type StatusFilter = 'all' | 'indexed' | 'not_indexed' | 'orphan';
@@ -46,6 +47,12 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed' | 'orphan';
         <div class="flex items-center gap-2 whitespace-nowrap">
           <button class="btn-secondary text-sm"
                   [disabled]="pulling() || rechecking()"
+                  title="Send a URL to Google's Indexing API — useful for pages the sitemap hasn't picked up yet."
+                  (click)="openRequestIndexingModal()">
+            🚀 Indexing Request
+          </button>
+          <button class="btn-secondary text-sm"
+                  [disabled]="pulling() || rechecking()"
                   title="Re-inspect the URLs already tracked without re-scanning the sitemap. Faster than a full pull; only refreshes existing rows."
                   (click)="runRecheckAll()">
             {{ rechecking() ? 'Rechecking…' : '🔄 Recheck all' }}
@@ -57,6 +64,106 @@ type StatusFilter = 'all' | 'indexed' | 'not_indexed' | 'orphan';
           </button>
         </div>
       </div>
+
+      <!-- Indexing Request modal. Ad-hoc entry point that skips the
+           per-row menu — the user pastes any URL (usually one they
+           just published that isn't tracked yet), fires the Indexing
+           API, and sees the outcome inline. Closing the modal keeps
+           the result signal so a second submission overwrites it. -->
+      @if (requestModalOpen()) {
+        <div class="fixed inset-0 z-40 flex items-center justify-center bg-ink-900/40 backdrop-blur-sm p-4"
+             (click)="closeRequestIndexingModal()">
+          <div class="w-full max-w-lg bg-white rounded-lg shadow-elevated border border-ink-200"
+               (click)="$event.stopPropagation()">
+            <div class="flex items-start justify-between px-5 pt-5 pb-2">
+              <div>
+                <div class="text-xs font-semibold text-ink-500 uppercase tracking-wider">
+                  Google Search Console
+                </div>
+                <h3 class="text-base font-bold text-ink-900 mt-0.5">
+                  Request indexing
+                </h3>
+                <div class="text-xs text-ink-500 mt-1">
+                  Sends a <code class="text-[11px]">URL_UPDATED</code> notification via the Indexing API and re-inspects the URL.
+                </div>
+              </div>
+              <button type="button"
+                      class="text-ink-400 hover:text-ink-900 text-lg leading-none"
+                      (click)="closeRequestIndexingModal()"
+                      aria-label="Close">
+                ×
+              </button>
+            </div>
+            <div class="px-5 pb-5 space-y-3">
+              <label class="block text-xs font-semibold text-ink-500 uppercase tracking-wider">
+                URL
+              </label>
+              <input type="url"
+                     class="input w-full"
+                     placeholder="https://example.com/page-to-index"
+                     [ngModel]="requestModalUrl()"
+                     (ngModelChange)="requestModalUrl.set($event)"
+                     [disabled]="requestModalBusy()"
+                     (keydown.enter)="submitRequestIndexingModal()" />
+              <div class="text-[11px] text-ink-500 leading-relaxed">
+                Google's Indexing API officially supports only JobPosting and BroadcastEvent pages, but the endpoint usually accepts any URL on properties you own in Search Console.
+              </div>
+
+              @if (requestModalError(); as e) {
+                <div class="border-l-4 border-danger-500 bg-danger-100/40 text-xs text-ink-700 px-3 py-2 rounded">
+                  <div class="font-semibold text-danger-500 mb-0.5">Request failed</div>
+                  {{ e }}
+                </div>
+              }
+
+              @if (requestModalResult(); as r) {
+                <div class="border-l-4 border-positive-500 bg-positive-100/30 text-xs text-ink-700 px-3 py-2 rounded space-y-1">
+                  <div class="font-semibold text-positive-500">
+                    ✓ Indexing notification accepted
+                  </div>
+                  @if (r.notifiedAt) {
+                    <div>Notified at: <span class="font-mono text-[11px]">{{ r.notifiedAt | date: 'medium' }}</span></div>
+                  }
+                  @if (r.inspection; as ins) {
+                    <div class="flex items-center gap-2 pt-1">
+                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                            [class]="statusPill(ins.verdict)">
+                        <span class="w-1.5 h-1.5 rounded-full" [class]="statusDot(ins.verdict)"></span>
+                        {{ statusLabel(ins.verdict) }}
+                      </span>
+                      @if (ins.coverageState) {
+                        <span class="text-ink-500">{{ ins.coverageState }}</span>
+                      }
+                    </div>
+                    @if (ins.lastCrawlTime) {
+                      <div class="text-ink-500">Last crawl: {{ ins.lastCrawlTime | date: 'medium' }}</div>
+                    }
+                  } @else {
+                    <div class="text-ink-500">Freshness inspection was skipped (no site URL configured).</div>
+                  }
+                  @if (r.warning) {
+                    <div class="text-warning-500">⚠ {{ r.warning }}</div>
+                  }
+                </div>
+              }
+            </div>
+            <div class="border-t border-ink-100 px-5 py-3 flex items-center justify-end gap-2">
+              <button type="button"
+                      class="btn-secondary text-sm"
+                      [disabled]="requestModalBusy()"
+                      (click)="closeRequestIndexingModal()">
+                Close
+              </button>
+              <button type="button"
+                      class="btn-primary text-sm"
+                      [disabled]="requestModalBusy() || !requestModalUrl().trim()"
+                      (click)="submitRequestIndexingModal()">
+                {{ requestModalBusy() ? 'Requesting…' : 'Request Indexing' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      }
 
       @if (clipboardHint(); as msg) {
         <div class="card border-l-4 border-sky-500 bg-sky-100/40 text-sm py-2 px-3">
@@ -627,4 +734,61 @@ export class ClientIndexingTab implements OnChanges {
     if (rec) return { action: 'Rechecking status', url: rec };
     return null;
   });
+
+  // --- Ad-hoc "Indexing Request" modal ----------------------------------
+  //
+  // The per-row menu already exposes Request Indexing, but only for URLs
+  // that are already tracked in this client's indexing table. The modal
+  // covers the second case: a fresh URL the user just published that the
+  // sitemap crawl hasn't picked up yet. Same backend endpoint underneath.
+
+  requestModalOpen = signal(false);
+  requestModalUrl = signal('');
+  requestModalBusy = signal(false);
+  requestModalResult = signal<RequestIndexingResult | null>(null);
+  requestModalError = signal<string | null>(null);
+
+  openRequestIndexingModal() {
+    this.requestModalUrl.set('');
+    this.requestModalResult.set(null);
+    this.requestModalError.set(null);
+    this.requestModalOpen.set(true);
+  }
+
+  closeRequestIndexingModal() {
+    if (this.requestModalBusy()) return;
+    this.requestModalOpen.set(false);
+  }
+
+  submitRequestIndexingModal() {
+    if (!this.clientId) return;
+    const url = this.requestModalUrl().trim();
+    if (!url || this.requestModalBusy()) return;
+    this.requestModalBusy.set(true);
+    this.requestModalError.set(null);
+    this.requestModalResult.set(null);
+    this.svc.requestIndexing(this.clientId, url).subscribe({
+      next: (res) => {
+        this.requestModalBusy.set(false);
+        this.requestModalResult.set(res);
+        // The row may now exist (the backend upserts on inspection),
+        // so refresh the table + summary in the background without
+        // closing the modal — the user still wants to see the result.
+        this.svc
+          .list(this.clientId)
+          .subscribe((rows) => this.rows.set(rows));
+        this.svc
+          .summary(this.clientId)
+          .subscribe((s) => this.summary.set(s));
+      },
+      error: (err) => {
+        this.requestModalBusy.set(false);
+        this.requestModalError.set(
+          err?.error?.message ||
+            err?.message ||
+            'Indexing request failed. Reconnect Google in Settings → Integrations if the indexing scope is missing.',
+        );
+      },
+    });
+  }
 }
