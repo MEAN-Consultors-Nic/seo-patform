@@ -25,6 +25,21 @@ import { ContentService } from '../../../core/content.service';
 import { TasksService } from '../../../core/tasks.service';
 import { FileDropDirective } from '../../../shared/file-drop.directive';
 
+/**
+ * Shape of the `_taskAutoComplete` blob the API attaches to the update
+ * response when publishing a content piece drives its linked task
+ * through the standard completion flow. Mirrors the backend union:
+ * 'completed' (task ran through completion), 'blocked' (task exists
+ * but couldn't be auto-completed, e.g. pending subtasks), or 'none'
+ * (no linked task).
+ */
+interface TaskAutoCompleteResult {
+  status: 'completed' | 'none' | 'blocked';
+  taskId?: string;
+  reason?: string;
+  docSync?: { ok: boolean; message?: string };
+}
+
 @Component({
   selector: 'app-client-content-tab',
   standalone: true,
@@ -830,10 +845,11 @@ export class ClientContentTab implements OnChanges {
     this.svc
       .update(piece._id, { status: 'published', publishedUrl: url })
       .subscribe({
-        next: () => {
+        next: (resp) => {
           this.publishSaving.set(false);
           this.publishModalPiece.set(null);
           this.publishUrlInput = '';
+          this.reportTaskAutoComplete(resp);
           this.load();
         },
         error: (err) => {
@@ -851,10 +867,11 @@ export class ClientContentTab implements OnChanges {
     if (!piece?._id) return;
     this.publishSaving.set(true);
     this.svc.update(piece._id, { status: 'published' }).subscribe({
-      next: () => {
+      next: (resp) => {
         this.publishSaving.set(false);
         this.publishModalPiece.set(null);
         this.publishUrlInput = '';
+        this.reportTaskAutoComplete(resp);
         this.load();
       },
       error: (err) => {
@@ -865,6 +882,36 @@ export class ClientContentTab implements OnChanges {
         );
       },
     });
+  }
+
+  /**
+   * The backend embeds a `_taskAutoComplete` blob on the response when
+   * publishing a piece transitions its linked content task through the
+   * standard completion flow. Toast the outcome so the user knows the
+   * two states stayed in sync — or what went wrong when they didn't.
+   */
+  private reportTaskAutoComplete(resp: ContentPiece | unknown) {
+    const meta = (resp as { _taskAutoComplete?: TaskAutoCompleteResult })
+      ._taskAutoComplete;
+    if (!meta) return;
+    if (meta.status === 'completed') {
+      const docNote =
+        meta.docSync && meta.docSync.ok === false
+          ? ` (Google Doc sync failed: ${meta.docSync.message ?? 'unknown'})`
+          : meta.docSync?.message
+            ? ` (${meta.docSync.message})`
+            : '';
+      this.flashToast(
+        'success',
+        `Piece published and its draft task was auto-completed.${docNote}`,
+      );
+    } else if (meta.status === 'blocked') {
+      this.flashToast(
+        'error',
+        `Piece published but the linked task couldn't auto-complete: ${meta.reason ?? 'unknown'}. Finish it manually from the Tasks tab.`,
+      );
+    }
+    // status === 'none' → no linked task; nothing to say.
   }
 
   remove(p: ContentPiece) {
@@ -923,6 +970,9 @@ export class ClientContentTab implements OnChanges {
       status: 'in_progress',
       priority: 'medium',
       estimatedHours: 1,
+      // Link back so publishing the piece can auto-complete this task
+      // through the standard completion flow (Google Doc mirror etc).
+      contentPieceId: p._id,
     };
     this.tasksSvc.create(taskPayload).subscribe({
       next: () => {

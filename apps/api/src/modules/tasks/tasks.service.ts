@@ -159,7 +159,61 @@ export class TasksService {
       ...clean,
       clientId: new Types.ObjectId(dto.clientId),
       cycleId: dto.cycleId ? new Types.ObjectId(dto.cycleId) : undefined,
+      contentPieceId: dto.contentPieceId
+        ? new Types.ObjectId(dto.contentPieceId)
+        : undefined,
     });
+  }
+
+  /**
+   * Called by the content pipeline when a piece transitions to
+   * 'published'. Finds the most recent non-completed task linked
+   * to that piece and drives it through the standard completion
+   * flow — same subtask guard, same completedAt stamp, same
+   * Google Doc mirror — so the two states stay in lockstep.
+   *
+   * Never throws. Returns a status the caller can surface as a
+   * toast: 'completed' (happy path), 'none' (no matching task),
+   * or 'blocked' + reason (subtasks pending, doc sync failed, etc.).
+   * The publish should still succeed even if the task can't be
+   * auto-completed — the user can finish it manually.
+   */
+  async completeForContentPiece(
+    contentPieceId: string,
+    user: AuthenticatedUser,
+  ): Promise<{
+    status: 'completed' | 'none' | 'blocked';
+    taskId?: string;
+    reason?: string;
+    docSync?: { ok: boolean; message?: string };
+  }> {
+    const task = await this.model
+      .findOne({
+        contentPieceId: new Types.ObjectId(contentPieceId),
+        status: { $ne: 'completed' },
+      })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+    if (!task) return { status: 'none' };
+    try {
+      const updated = (await this.update(
+        String(task._id),
+        { status: 'completed' } as UpdateTaskDto,
+        user,
+      )) as { _docSync?: { ok: boolean; message?: string } };
+      return {
+        status: 'completed',
+        taskId: String(task._id),
+        docSync: updated._docSync,
+      };
+    } catch (err) {
+      return {
+        status: 'blocked',
+        taskId: String(task._id),
+        reason: (err as Error).message || 'Unknown error',
+      };
+    }
   }
 
   async update(id: string, dto: UpdateTaskDto, user?: AuthenticatedUser) {

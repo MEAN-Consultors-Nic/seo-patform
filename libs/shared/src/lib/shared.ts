@@ -1133,6 +1133,12 @@ export interface Task {
   priority: 'high' | 'medium' | 'low';
   completedAt?: Date;
   notes?: string;
+  /**
+   * When set, this task tracks work for a specific content pipeline
+   * piece. Populated by the "Write draft" action so publishing the
+   * piece can auto-complete this task.
+   */
+  contentPieceId?: string;
   attachments?: TaskAttachment[];
   subtasks?: Subtask[];
   comments?: Array<{

@@ -20,6 +20,7 @@ import { UpsertContentDto } from './dto/upsert-content.dto';
 import { ClientsService } from '../clients/clients.service';
 import { AuthenticatedUser } from '../auth/roles.guard';
 import { GoogleOAuthService } from '../google-integrations/google-oauth.service';
+import { TasksService } from '../tasks/tasks.service';
 
 // Legacy statuses retired (brief / review / archived) get mapped to the
 // nearest active bucket so historic documents keep showing up in the new
@@ -47,6 +48,7 @@ export class ContentService {
     @Inject(forwardRef(() => ClientsService))
     private readonly clients: ClientsService,
     private readonly oauth: GoogleOAuthService,
+    private readonly tasks: TasksService,
   ) {}
 
   private async ensureAccessToContent(
@@ -99,7 +101,7 @@ export class ContentService {
     dto: Partial<UpsertContentDto>,
     user?: AuthenticatedUser,
   ) {
-    await this.ensureAccessToContent(id, user);
+    const before = await this.ensureAccessToContent(id, user);
     if (dto.clientId && user) await this.clients.assertAccess(dto.clientId, user);
     const patch: Record<string, unknown> = { ...dto };
     if (dto.clientId) patch.clientId = new Types.ObjectId(dto.clientId);
@@ -109,7 +111,30 @@ export class ContentService {
       .lean()
       .exec();
     if (!updated) throw new NotFoundException(`Content ${id} not found`);
-    return normalizeStatus(updated);
+
+    // If this write is the transition into 'published' — i.e. the piece
+    // wasn't already published before — drive the linked content task
+    // through the standard completion flow. Non-blocking: if the task
+    // is blocked (e.g. pending subtasks) or the Google Doc sync fails,
+    // the publish still succeeds and we surface the outcome in the
+    // response so the UI can toast.
+    let taskAutoComplete:
+      | Awaited<ReturnType<TasksService['completeForContentPiece']>>
+      | undefined;
+    if (
+      dto.status === 'published' &&
+      before.status !== 'published' &&
+      user
+    ) {
+      taskAutoComplete = await this.tasks.completeForContentPiece(id, user);
+    }
+
+    const normalized = normalizeStatus(updated);
+    return taskAutoComplete
+      ? ({ ...normalized, _taskAutoComplete: taskAutoComplete } as typeof normalized & {
+          _taskAutoComplete: typeof taskAutoComplete;
+        })
+      : normalized;
   }
 
   /**

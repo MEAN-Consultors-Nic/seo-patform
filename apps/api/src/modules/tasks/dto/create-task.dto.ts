@@ -22,6 +22,13 @@ export class CreateTaskDto {
   /** Optional — cycles are being phased out in favor of date-range reports. */
   @IsOptional() @IsMongoId() cycleId?: string;
 
+  /**
+   * Optional — the content pipeline piece this task was spawned for.
+   * Set by the "Write draft" action so publishing the piece can find
+   * and auto-complete this task.
+   */
+  @IsOptional() @IsMongoId() contentPieceId?: string;
+
   @IsEnum([
     'technical',
     'onpage',

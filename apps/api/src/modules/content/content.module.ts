@@ -5,6 +5,7 @@ import { ContentService } from './content.service';
 import { ContentController } from './content.controller';
 import { ClientsModule } from '../clients/clients.module';
 import { GoogleIntegrationsModule } from '../google-integrations/google-integrations.module';
+import { TasksModule } from '../tasks/tasks.module';
 
 @Module({
   imports: [
@@ -13,6 +14,10 @@ import { GoogleIntegrationsModule } from '../google-integrations/google-integrat
     ]),
     forwardRef(() => ClientsModule),
     GoogleIntegrationsModule,
+    // Needed so publishing a piece can auto-complete its linked task
+    // (write-draft creates one; publish drives it through the standard
+    // completion flow, including the Google Doc mirror).
+    TasksModule,
   ],
   controllers: [ContentController],
   providers: [ContentService],

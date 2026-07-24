@@ -67,6 +67,19 @@ export class Task {
   @Prop({ type: Types.ObjectId, ref: 'Cycle', required: false, index: true })
   cycleId?: Types.ObjectId;
 
+  /**
+   * Set when the task was spawned by the content pipeline's "Write
+   * draft" action. Lets us auto-complete the task when the piece
+   * transitions to 'published' without matching on the title string.
+   */
+  @Prop({
+    type: Types.ObjectId,
+    ref: 'ContentPiece',
+    required: false,
+    index: true,
+  })
+  contentPieceId?: Types.ObjectId;
+
   @Prop({
     required: true,
     type: String,
