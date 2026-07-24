@@ -930,10 +930,15 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
           'line-color': '#D1D5DB',
           'curve-style': isTree ? 'bezier' : 'straight',
           'control-point-step-size': 60,
-          'target-arrow-shape': isTree ? 'none' : 'triangle',
-          'target-arrow-color': '#D1D5DB',
-          'arrow-scale': 0.7,
-          opacity: 0.7,
+          // Arrows on every layout now — L-to-R placement alone was
+          // ambiguous when the reader wanted to know which page
+          // links to which. Slightly smaller in Tree so they don't
+          // fight the label placement to the right of each node.
+          'target-arrow-shape': 'triangle',
+          'target-arrow-color': '#94A3B8',
+          'arrow-scale': isTree ? 0.8 : 0.9,
+          'target-endpoint': 'outside-to-node',
+          opacity: 0.75,
         },
       },
       {

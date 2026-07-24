@@ -185,11 +185,14 @@ export class LinkGraphService {
 
       // 3. BFS: queue starts with seed at depth 0, then sitemap URLs
       // seeded at a placeholder depth (they'll be filled by actual
-      // BFS traversal from the seed).
+      // BFS traversal from the seed). Same page-vs-asset filter as
+      // extractInternalLinks so an image sitemap or a misconfigured
+      // media listing can't sneak assets into the seed queue.
       const queue: Array<{ url: string; depth: number }> = [
         { url: seedNormalized, depth: 0 },
         ...sitemapUrls
           .filter((u) => this.isSameOrigin(u, ctx.origin))
+          .filter((u) => this.isPageUrl(u))
           .map((u) => ({ url: u, depth: 1 })),
       ];
 
@@ -500,6 +503,71 @@ export class LinkGraphService {
 
   // --- Link extraction --------------------------------------------------
 
+  /**
+   * Extensions and path prefixes that we never treat as pages. Filters
+   * out image lightbox anchors (WordPress wraps <img> in <a> pointing
+   * to the raw .webp / .jpg), PDF/CSS/JS assets, CMS admin routes,
+   * and feed endpoints — none of which contribute to the *page*-level
+   * link graph the user cares about.
+   */
+  private readonly SKIP_EXTENSIONS = new Set([
+    // Images
+    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp',
+    '.avif', '.heic', '.heif', '.tiff',
+    // Video / audio
+    '.mp4', '.mov', '.webm', '.mkv', '.avi', '.mp3', '.wav', '.ogg',
+    '.flac', '.m4a',
+    // Documents / archives
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.zip',
+    '.rar', '.7z', '.tar', '.gz', '.csv',
+    // Assets
+    '.css', '.js', '.mjs', '.map', '.json', '.xml', '.txt',
+    '.woff', '.woff2', '.ttf', '.otf', '.eot',
+  ]);
+
+  private readonly SKIP_PATH_PREFIXES = [
+    // WordPress admin + core APIs
+    '/wp-admin/',
+    '/wp-login',
+    '/wp-json/',
+    '/wp-content/uploads/',
+    '/wp-content/plugins/',
+    '/wp-content/themes/',
+    '/wp-includes/',
+    // Feed endpoints
+    '/feed/',
+    '/rss/',
+    '/comments/feed/',
+    // Common asset dirs
+    '/assets/',
+    '/static/',
+    '/cdn-cgi/',
+    // Shopify equivalents
+    '/cart',
+    '/checkouts/',
+  ];
+
+  private isPageUrl(url: string): boolean {
+    try {
+      const u = new URL(url);
+      const path = u.pathname.toLowerCase();
+      // Filter by extension — the last path segment's extension.
+      const lastDot = path.lastIndexOf('.');
+      const lastSlash = path.lastIndexOf('/');
+      if (lastDot > lastSlash && lastDot !== -1) {
+        const ext = path.slice(lastDot);
+        if (this.SKIP_EXTENSIONS.has(ext)) return false;
+      }
+      // Filter by path prefix.
+      for (const prefix of this.SKIP_PATH_PREFIXES) {
+        if (path.startsWith(prefix)) return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private extractInternalLinks(
     $: cheerio.CheerioAPI,
     fromUrl: string,
@@ -523,6 +591,12 @@ export class LinkGraphService {
       if (!abs) return;
       if (!this.isSameOrigin(abs, origin)) return;
       if (abs === fromUrl) return; // ignore self-links
+      // Filter out media / asset / admin URLs so the graph reflects
+      // page-to-page structure only. WordPress-generated lightbox
+      // anchors were the biggest offender — they wrap every image
+      // in a link to the raw file, polluting the graph with dozens
+      // of /wp-content/uploads/*.webp "pages".
+      if (!this.isPageUrl(abs)) return;
       if (seen.has(abs)) return;
       seen.add(abs);
       const anchor = ($(el).text() || '').trim().slice(0, 120) || undefined;
