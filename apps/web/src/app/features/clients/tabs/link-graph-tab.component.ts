@@ -190,6 +190,27 @@ const POLL_INTERVAL_MS = 3000;
             <!-- Graph canvas -->
             <div class="lg:col-span-3 card p-0 relative min-h-[640px]">
               <div #cy class="w-full h-[640px]"></div>
+
+              <!-- Rendering overlay. Layout + init of a 500-node graph
+                   can block the main thread for a few seconds — this
+                   overlay gives the reader a clear signal something's
+                   happening (and prevents Chrome's "page unresponsive"
+                   dialog by proving the tab is still under our
+                   control). -->
+              @if (graphRendering()) {
+                <div class="absolute inset-0 bg-white/85 backdrop-blur-sm flex flex-col items-center justify-center gap-3 z-10 rounded-lg">
+                  <svg class="animate-spin h-8 w-8 text-brand-500" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" opacity="0.25" />
+                    <path d="M21 12a9 9 0 0 1-9 9" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+                  </svg>
+                  <div class="text-sm font-semibold text-ink-900">
+                    Rendering graph…
+                  </div>
+                  @if (renderProgress(); as p) {
+                    <div class="text-xs text-ink-600">{{ p }}</div>
+                  }
+                </div>
+              }
             </div>
 
             <!-- Side panel: node detail OR aggregated tables -->
@@ -359,6 +380,11 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
   crawlPending = signal(false);
   error = signal<string | null>(null);
   selectedNode = signal<LinkGraphNode | null>(null);
+  /** True while Cytoscape init + layout is in flight. Drives the
+   *  overlay spinner so the reader knows a render is happening. */
+  graphRendering = signal(false);
+  /** Optional progress string shown under the spinner. */
+  renderProgress = signal<string | null>(null);
 
   layout = signal<LayoutKind>('hierarchical');
   colorBy = signal<ColorBy>('status');
@@ -559,6 +585,20 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
     if (!snap || !container || snap.status !== 'completed') return;
     if (this.cy) this.cy.destroy();
 
+    // Defer the heavy init off the current change-detection tick so
+    // the spinner overlay actually paints before we block on
+    // cytoscape() + dagre layout. Without this the browser jumps
+    // straight from the previous state into a frozen main thread and
+    // Chrome pops "page unresponsive".
+    this.graphRendering.set(true);
+    this.renderProgress.set(
+      `Building ${snap.nodes.length} nodes · ${snap.edges.length} edges…`,
+    );
+
+    setTimeout(() => this.doRender(snap, container), 30);
+  }
+
+  private doRender(snap: LinkGraphSnapshotDetail, container: HTMLElement) {
     const elements: ElementDefinition[] = [
       ...snap.nodes.map((n) => ({
         data: {
@@ -590,6 +630,14 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
       minZoom: 0.05,
       maxZoom: 2,
       wheelSensitivity: 0.2,
+      // Perf flags for large graphs. hideEdgesOnViewport + textureOnViewport
+      // trade a bit of visual quality during pan/zoom for a big FPS win
+      // on 500+ node graphs. hideLabelsOnViewport keeps labels off
+      // while the user is dragging — they snap back on release.
+      hideEdgesOnViewport: snap.nodes.length > 200,
+      textureOnViewport: snap.nodes.length > 200,
+      hideLabelsOnViewport: snap.nodes.length > 200,
+      pixelRatio: 'auto',
       style: this.buildStyle() as never,
     });
 
@@ -599,13 +647,45 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
       if (node) this.selectedNode.set(node);
     });
 
-    this.applyLayout();
+    // Yield again so cytoscape's DOM/canvas init can finish before
+    // dagre kicks off its geometry pass.
+    setTimeout(() => {
+      this.renderProgress.set('Computing layout…');
+      const layout = this.cy!.layout(this.layoutOptions());
+      layout.one('layoutstop', () => {
+        this.graphRendering.set(false);
+        this.renderProgress.set(null);
+      });
+      // Failsafe: if layout doesn't emit stop within 20s (dagre on huge
+      // graphs), clear the overlay anyway so the user isn't stuck.
+      setTimeout(() => {
+        if (this.graphRendering()) {
+          this.graphRendering.set(false);
+          this.renderProgress.set(null);
+        }
+      }, 20000);
+      layout.run();
+    }, 30);
   }
 
   private applyLayout() {
     if (!this.cy) return;
-    const opts = this.layoutOptions();
-    this.cy.layout(opts).run();
+    this.graphRendering.set(true);
+    this.renderProgress.set('Computing layout…');
+    setTimeout(() => {
+      const layout = this.cy!.layout(this.layoutOptions());
+      layout.one('layoutstop', () => {
+        this.graphRendering.set(false);
+        this.renderProgress.set(null);
+      });
+      setTimeout(() => {
+        if (this.graphRendering()) {
+          this.graphRendering.set(false);
+          this.renderProgress.set(null);
+        }
+      }, 20000);
+      layout.run();
+    }, 30);
   }
 
   private restyle() {
