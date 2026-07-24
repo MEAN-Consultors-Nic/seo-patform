@@ -119,26 +119,30 @@ const POLL_INTERVAL_MS = 3000;
             Crawl completed but found no pages. Check the client's URL and sitemap.
           </div>
         } @else {
-          <!-- Stats -->
+          <!-- Stats. Counts reflect the page-filtered set (media /
+               asset / admin URLs excluded), so historical snapshots
+               don't inflate the numbers with WordPress upload files.
+               Original totals stay on the snapshot doc for the API
+               response — we just don't surface them here. -->
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div class="stat-card">
               <span class="stat-label">Pages</span>
-              <div class="stat-value">{{ snap.totalPages }}</div>
+              <div class="stat-value">{{ filteredStats().pages }}</div>
               <div class="text-xs text-ink-500 mt-0.5">crawled</div>
             </div>
             <div class="stat-card">
               <span class="stat-label">Edges</span>
-              <div class="stat-value">{{ snap.totalEdges }}</div>
+              <div class="stat-value">{{ filteredStats().edges }}</div>
               <div class="text-xs text-ink-500 mt-0.5">internal links</div>
             </div>
             <div class="stat-card">
               <span class="stat-label">Max depth</span>
-              <div class="stat-value">{{ snap.maxDepth }}</div>
+              <div class="stat-value">{{ filteredStats().maxDepth }}</div>
               <div class="text-xs text-ink-500 mt-0.5">clicks from home</div>
             </div>
             <div class="stat-card">
               <span class="stat-label">Orphans</span>
-              <div class="stat-value text-warning-500">{{ snap.orphansCount }}</div>
+              <div class="stat-value text-warning-500">{{ filteredStats().orphans }}</div>
               <div class="text-xs text-ink-500 mt-0.5">no internal inbound</div>
             </div>
           </div>
@@ -395,17 +399,48 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
     this.snapshots().find((s) => s.status === 'completed'),
   );
 
-  sideRows = computed<RowEntry[]>(() => {
+  // Nodes that should show up in the side tables + node picker.
+  // Same media/asset filter used at render time so the tables never
+  // surface a /wp-content/uploads/*.webp as an "orphan page".
+  private pageNodes = computed<LinkGraphNode[]>(() =>
+    (this.activeSnapshot()?.nodes ?? []).filter((n) => this.isPageUrl(n.url)),
+  );
+
+  // Recomputed on the frontend so historical snapshots don't leak
+  // media/asset counts into the stats cards above the graph.
+  filteredStats = computed(() => {
     const snap = this.activeSnapshot();
-    if (!snap?.nodes) return [];
+    if (!snap) return { pages: 0, edges: 0, maxDepth: 0, orphans: 0 };
+    const nodes = this.pageNodes();
+    const urlSet = new Set(nodes.map((n) => n.url));
+    const edges = snap.edges.filter(
+      (e) => urlSet.has(e.from) && urlSet.has(e.to),
+    );
+    let maxDepth = 0;
+    let orphans = 0;
+    for (const n of nodes) {
+      if (n.depth > maxDepth) maxDepth = n.depth;
+      if (n.isOrphan) orphans++;
+    }
+    return {
+      pages: nodes.length,
+      edges: edges.length,
+      maxDepth,
+      orphans,
+    };
+  });
+
+  sideRows = computed<RowEntry[]>(() => {
+    const nodes = this.pageNodes();
+    if (!nodes.length) return [];
     const tab = this.sideTab();
     let arr: LinkGraphNode[] = [];
     if (tab === 'orphans') {
-      arr = snap.nodes.filter((n) => n.isOrphan);
+      arr = nodes.filter((n) => n.isOrphan);
     } else if (tab === 'deep') {
-      arr = snap.nodes.filter((n) => n.depth > 4);
+      arr = nodes.filter((n) => n.depth > 4);
     } else {
-      arr = [...snap.nodes]
+      arr = [...nodes]
         .sort((a, b) => b.inboundCount - a.inboundCount)
         .slice(0, 20);
     }
@@ -419,11 +454,11 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
   });
 
   sideTabCount(tab: SideTab): number {
-    const snap = this.activeSnapshot();
-    if (!snap?.nodes) return 0;
-    if (tab === 'orphans') return snap.nodes.filter((n) => n.isOrphan).length;
-    if (tab === 'deep') return snap.nodes.filter((n) => n.depth > 4).length;
-    return Math.min(20, snap.nodes.length);
+    const nodes = this.pageNodes();
+    if (!nodes.length) return 0;
+    if (tab === 'orphans') return nodes.filter((n) => n.isOrphan).length;
+    if (tab === 'deep') return nodes.filter((n) => n.depth > 4).length;
+    return Math.min(20, nodes.length);
   }
 
   ngOnChanges() {
@@ -629,6 +664,47 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
     }
   }
 
+  // Mirror of the backend's isPageUrl gate. Kept in sync so historical
+  // snapshots (which may have media/asset URLs baked in from before
+  // the crawler filter landed) still render as a page-only graph.
+  private readonly SKIP_EXTENSIONS = new Set([
+    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp',
+    '.avif', '.heic', '.heif', '.tiff',
+    '.mp4', '.mov', '.webm', '.mkv', '.avi', '.mp3', '.wav', '.ogg',
+    '.flac', '.m4a',
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.zip',
+    '.rar', '.7z', '.tar', '.gz', '.csv',
+    '.css', '.js', '.mjs', '.map', '.json', '.xml', '.txt',
+    '.woff', '.woff2', '.ttf', '.otf', '.eot',
+  ]);
+  private readonly SKIP_PATH_PREFIXES = [
+    '/wp-admin/', '/wp-login', '/wp-json/',
+    '/wp-content/uploads/', '/wp-content/plugins/', '/wp-content/themes/',
+    '/wp-includes/',
+    '/feed/', '/rss/', '/comments/feed/',
+    '/assets/', '/static/', '/cdn-cgi/',
+    '/cart', '/checkouts/',
+  ];
+
+  private isPageUrl(url: string): boolean {
+    try {
+      const u = new URL(url);
+      const path = u.pathname.toLowerCase();
+      const lastDot = path.lastIndexOf('.');
+      const lastSlash = path.lastIndexOf('/');
+      if (lastDot > lastSlash && lastDot !== -1) {
+        const ext = path.slice(lastDot);
+        if (this.SKIP_EXTENSIONS.has(ext)) return false;
+      }
+      for (const prefix of this.SKIP_PATH_PREFIXES) {
+        if (path.startsWith(prefix)) return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // --- Cytoscape rendering ----------------------------------------------
 
   private renderGraph() {
@@ -644,21 +720,37 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
     // Chrome pops "page unresponsive".
     this.graphRendering.set(true);
     const willRenderTree = this.layout() === 'hierarchical';
-    // Tree collapses to a spanning tree of ~N-1 edges; other layouts
-    // render the full raw edge count. Reflect that in the overlay so
-    // the reader knows why "10k edges" turned into "165 edges" on
-    // the Tree view.
+    // Use page-only counts in the overlay so the number the reader
+    // sees ("Building 342 nodes…") matches what actually renders,
+    // not the raw crawl count that includes media/asset URLs.
+    const stats = this.filteredStats();
     const edgeCount = willRenderTree
-      ? Math.max(0, snap.nodes.length - 1)
-      : snap.edges.length;
+      ? Math.max(0, stats.pages - 1)
+      : stats.edges;
     this.renderProgress.set(
-      `Building ${snap.nodes.length} nodes · ${edgeCount} edges…`,
+      `Building ${stats.pages} nodes · ${edgeCount} edges…`,
     );
 
     setTimeout(() => this.doRender(snap, container), 30);
   }
 
   private doRender(snap: LinkGraphSnapshotDetail, container: HTMLElement) {
+    // Frontend media/asset filter. The backend crawler now skips these
+    // at extraction time, but historical snapshots still hold nodes
+    // for /wp-content/uploads/*.webp, PDFs, etc. This second pass
+    // cleans them out at render time so the reader gets a page-only
+    // graph without needing to recrawl.
+    const pageNodes = snap.nodes.filter((n) => this.isPageUrl(n.url));
+    const pageUrlSet = new Set(pageNodes.map((n) => n.url));
+    const pageEdges = snap.edges.filter(
+      (e) => pageUrlSet.has(e.from) && pageUrlSet.has(e.to),
+    );
+    const filteredSnap = {
+      ...snap,
+      nodes: pageNodes,
+      edges: pageEdges,
+    } as LinkGraphSnapshotDetail;
+
     // Tree layouts choke when a site's nav/footer forms an all-to-all
     // subgraph (166 pages × avg 66 outbound = ~11k edges dagre has to
     // route). For Tree mode we collapse to a BFS spanning tree — each
@@ -668,11 +760,11 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
     // their layouts don't route per-edge.
     const isTree = this.layout() === 'hierarchical';
     const renderEdges = isTree
-      ? this.spanningTreeEdges(snap)
-      : snap.edges;
+      ? this.spanningTreeEdges(filteredSnap)
+      : filteredSnap.edges;
 
     const elements: ElementDefinition[] = [
-      ...snap.nodes.map((n) => ({
+      ...filteredSnap.nodes.map((n) => ({
         data: {
           id: n.url,
           // Label prefers the page title (like SF does), falls back to
@@ -706,16 +798,16 @@ export class ClientLinkGraphTab implements OnChanges, AfterViewInit, OnDestroy {
       // trade a bit of visual quality during pan/zoom for a big FPS win
       // on 500+ node graphs. hideLabelsOnViewport keeps labels off
       // while the user is dragging — they snap back on release.
-      hideEdgesOnViewport: snap.nodes.length > 200,
-      textureOnViewport: snap.nodes.length > 200,
-      hideLabelsOnViewport: snap.nodes.length > 200,
+      hideEdgesOnViewport: filteredSnap.nodes.length > 200,
+      textureOnViewport: filteredSnap.nodes.length > 200,
+      hideLabelsOnViewport: filteredSnap.nodes.length > 200,
       pixelRatio: 'auto',
       style: this.buildStyle() as never,
     });
 
     this.cy.on('tap', 'node', (evt) => {
       const url = evt.target.id() as string;
-      const node = snap.nodes.find((n) => n.url === url);
+      const node = filteredSnap.nodes.find((n) => n.url === url);
       if (node) this.selectedNode.set(node);
     });
 
