@@ -264,8 +264,8 @@ Chart.register(...registerables);
                     }
                   </td>
                   <td class="text-right">
-                    <div class="font-bold text-positive-500 text-sm">▲ {{ m.delta }}</div>
-                    <div class="text-xs text-ink-500">→ pos {{ m.keyword.currentPosition }}</div>
+                    <div class="font-bold text-positive-500 text-sm">▲ {{ m.delta | number: '1.0-2' }}</div>
+                    <div class="text-xs text-ink-500">→ pos {{ m.keyword.currentPosition | number: '1.0-2' }}</div>
                   </td>
                 </tr>
               }
@@ -293,8 +293,8 @@ Chart.register(...registerables);
                     }
                   </td>
                   <td class="text-right">
-                    <div class="font-bold text-danger-500 text-sm">▼ {{ Math.abs(m.delta) }}</div>
-                    <div class="text-xs text-ink-500">→ pos {{ m.keyword.currentPosition }}</div>
+                    <div class="font-bold text-danger-500 text-sm">▼ {{ Math.abs(m.delta) | number: '1.0-2' }}</div>
+                    <div class="text-xs text-ink-500">→ pos {{ m.keyword.currentPosition | number: '1.0-2' }}</div>
                   </td>
                 </tr>
               }
@@ -326,7 +326,7 @@ Chart.register(...registerables);
               <tr (click)="openDetail(v.keyword)" class="cursor-pointer">
                 <td>
                   <div class="font-medium text-ink-900">{{ v.keyword.text }}</div>
-                  <div class="text-xs text-ink-500">→ pos {{ v.keyword.currentPosition }}</div>
+                  <div class="text-xs text-ink-500">→ pos {{ v.keyword.currentPosition | number: '1.0-2' }}</div>
                 </td>
                 <td class="text-center">
                   <span class="badge-warning">{{ v.uniqueUrls }}</span>
