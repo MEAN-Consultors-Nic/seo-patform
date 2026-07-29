@@ -21,6 +21,14 @@ export class KeywordRanking {
   @Prop()
   location?: string;
 
+  /**
+   * ISO 3166-1 alpha-3 lowercase (e.g. 'usa'). Set when the snapshot
+   * was filtered to a specific country via GSC's country dimension.
+   * Unset on legacy rows — those represent worldwide averages.
+   */
+  @Prop({ index: true })
+  country?: string;
+
   @Prop()
   notes?: string;
 
@@ -30,3 +38,7 @@ export class KeywordRanking {
 
 export const KeywordRankingSchema = SchemaFactory.createForClass(KeywordRanking);
 KeywordRankingSchema.index({ keywordId: 1, recordedAt: -1 });
+// Compound index for the "movers / history in country X" hot path —
+// the aggregations in KeywordsService.positionHistory + positionMovers
+// filter on (keywordId, country, recordedAt) together.
+KeywordRankingSchema.index({ keywordId: 1, country: 1, recordedAt: -1 });

@@ -263,6 +263,14 @@ export class Client {
   @Prop()
   gscSiteUrl?: string;
 
+  /**
+   * ISO 3166-1 alpha-3 lowercase (e.g. 'usa'). Filters the daily GSC
+   * position snapshot to this country only. Unset = worldwide (legacy
+   * behavior). Editable from the Position Tracker tab.
+   */
+  @Prop()
+  positionTrackingCountry?: string;
+
   @Prop({ default: false })
   isEcommerce?: boolean;
 

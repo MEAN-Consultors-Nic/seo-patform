@@ -318,7 +318,7 @@ const GROUPS: GroupDef[] = [
             <app-client-keywords-tab [clientId]="c._id!" />
           }
           @case ('positions') {
-            <app-client-position-tracker-tab [clientId]="c._id!" />
+            <app-client-position-tracker-tab [clientId]="c._id!" [client]="c" (changed)="reload()" />
           }
           @case ('competitors') {
             <app-client-competitors-tab [clientId]="c._id!" />

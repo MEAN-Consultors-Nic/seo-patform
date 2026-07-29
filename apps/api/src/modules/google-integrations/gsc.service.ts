@@ -252,10 +252,29 @@ export class GscService {
     startDate: string,
     endDate: string,
     query: string,
+    country?: string,
   ): Promise<GscTopRow | null> {
     if (!siteUrl) throw new BadRequestException('Missing siteUrl');
     const auth = await this.oauth.getAuthorizedClient(userId);
     const sc = google.searchconsole({ version: 'v1', auth });
+    const filters = [
+      {
+        dimension: 'query',
+        operator: 'equals',
+        expression: query,
+      },
+    ];
+    // GSC's country dimension is ISO 3166-1 alpha-3 lowercase (usa,
+    // mex, gbr…). Adding this filter restricts the aggregated
+    // position/impressions/clicks to searches from that country. It's
+    // the finest geo granularity GSC exposes — no city/state.
+    if (country) {
+      filters.push({
+        dimension: 'country',
+        operator: 'equals',
+        expression: country.toLowerCase(),
+      });
+    }
     const res = await sc.searchanalytics.query({
       siteUrl,
       requestBody: {
@@ -263,17 +282,7 @@ export class GscService {
         endDate,
         dimensions: ['query'],
         rowLimit: 1,
-        dimensionFilterGroups: [
-          {
-            filters: [
-              {
-                dimension: 'query',
-                operator: 'equals',
-                expression: query,
-              },
-            ],
-          },
-        ],
+        dimensionFilterGroups: [{ filters }],
       },
     });
     const r = res.data.rows?.[0];

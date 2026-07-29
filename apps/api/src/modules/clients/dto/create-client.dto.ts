@@ -132,6 +132,8 @@ export class CreateClientDto {
   @IsOptional() @IsString() googleSheetId?: string;
   @IsOptional() @IsString() ga4PropertyId?: string;
   @IsOptional() @IsString() gscSiteUrl?: string;
+  /** ISO 3166-1 alpha-3 lowercase; scopes GSC position snapshots. */
+  @IsOptional() @IsString() positionTrackingCountry?: string;
   @IsOptional() @IsBoolean() isEcommerce?: boolean;
   @IsOptional() @IsString() merchantCenterId?: string;
   @IsOptional() @IsString() gbpAccountName?: string;

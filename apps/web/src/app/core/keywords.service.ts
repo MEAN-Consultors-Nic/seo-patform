@@ -132,6 +132,7 @@ export class KeywordsService {
     from: string,
     to: string,
     keywordId?: string,
+    country?: string,
   ): Observable<
     Array<{
       keywordId: string;
@@ -141,6 +142,7 @@ export class KeywordsService {
   > {
     const qs = new URLSearchParams({ from, to });
     if (keywordId) qs.set('keywordId', keywordId);
+    if (country) qs.set('country', country);
     return this.http.get<
       Array<{
         keywordId: string;
@@ -156,6 +158,7 @@ export class KeywordsService {
   positionMovers(
     clientId: string,
     days = 7,
+    country?: string,
   ): Observable<{
     gainers: Array<{
       keywordId: string;
@@ -173,6 +176,8 @@ export class KeywordsService {
     }>;
     windowDays: number;
   }> {
+    const qs = new URLSearchParams({ days: String(days) });
+    if (country) qs.set('country', country);
     return this.http.get<{
       gainers: Array<{
         keywordId: string;
@@ -189,7 +194,7 @@ export class KeywordsService {
         change: number;
       }>;
       windowDays: number;
-    }>(`${this.base}/keywords/position-movers/${clientId}?days=${days}`);
+    }>(`${this.base}/keywords/position-movers/${clientId}?${qs.toString()}`);
   }
 
   /**

@@ -3,8 +3,11 @@ import {
   AfterViewInit,
   Component,
   ElementRef,
+  EventEmitter,
+  HostListener,
   Input,
   OnChanges,
+  Output,
   ViewChild,
   computed,
   inject,
@@ -14,8 +17,10 @@ import { FormsModule } from '@angular/forms';
 import { Chart, registerables } from 'chart.js';
 import { NgApexchartsModule } from 'ng-apexcharts';
 import type { ApexOptions } from 'ng-apexcharts';
-import { Keyword, KeywordMovement, KeywordRanking } from '@seo/shared';
+import { Client, Keyword, KeywordMovement, KeywordRanking } from '@seo/shared';
 import { KeywordsService } from '../../../core/keywords.service';
+import { ClientsService } from '../../../core/clients.service';
+import { countryDisplayName } from '../../../shared/country-names';
 
 type HistoryRange = '7d' | '28d' | '90d';
 
@@ -42,6 +47,23 @@ interface Movements {
 
 Chart.register(...registerables);
 
+/**
+ * Short list of the countries most clients care about, surfaced as
+ * quick pills in the country picker. Full ISO list still available in
+ * the dropdown, but 90% of picks land in this handful.
+ * ISO 3166-1 alpha-3 lowercase — the same format GSC uses.
+ */
+const COUNTRY_PRESETS: string[] = [
+  'usa',
+  'mex',
+  'can',
+  'gbr',
+  'aus',
+  'esp',
+  'bra',
+  'arg',
+];
+
 @Component({
   selector: 'app-client-position-tracker-tab',
   standalone: true,
@@ -64,6 +86,49 @@ Chart.register(...registerables);
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
+            <!-- Country filter. Persists on the client so tomorrow's
+                 4am cron uses this geo filter too. Historical rows
+                 stay filtered by whatever country tag they carry;
+                 legacy untagged rows live under "Worldwide (legacy)". -->
+            <div class="relative" data-country-dropdown>
+              <button type="button"
+                      class="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold rounded border border-ink-200 bg-white hover:bg-ink-50"
+                      [disabled]="savingCountry()"
+                      (click)="toggleCountryDropdown()"
+                      title="Filter the chart + movers to a country. Also persists on the client so the daily GSC snapshot uses it.">
+                🌎 {{ savingCountry() ? 'Saving…' : countryLabel(country()) }}
+                <span class="text-ink-400">▾</span>
+              </button>
+              @if (countryDropdownOpen()) {
+                <div class="absolute right-0 mt-1 z-30 w-56 rounded-md border border-ink-200 bg-white shadow-elevated py-1 max-h-72 overflow-y-auto"
+                     data-country-dropdown>
+                  <button type="button"
+                          class="w-full text-left px-3 py-1.5 text-xs hover:bg-ink-50"
+                          [class.font-semibold]="!country()"
+                          (click)="setCountry(undefined)">
+                    All countries
+                    <span class="block text-[10px] text-ink-400">Show every snapshot regardless of geo tag.</span>
+                  </button>
+                  <button type="button"
+                          class="w-full text-left px-3 py-1.5 text-xs hover:bg-ink-50"
+                          [class.font-semibold]="country() === 'worldwide'"
+                          (click)="setCountry('worldwide')">
+                    Worldwide (legacy)
+                    <span class="block text-[10px] text-ink-400">Snapshots taken before geo tagging.</span>
+                  </button>
+                  <div class="border-t border-ink-100 my-1"></div>
+                  @for (code of countryPresets; track code) {
+                    <button type="button"
+                            class="w-full text-left px-3 py-1.5 text-xs hover:bg-ink-50"
+                            [class.font-semibold]="country() === code"
+                            (click)="setCountry(code)">
+                      {{ countryLabel(code) }}
+                      <span class="text-ink-400 uppercase ml-1">({{ code }})</span>
+                    </button>
+                  }
+                </div>
+              }
+            </div>
             <div class="inline-flex rounded-md border border-ink-200 p-0.5 bg-white">
               @for (r of historyRanges; track r.key) {
                 <button type="button"
@@ -429,10 +494,31 @@ Chart.register(...registerables);
 })
 export class ClientPositionTrackerTab implements OnChanges, AfterViewInit {
   @Input({ required: true }) clientId!: string;
+  @Input() client?: Client | null;
+  @Output() changed = new EventEmitter<void>();
   @ViewChild('chartCanvas') canvasRef?: ElementRef<HTMLCanvasElement>;
 
   private svc = inject(KeywordsService);
+  private clientsSvc = inject(ClientsService);
   private chart?: Chart;
+
+  /**
+   * Country filter driving the history + movers panels. Mirrors the
+   * client's `positionTrackingCountry` on load — changing it via the
+   * picker PATCHes the client so future cron snapshots use the new
+   * filter too. 'worldwide' is a sentinel meaning "show legacy
+   * untagged rows only" — separate bucket from a real country.
+   */
+  country = signal<string | undefined>(undefined);
+  countryDropdownOpen = signal(false);
+  savingCountry = signal(false);
+  readonly countryPresets = COUNTRY_PRESETS;
+  countryLabel = (code?: string) =>
+    !code
+      ? 'All countries'
+      : code === 'worldwide'
+        ? 'Worldwide (legacy)'
+        : countryDisplayName(code);
 
   keywords = signal<Keyword[]>([]);
   movements = signal<Movements | null>(null);
@@ -469,7 +555,65 @@ export class ClientPositionTrackerTab implements OnChanges, AfterViewInit {
   };
 
   ngOnChanges() {
+    // Sync the picker to the client's saved country whenever the
+    // parent hands us a fresh client doc. Undefined stays undefined
+    // (i.e. "show all countries" as the default view).
+    this.country.set(this.client?.positionTrackingCountry || undefined);
     this.load();
+  }
+
+  /**
+   * Persist the new tracking country on the client (so tomorrow's
+   * cron snapshot uses it), then refetch history + movers with the
+   * new geo filter. Emits `changed` so the parent's client signal
+   * updates and any other tab sees the same value.
+   */
+  setCountry(code: string | undefined) {
+    this.countryDropdownOpen.set(false);
+    const clientId = this.client?._id;
+    if (!clientId) {
+      // No client doc — just update the local view filter.
+      this.country.set(code);
+      this.loadHistoryPanel();
+      return;
+    }
+    // 'worldwide' is a view-only sentinel — never persist it as a
+    // real country. Persist undefined so the client goes back to
+    // "no geo filter" for future cron runs.
+    const persistValue = code === 'worldwide' ? undefined : code;
+    this.savingCountry.set(true);
+    this.clientsSvc
+      .update(clientId, { positionTrackingCountry: persistValue })
+      .subscribe({
+        next: () => {
+          this.savingCountry.set(false);
+          this.country.set(code);
+          this.changed.emit();
+          this.loadHistoryPanel();
+        },
+        error: () => {
+          this.savingCountry.set(false);
+          // Rollback: keep the previous filter, don't apply the
+          // change if the server rejected it.
+        },
+      });
+  }
+
+  toggleCountryDropdown() {
+    this.countryDropdownOpen.set(!this.countryDropdownOpen());
+  }
+
+  /**
+   * Close the country dropdown when the user clicks anywhere else on
+   * the page. Skips events whose target is inside the dropdown /
+   * trigger, since those already handle themselves via (click).
+   */
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(ev: MouseEvent) {
+    if (!this.countryDropdownOpen()) return;
+    const target = ev.target as HTMLElement | null;
+    if (target?.closest('[data-country-dropdown]')) return;
+    this.countryDropdownOpen.set(false);
   }
 
   ngAfterViewInit() {
@@ -492,7 +636,15 @@ export class ClientPositionTrackerTab implements OnChanges, AfterViewInit {
     const toIso = this.iso(to);
 
     this.historyLoading.set(true);
-    this.svc.positionHistory(this.clientId, fromIso, toIso).subscribe({
+    this.svc
+      .positionHistory(
+        this.clientId,
+        fromIso,
+        toIso,
+        undefined,
+        this.country(),
+      )
+      .subscribe({
       next: (list) => {
         // Sort by number of datapoints desc so the most-tracked
         // keywords sit at the top of the picker.
@@ -517,7 +669,7 @@ export class ClientPositionTrackerTab implements OnChanges, AfterViewInit {
     });
 
     this.moversLoading.set(true);
-    this.svc.positionMovers(this.clientId, days).subscribe({
+    this.svc.positionMovers(this.clientId, days, this.country()).subscribe({
       next: (m) => {
         this.movers.set(m);
         this.moversLoading.set(false);

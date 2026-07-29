@@ -778,6 +778,14 @@ export interface Client {
   googleSheetId?: string;
   ga4PropertyId?: string;
   gscSiteUrl?: string;
+  /**
+   * ISO 3166-1 alpha-3 lowercase (e.g. 'usa', 'mex', 'gbr'). When set,
+   * the daily GSC snapshot cron filters the position query to this
+   * country only — so a local business in Denver stops averaging in
+   * accidental impressions from India. When unset, snapshots stay
+   * worldwide (the legacy behavior).
+   */
+  positionTrackingCountry?: string;
   isEcommerce?: boolean;
   merchantCenterId?: string;
   /** Full GBP account resource name, e.g. `accounts/12345`. */
@@ -936,6 +944,12 @@ export interface KeywordRanking {
   rankingUrl?: string;
   device?: RankingDevice;
   location?: string;
+  /**
+   * ISO 3166-1 alpha-3 lowercase of the country the snapshot was
+   * filtered to (e.g. 'usa'). Undefined on legacy rows that pre-date
+   * geo tagging — those represent worldwide averages.
+   */
+  country?: string;
   notes?: string;
   recordedAt: Date;
 }

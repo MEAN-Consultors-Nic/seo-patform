@@ -67,7 +67,7 @@ export class KeywordsService {
     const clients = await this.clientModel
       .find(
         { active: { $ne: false }, gscSiteUrl: { $exists: true, $ne: '' } },
-        { _id: 1, gscSiteUrl: 1, ownerId: 1 },
+        { _id: 1, gscSiteUrl: 1, ownerId: 1, positionTrackingCountry: 1 },
       )
       .lean()
       .exec();
@@ -472,6 +472,7 @@ export class KeywordsService {
     failed: number;
     totalProcessed: number;
     range: { from: string; to: string };
+    country?: string;
     warnings: string[];
   }> {
     const client = await this.clients.findOne(clientId, user);
@@ -485,6 +486,14 @@ export class KeywordsService {
     const keywords = await this.keywordModel
       .find({ clientId: clientObjId })
       .exec();
+
+    // Client-configured geo filter, normalized to alpha-3 lowercase.
+    // Undefined means "worldwide" (legacy behavior).
+    const country = (
+      client as unknown as { positionTrackingCountry?: string }
+    ).positionTrackingCountry
+      ?.toLowerCase()
+      ?.trim() || undefined;
 
     const warnings: string[] = [];
     const now = new Date();
@@ -506,6 +515,7 @@ export class KeywordsService {
               opts.from,
               opts.to,
               kw.text,
+              country,
             );
             if (!row) {
               kw.set({
@@ -549,12 +559,16 @@ export class KeywordsService {
             // Persist a historical snapshot so the Position Tracker
             // has a real time-series to chart. Only when we actually
             // have a position — otherwise the row would just noise
-            // up the "no position" state.
+            // up the "no position" state. Tag the snapshot with the
+            // country filter used for the pull so the tracker can
+            // segment historical rows by geo without polluting
+            // buckets.
             if (typeof position === 'number') {
               await this.rankingModel.create({
                 keywordId: kw._id,
                 position,
                 device: 'desktop',
+                country,
                 recordedAt: now,
               });
             }
@@ -573,6 +587,7 @@ export class KeywordsService {
       failed,
       totalProcessed: keywords.length,
       range: { from: opts.from, to: opts.to },
+      country,
       warnings,
     };
   }
@@ -601,6 +616,13 @@ export class KeywordsService {
       to: string;
       keywordId?: string;
       limit?: number;
+      /**
+       * ISO alpha-3 lowercase; when provided, restricts snapshots to
+       * that country only. Sentinel value 'worldwide' explicitly
+       * targets legacy untagged rows (country field missing). When
+       * unset, no geo filter is applied.
+       */
+      country?: string;
     },
   ): Promise<
     Array<{
@@ -628,13 +650,20 @@ export class KeywordsService {
     // truncated recordedAt so multiple snapshots in the same day
     // collapse to one point (average). Positions past `limit` for a
     // single keyword are dropped to keep the payload tight.
+    const match: Record<string, unknown> = {
+      keywordId: { $in: kwIds },
+      recordedAt: { $gte: fromDate, $lte: toDate },
+    };
+    if (opts.country === 'worldwide') {
+      // Explicit worldwide/legacy bucket — rows without a country tag.
+      match.country = { $in: [null, undefined] };
+    } else if (opts.country) {
+      match.country = opts.country.toLowerCase();
+    }
     const raw = await this.rankingModel
       .aggregate([
         {
-          $match: {
-            keywordId: { $in: kwIds },
-            recordedAt: { $gte: fromDate, $lte: toDate },
-          },
+          $match: match,
         },
         {
           $group: {
@@ -689,6 +718,8 @@ export class KeywordsService {
     user: AuthenticatedUser,
     days = 7,
     limit = 10,
+    /** ISO alpha-3 country filter; 'worldwide' targets legacy untagged rows. */
+    country?: string,
   ): Promise<{
     gainers: Array<{
       keywordId: string;
@@ -722,13 +753,19 @@ export class KeywordsService {
 
     // For each keyword, find the earliest and latest ranking within
     // the window in a single aggregation pass.
+    const moversMatch: Record<string, unknown> = {
+      keywordId: { $in: kwIds },
+      recordedAt: { $gte: windowStart, $lte: now },
+    };
+    if (country === 'worldwide') {
+      moversMatch.country = { $in: [null, undefined] };
+    } else if (country) {
+      moversMatch.country = country.toLowerCase();
+    }
     const raw = (await this.rankingModel
       .aggregate([
         {
-          $match: {
-            keywordId: { $in: kwIds },
-            recordedAt: { $gte: windowStart, $lte: now },
-          },
+          $match: moversMatch,
         },
         { $sort: { keywordId: 1, recordedAt: 1 } },
         {
@@ -789,6 +826,7 @@ export class KeywordsService {
     failed: number;
     totalProcessed: number;
     range: { from: string; to: string };
+    country?: string;
     warnings: string[];
   }> {
     const to = new Date();

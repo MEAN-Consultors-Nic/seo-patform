@@ -151,12 +151,14 @@ export class KeywordsController {
     @Query('from') from: string,
     @Query('to') to: string,
     @Query('keywordId') keywordId: string | undefined,
+    @Query('country') country: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.keywords.positionHistory(clientId, user, {
       from,
       to,
       keywordId: keywordId || undefined,
+      country: country || undefined,
     });
   }
 
@@ -168,10 +170,17 @@ export class KeywordsController {
   async positionMovers(
     @Param('clientId') clientId: string,
     @Query('days') daysRaw: string | undefined,
+    @Query('country') country: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     const days = daysRaw ? Math.max(1, Math.min(90, Number(daysRaw))) : 7;
-    return this.keywords.positionMovers(clientId, user, days);
+    return this.keywords.positionMovers(
+      clientId,
+      user,
+      days,
+      undefined,
+      country || undefined,
+    );
   }
 
   /**
