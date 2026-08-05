@@ -15,7 +15,9 @@ import { FormsModule } from '@angular/forms';
 import { Client, ClientNote, ClientNoteAttachment } from '@seo/shared';
 import { ClientsService } from '../../../core/clients.service';
 import { CloudinaryService } from '../../../core/cloudinary.service';
+import { SanitizerService } from '../../../core/sanitizer.service';
 import { FileDropDirective } from '../../../shared/file-drop.directive';
+import { RichTextEditorComponent } from '../../../shared/rich-text-editor.component';
 
 /**
  * Notes tab — multiple free-text notes per client, each with its own
@@ -30,7 +32,13 @@ import { FileDropDirective } from '../../../shared/file-drop.directive';
 @Component({
   selector: 'app-client-notes-tab',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, FileDropDirective],
+  imports: [
+    CommonModule,
+    FormsModule,
+    DatePipe,
+    FileDropDirective,
+    RichTextEditorComponent,
+  ],
   template: `
     <div class="space-y-4">
       <!-- Hidden file input reused for every attach-file button on the
@@ -51,11 +59,10 @@ import { FileDropDirective } from '../../../shared/file-drop.directive';
           </div>
         </div>
 
-        <textarea
-          class="input w-full min-h-[100px] resize-y"
+        <app-rich-text-editor
+          [(value)]="composeText"
           placeholder="Write a note…"
-          [(ngModel)]="composeText"
-          [disabled]="saving()"></textarea>
+          [styles]="{ minHeight: '140px' }"></app-rich-text-editor>
         <div class="flex items-center justify-between">
           <div class="text-[11px] text-ink-500">
             Tip: create the note first, then drop files onto its card
@@ -64,7 +71,7 @@ import { FileDropDirective } from '../../../shared/file-drop.directive';
           <button
             type="button"
             class="btn-primary text-sm"
-            [disabled]="saving() || !composeText.trim()"
+            [disabled]="saving() || !hasVisibleCompose()"
             (click)="save()">
             {{ saving() ? 'Saving…' : '＋ Add note' }}
           </button>
@@ -131,11 +138,19 @@ import { FileDropDirective } from '../../../shared/file-drop.directive';
             </div>
 
             @if (editingId() === note._id) {
-              <textarea
-                class="input w-full min-h-[100px] resize-y"
-                [(ngModel)]="editingText"
-                [disabled]="saving()"></textarea>
+              <app-rich-text-editor
+                [(value)]="editingText"
+                placeholder="Update the note…"
+                [styles]="{ minHeight: '140px' }"></app-rich-text-editor>
+            } @else if (looksLikeHtml(note.content)) {
+              <!-- Post-rich-text: sanitize + render as HTML so lists,
+                   links, and formatting come through. -->
+              <div class="rich-content text-sm text-ink-900 leading-relaxed"
+                   [innerHTML]="sanitize(note.content)"></div>
             } @else {
+              <!-- Pre-rich-text notes are plain text without <br>
+                   markup; keep whitespace-pre-wrap so line breaks
+                   don't collapse. -->
               <div class="text-sm text-ink-900 whitespace-pre-wrap break-words">{{ note.content }}</div>
             }
 
@@ -188,13 +203,16 @@ export class ClientNotesTabComponent implements OnChanges {
   @ViewChild('fileInput') fileInput?: ElementRef<HTMLInputElement>;
 
   private svc = inject(ClientsService);
+  private sanitizer = inject(SanitizerService);
   cloudinary = inject(CloudinaryService);
 
-  composeText = '';
+  // Signal-based so `[(value)]` two-way binding on <app-rich-text-editor>
+  // can write through directly — its `value` input is a model() signal.
+  composeText = signal<string | undefined>('');
   saving = signal(false);
 
   editingId = signal<string | null>(null);
-  editingText = '';
+  editingText = signal<string | undefined>('');
 
   attachingNoteId = signal<string | null>(null);
   attachProgress = signal(0);
@@ -224,13 +242,16 @@ export class ClientNotesTabComponent implements OnChanges {
   }
 
   save() {
-    const text = this.composeText.trim();
-    if (!text) return;
+    const html = (this.composeText() || '').trim();
+    // Empty <p></p> and other whitespace-only Quill output shouldn't
+    // count as a real note — SanitizerService knows how to strip
+    // tags for the visibility check.
+    if (!this.sanitizer.hasVisibleContent(html)) return;
     this.saving.set(true);
-    this.svc.addNote(this.clientId, text).subscribe({
+    this.svc.addNote(this.clientId, html).subscribe({
       next: (client) => {
         this.saving.set(false);
-        this.composeText = '';
+        this.composeText.set('');
         this.applyClient(client);
         this.flashToast('success', 'Note added.');
       },
@@ -248,24 +269,24 @@ export class ClientNotesTabComponent implements OnChanges {
   startEdit(n: ClientNote) {
     if (!n._id) return;
     this.editingId.set(n._id);
-    this.editingText = n.content;
+    this.editingText.set(n.content);
   }
 
   cancelEdit() {
     this.editingId.set(null);
-    this.editingText = '';
+    this.editingText.set('');
   }
 
   commitEdit(n: ClientNote) {
     if (!n._id) return;
-    const text = this.editingText.trim();
-    if (!text) return;
+    const html = (this.editingText() || '').trim();
+    if (!this.sanitizer.hasVisibleContent(html)) return;
     this.saving.set(true);
-    this.svc.updateNote(this.clientId, n._id, text).subscribe({
+    this.svc.updateNote(this.clientId, n._id, html).subscribe({
       next: (client) => {
         this.saving.set(false);
         this.editingId.set(null);
-        this.editingText = '';
+        this.editingText.set('');
         this.applyClient(client);
       },
       error: (err) => {
@@ -277,6 +298,29 @@ export class ClientNotesTabComponent implements OnChanges {
         );
       },
     });
+  }
+
+  /**
+   * Compose Save-button gate. Quill always emits *some* HTML even
+   * when the field looks empty (`<p><br></p>`), so plain
+   * length checks don't cut it.
+   */
+  hasVisibleCompose(): boolean {
+    return this.sanitizer.hasVisibleContent(this.composeText());
+  }
+
+  /**
+   * Cheap check: does the stored content include any HTML tag? If
+   * yes, render via sanitized [innerHTML]; if no, it's a plain-text
+   * legacy note and stays under whitespace-pre-wrap. Cheaper than a
+   * full parse and stable for the shapes Quill emits.
+   */
+  looksLikeHtml(content: string | undefined | null): boolean {
+    return /<[a-z][\s\S]*>/i.test(content || '');
+  }
+
+  sanitize(html: string | undefined | null) {
+    return this.sanitizer.trustRichHtml(html);
   }
 
   remove(n: ClientNote) {
