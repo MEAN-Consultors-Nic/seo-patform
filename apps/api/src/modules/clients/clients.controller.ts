@@ -150,4 +150,65 @@ export class ClientsController {
   ) {
     return this.clients.removeAttachment(id, publicId, user);
   }
+
+  // --- Notes ----------------------------------------------------------
+
+  @Post(':id/notes')
+  addNote(
+    @Param('id') id: string,
+    @Body() body: { content: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.clients.addNote(id, body?.content, user);
+  }
+
+  @Patch(':id/notes/:noteId')
+  updateNote(
+    @Param('id') id: string,
+    @Param('noteId') noteId: string,
+    @Body() body: { content: string },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.clients.updateNote(id, noteId, body?.content, user);
+  }
+
+  @Delete(':id/notes/:noteId')
+  removeNote(
+    @Param('id') id: string,
+    @Param('noteId') noteId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.clients.removeNote(id, noteId, user);
+  }
+
+  @Post(':id/notes/:noteId/attachments')
+  addNoteAttachment(
+    @Param('id') id: string,
+    @Param('noteId') noteId: string,
+    @Body()
+    body: {
+      publicId: string;
+      url: string;
+      thumbnailUrl?: string;
+      format?: string;
+      width?: number;
+      height?: number;
+      bytes?: number;
+      resourceType?: 'image' | 'raw' | 'video';
+      originalFilename?: string;
+    },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.clients.addNoteAttachment(id, noteId, body, user);
+  }
+
+  @Delete(':id/notes/:noteId/attachments/:publicId')
+  removeNoteAttachment(
+    @Param('id') id: string,
+    @Param('noteId') noteId: string,
+    @Param('publicId') publicId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.clients.removeNoteAttachment(id, noteId, publicId, user);
+  }
 }

@@ -16,6 +16,7 @@ import { ClientKeywordsTab } from './tabs/keywords-tab.component';
 import { ClientKpiHistoryTab } from './tabs/kpi-history-tab.component';
 import { ClientKnowledgeTab } from './tabs/knowledge-tab.component';
 import { ClientFilesTabComponent } from './tabs/files-tab.component';
+import { ClientNotesTabComponent } from './tabs/notes-tab.component';
 import { ClientLinkGraphTab } from './tabs/link-graph-tab.component';
 import { ClientContactsTab } from './tabs/contacts-tab.component';
 import { ClientCompetitorsTab } from './tabs/competitors-tab.component';
@@ -44,6 +45,7 @@ import { SchemaModelerButtonComponent } from './schema-modeler-button.component'
 
 type TabKey =
   | 'overview'
+  | 'notes'
   | 'access'
   | 'contacts'
   | 'knowledge'
@@ -109,6 +111,7 @@ const GROUPS: GroupDef[] = [
     ClientKpiHistoryTab,
     ClientKnowledgeTab,
     ClientFilesTabComponent,
+    ClientNotesTabComponent,
     ClientLinkGraphTab,
     ClientContactsTab,
     ClientCompetitorsTab,
@@ -284,6 +287,12 @@ const GROUPS: GroupDef[] = [
               [client]="c"
               (jumpToTab)="selectTab($any($event))" />
           }
+          @case ('notes') {
+            <app-client-notes-tab
+              [clientId]="c._id!"
+              [notes]="(c.notes ?? [])"
+              (changed)="reload()" />
+          }
           @case ('ppc-campaigns') {
             <app-client-ppc-campaigns-tab />
           }
@@ -406,6 +415,10 @@ export class ClientDetailComponent implements OnInit {
   allTabs = computed<TabDef[]>(() => {
     const tabs: TabDef[] = [
       { key: 'overview', label: 'Overview', group: 'overview' },
+      // Notes sits right after Overview so day-to-day activity (call
+      // recaps, decisions, open questions) is always one click away
+      // regardless of which service group is active.
+      { key: 'notes', label: 'Notes', group: 'overview' },
 
       { key: 'onboarding', label: 'Onboarding', group: 'work' },
       { key: 'tasks', label: 'Tasks', group: 'work' },

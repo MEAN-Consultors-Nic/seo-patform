@@ -828,6 +828,12 @@ export interface Client {
    */
   attachments?: ClientAttachment[];
   /**
+   * Free-text notes attached to the client (log entries, meeting
+   * recaps, decisions). Multiple entries per client, each with its
+   * own optional attachments. Ordered newest-first by convention.
+   */
+  notes?: ClientNote[];
+  /**
    * Agency-side classifier: what services WE provide to this client.
    * Powers the Clients page filter pills (PPC / SEO / PPC+SEO /
    * Website), the At-risk + Expansion tabs (multi-service), and the
@@ -1027,6 +1033,38 @@ export interface ClientAttachment {
    *  whatever the user wants. Optional. */
   label?: string;
   uploadedAt: Date;
+}
+
+/**
+ * A note attached to a client — free-text log entry the strategist
+ * can drop with any level of formality. Same attachment shape as
+ * ClientAttachment so we reuse the upload plumbing; there's no
+ * label since attachments here live inside a note that's already
+ * providing context.
+ */
+export interface ClientNoteAttachment {
+  publicId: string;
+  url: string;
+  thumbnailUrl?: string;
+  format?: string;
+  width?: number;
+  height?: number;
+  bytes?: number;
+  resourceType?: 'image' | 'raw' | 'video';
+  originalFilename?: string;
+  uploadedAt: Date | string;
+}
+
+export interface ClientNote {
+  _id?: string;
+  /** Free-text body. Plain text — line breaks preserved by the UI. */
+  content: string;
+  attachments?: ClientNoteAttachment[];
+  /** User who wrote the note. Optional for legacy rows / system entries. */
+  authorId?: string;
+  authorName?: string;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
 }
 
 export interface ContentAttachment {

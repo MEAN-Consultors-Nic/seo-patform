@@ -5,6 +5,7 @@ import {
   Client,
   ClientAttachment,
   ClientHealthStatus,
+  ClientNoteAttachment,
   ClientRosterStats,
   ClientSubscription,
   ClientTier,
@@ -113,6 +114,45 @@ export class ClientsService {
   removeAttachment(clientId: string, publicId: string) {
     return this.http.delete<{ deleted: true }>(
       `${this.base}/clients/${clientId}/attachments/${encodeURIComponent(publicId)}`,
+    );
+  }
+
+  // --- Notes ---------------------------------------------------------
+
+  addNote(clientId: string, content: string): Observable<Client> {
+    return this.http.post<Client>(
+      `${this.base}/clients/${clientId}/notes`,
+      { content },
+    );
+  }
+
+  updateNote(clientId: string, noteId: string, content: string): Observable<Client> {
+    return this.http.patch<Client>(
+      `${this.base}/clients/${clientId}/notes/${noteId}`,
+      { content },
+    );
+  }
+
+  removeNote(clientId: string, noteId: string) {
+    return this.http.delete<{ deleted: true }>(
+      `${this.base}/clients/${clientId}/notes/${noteId}`,
+    );
+  }
+
+  addNoteAttachment(
+    clientId: string,
+    noteId: string,
+    attachment: Partial<ClientNoteAttachment>,
+  ): Observable<Client> {
+    return this.http.post<Client>(
+      `${this.base}/clients/${clientId}/notes/${noteId}/attachments`,
+      attachment,
+    );
+  }
+
+  removeNoteAttachment(clientId: string, noteId: string, publicId: string) {
+    return this.http.delete<Client>(
+      `${this.base}/clients/${clientId}/notes/${noteId}/attachments/${encodeURIComponent(publicId)}`,
     );
   }
 }

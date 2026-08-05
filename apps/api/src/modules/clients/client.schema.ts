@@ -64,6 +64,59 @@ const ClientAttachmentSchemaDef = SchemaFactory.createForClass(
   ClientAttachmentSubSchema,
 );
 
+/**
+ * Attachment shape used inside a client note. Same Cloudinary
+ * metadata as ClientAttachmentSubSchema, minus the `label` — a note
+ * already provides the free-text context around the file.
+ */
+@Schema({ _id: false })
+class ClientNoteAttachmentSubSchema {
+  @Prop({ required: true }) publicId!: string;
+  @Prop({ required: true }) url!: string;
+  @Prop() thumbnailUrl?: string;
+  @Prop() format?: string;
+  @Prop() width?: number;
+  @Prop() height?: number;
+  @Prop() bytes?: number;
+  @Prop({ type: String, enum: ['image', 'raw', 'video'] })
+  resourceType?: 'image' | 'raw' | 'video';
+  @Prop() originalFilename?: string;
+  @Prop({ default: () => new Date() }) uploadedAt!: Date;
+}
+const ClientNoteAttachmentSchemaDef = SchemaFactory.createForClass(
+  ClientNoteAttachmentSubSchema,
+);
+
+/**
+ * A single note on the client — free-text body plus optional
+ * attachments. `_id: true` so each note gets its own ObjectId the
+ * client can address in update/delete calls, and `timestamps: true`
+ * so the reader sees when the note was created/edited without an
+ * extra API round-trip.
+ */
+@Schema({ _id: true, timestamps: true })
+class ClientNoteSubSchema {
+  @Prop({ required: true }) content!: string;
+
+  @Prop({ type: [ClientNoteAttachmentSchemaDef], default: [] })
+  attachments?: Array<{
+    publicId: string;
+    url: string;
+    thumbnailUrl?: string;
+    format?: string;
+    width?: number;
+    height?: number;
+    bytes?: number;
+    resourceType?: 'image' | 'raw' | 'video';
+    originalFilename?: string;
+    uploadedAt: Date;
+  }>;
+
+  @Prop() authorId?: string;
+  @Prop() authorName?: string;
+}
+const ClientNoteSchemaDef = SchemaFactory.createForClass(ClientNoteSubSchema);
+
 @Schema({ _id: false })
 class ContactSubSchema implements ClientContact {
   @Prop({ required: true }) name!: string;
@@ -381,6 +434,35 @@ export class Client {
     originalFilename?: string;
     label?: string;
     uploadedAt: Date;
+  }>;
+
+  /**
+   * Free-text notes attached to the client. Each note has its own
+   * ObjectId (subdoc `_id: true`), timestamps, and optional
+   * Cloudinary attachments. The strategist writes these as running
+   * meeting recaps, decisions, or open questions — separate from the
+   * more structured Knowledge tab.
+   */
+  @Prop({ type: [ClientNoteSchemaDef], default: [] })
+  notes?: Array<{
+    _id?: Types.ObjectId;
+    content: string;
+    attachments?: Array<{
+      publicId: string;
+      url: string;
+      thumbnailUrl?: string;
+      format?: string;
+      width?: number;
+      height?: number;
+      bytes?: number;
+      resourceType?: 'image' | 'raw' | 'video';
+      originalFilename?: string;
+      uploadedAt: Date;
+    }>;
+    authorId?: string;
+    authorName?: string;
+    createdAt?: Date;
+    updatedAt?: Date;
   }>;
 
   /**

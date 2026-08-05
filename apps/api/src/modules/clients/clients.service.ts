@@ -750,4 +750,181 @@ export class ClientsService implements OnModuleInit {
     });
     return { deleted: true };
   }
+
+  // --- Notes -------------------------------------------------------------
+  //
+  // Notes are subdocs on the Client with their own _id so the frontend
+  // can address them without knowing an array index. Every mutation
+  // returns the whole updated Client so the UI can re-render its notes
+  // list off a single response.
+
+  async addNote(
+    clientId: string,
+    content: string,
+    user?: AuthenticatedUser,
+  ) {
+    if (user) await this.assertAccess(clientId, user);
+    const clean = (content || '').trim();
+    if (!clean) {
+      throw new BadRequestException('Note content is required.');
+    }
+    const updated = await this.model
+      .findByIdAndUpdate(
+        clientId,
+        {
+          $push: {
+            notes: {
+              content: clean,
+              attachments: [],
+              authorId: user?.userId,
+              authorName: user?.email,
+            },
+          },
+        },
+        { new: true },
+      )
+      .lean()
+      .exec();
+    if (!updated) throw new NotFoundException(`Client ${clientId} not found`);
+    await this.audit.log({
+      userId: user?.userId,
+      userEmail: user?.email,
+      action: 'client.note.added',
+      targetType: 'Client',
+      targetId: clientId,
+    });
+    return updated;
+  }
+
+  async updateNote(
+    clientId: string,
+    noteId: string,
+    content: string,
+    user?: AuthenticatedUser,
+  ) {
+    if (user) await this.assertAccess(clientId, user);
+    const clean = (content || '').trim();
+    if (!clean) {
+      throw new BadRequestException('Note content is required.');
+    }
+    const updated = await this.model
+      .findOneAndUpdate(
+        {
+          _id: new Types.ObjectId(clientId),
+          'notes._id': new Types.ObjectId(noteId),
+        },
+        {
+          $set: {
+            'notes.$.content': clean,
+            // Bump the subdoc's updatedAt so the UI shows an edited
+            // marker. Mongoose's subdoc timestamps only auto-touch on
+            // full-subdoc replaces, not $set of a single field.
+            'notes.$.updatedAt': new Date(),
+          },
+        },
+        { new: true },
+      )
+      .lean()
+      .exec();
+    if (!updated) {
+      throw new NotFoundException(`Note ${noteId} not found on client`);
+    }
+    return updated;
+  }
+
+  async removeNote(
+    clientId: string,
+    noteId: string,
+    user?: AuthenticatedUser,
+  ) {
+    if (user) await this.assertAccess(clientId, user);
+    const updated = await this.model
+      .findByIdAndUpdate(
+        clientId,
+        { $pull: { notes: { _id: new Types.ObjectId(noteId) } } },
+        { new: true },
+      )
+      .lean()
+      .exec();
+    if (!updated) throw new NotFoundException(`Client ${clientId} not found`);
+    await this.audit.log({
+      userId: user?.userId,
+      userEmail: user?.email,
+      action: 'client.note.removed',
+      targetType: 'Client',
+      targetId: clientId,
+      details: { noteId },
+    });
+    return { deleted: true };
+  }
+
+  async addNoteAttachment(
+    clientId: string,
+    noteId: string,
+    attachment: {
+      publicId: string;
+      url: string;
+      thumbnailUrl?: string;
+      format?: string;
+      width?: number;
+      height?: number;
+      bytes?: number;
+      resourceType?: 'image' | 'raw' | 'video';
+      originalFilename?: string;
+    },
+    user?: AuthenticatedUser,
+  ) {
+    if (user) await this.assertAccess(clientId, user);
+    if (!attachment?.publicId || !attachment?.url) {
+      throw new BadRequestException('Attachment is missing publicId or url.');
+    }
+    const updated = await this.model
+      .findOneAndUpdate(
+        {
+          _id: new Types.ObjectId(clientId),
+          'notes._id': new Types.ObjectId(noteId),
+        },
+        {
+          $push: {
+            'notes.$.attachments': {
+              ...attachment,
+              uploadedAt: new Date(),
+            },
+          },
+        },
+        { new: true },
+      )
+      .lean()
+      .exec();
+    if (!updated) {
+      throw new NotFoundException(`Note ${noteId} not found on client`);
+    }
+    return updated;
+  }
+
+  async removeNoteAttachment(
+    clientId: string,
+    noteId: string,
+    publicId: string,
+    user?: AuthenticatedUser,
+  ) {
+    if (user) await this.assertAccess(clientId, user);
+    const updated = await this.model
+      .findOneAndUpdate(
+        {
+          _id: new Types.ObjectId(clientId),
+          'notes._id': new Types.ObjectId(noteId),
+        },
+        {
+          $pull: { 'notes.$.attachments': { publicId } },
+        },
+        { new: true },
+      )
+      .lean()
+      .exec();
+    if (!updated) {
+      throw new NotFoundException(`Note ${noteId} not found on client`);
+    }
+    return updated;
+  }
 }
