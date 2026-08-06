@@ -167,53 +167,115 @@ export class TasksService {
 
   /**
    * Called by the content pipeline when a piece transitions to
-   * 'published'. Finds the most recent non-completed task linked
-   * to that piece and drives it through the standard completion
-   * flow — same subtask guard, same completedAt stamp, same
-   * Google Doc mirror — so the two states stay in lockstep.
+   * 'published'. Creates a fresh already-completed "Published"
+   * task with the piece's SEO metadata baked into the description
+   * (focused keyword, meta title, meta description, URL), then
+   * runs the standard Google Doc mirror so the deliverable lands
+   * in the client's monthly tab.
    *
-   * Never throws. Returns a status the caller can surface as a
-   * toast: 'completed' (happy path), 'none' (no matching task),
-   * or 'blocked' + reason (subtasks pending, doc sync failed, etc.).
-   * The publish should still succeed even if the task can't be
-   * auto-completed — the user can finish it manually.
+   * Deliberately does NOT hunt for a pre-existing in-progress task
+   * linked to the piece — the old "Write draft creates an
+   * in-progress task, publish completes it" flow was retired
+   * because the interim task carried no useful info. The task now
+   * only exists once the piece actually publishes.
+   *
+   * Never throws. 'blocked' + reason if the doc mirror failed; the
+   * task still gets persisted so the audit trail is intact.
    */
   async completeForContentPiece(
-    contentPieceId: string,
+    clientId: string,
+    piece: {
+      _id?: unknown;
+      title: string;
+      targetKeyword?: string;
+      metaTitle?: string;
+      metaDescription?: string;
+      publishedUrl?: string;
+    },
     user: AuthenticatedUser,
   ): Promise<{
-    status: 'completed' | 'none' | 'blocked';
+    status: 'completed' | 'blocked';
     taskId?: string;
     reason?: string;
     docSync?: { ok: boolean; message?: string };
   }> {
-    const task = await this.model
-      .findOne({
-        contentPieceId: new Types.ObjectId(contentPieceId),
-        status: { $ne: 'completed' },
-      })
-      .sort({ createdAt: -1 })
-      .lean()
-      .exec();
-    if (!task) return { status: 'none' };
+    const now = new Date();
+    const description = this.buildPublicationDescription(piece);
+    let created;
     try {
-      const updated = (await this.update(
-        String(task._id),
-        { status: 'completed' } as UpdateTaskDto,
-        user,
-      )) as { _docSync?: { ok: boolean; message?: string } };
-      return {
+      created = await this.model.create({
+        clientId: new Types.ObjectId(clientId),
+        contentPieceId: piece._id
+          ? new Types.ObjectId(String(piece._id))
+          : undefined,
+        category: 'content',
+        title: `Published: ${piece.title}`,
+        description,
         status: 'completed',
-        taskId: String(task._id),
-        docSync: updated._docSync,
-      };
+        priority: 'medium',
+        estimatedHours: 0,
+        actualHours: 0,
+        completedAt: now,
+      });
     } catch (err) {
       return {
         status: 'blocked',
-        taskId: String(task._id),
-        reason: (err as Error).message || 'Unknown error',
+        reason:
+          (err as Error).message || 'Could not create publication task.',
       };
     }
+
+    // Fire the doc mirror off the freshly-created task. Reuses the
+    // exact private helper the standard completion flow uses so the
+    // formatting stays identical to a manually-completed task.
+    const docSync = await this.mirrorCompletionToGoogleDoc(
+      {
+        _id: created._id,
+        clientId: created.clientId,
+        title: created.title,
+        description: created.description,
+        category: created.category,
+        priority: created.priority,
+        completedAt: created.completedAt,
+        attachments: [],
+      },
+      user.userId,
+      false,
+      undefined,
+    );
+    return {
+      status: 'completed',
+      taskId: String(created._id),
+      docSync,
+    };
+  }
+
+  /**
+   * Builds the structured description body for the auto-completion
+   * task. Each line is prefixed with a label so the eventual Google
+   * Doc entry reads cleanly, and any missing field is silently
+   * omitted rather than showing "undefined".
+   */
+  private buildPublicationDescription(piece: {
+    targetKeyword?: string;
+    metaTitle?: string;
+    metaDescription?: string;
+    publishedUrl?: string;
+  }): string {
+    const lines: string[] = [];
+    if (piece.targetKeyword) {
+      lines.push(`Focused keyword: ${piece.targetKeyword}`);
+    }
+    if (piece.metaTitle) {
+      lines.push(`Meta title: ${piece.metaTitle}`);
+    }
+    if (piece.metaDescription) {
+      lines.push(`Meta description: ${piece.metaDescription}`);
+    }
+    if (piece.publishedUrl) {
+      lines.push(`URL: ${piece.publishedUrl}`);
+    }
+    return lines.join('\n');
   }
 
   async update(id: string, dto: UpdateTaskDto, user?: AuthenticatedUser) {

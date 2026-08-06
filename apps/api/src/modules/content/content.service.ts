@@ -112,12 +112,12 @@ export class ContentService {
       .exec();
     if (!updated) throw new NotFoundException(`Content ${id} not found`);
 
-    // If this write is the transition into 'published' — i.e. the piece
-    // wasn't already published before — drive the linked content task
-    // through the standard completion flow. Non-blocking: if the task
-    // is blocked (e.g. pending subtasks) or the Google Doc sync fails,
-    // the publish still succeeds and we surface the outcome in the
-    // response so the UI can toast.
+    // On the transition to 'published', spawn a fresh already-
+    // completed publication task with the piece's SEO metadata
+    // baked into its description, then fire the Google Doc mirror
+    // off it. Non-blocking: doc-sync failure surfaces in the
+    // response so the UI can toast, but the publish itself still
+    // succeeds.
     let taskAutoComplete:
       | Awaited<ReturnType<TasksService['completeForContentPiece']>>
       | undefined;
@@ -126,7 +126,18 @@ export class ContentService {
       before.status !== 'published' &&
       user
     ) {
-      taskAutoComplete = await this.tasks.completeForContentPiece(id, user);
+      taskAutoComplete = await this.tasks.completeForContentPiece(
+        updated.clientId.toString(),
+        {
+          _id: updated._id,
+          title: updated.title,
+          targetKeyword: updated.targetKeyword,
+          metaTitle: updated.metaTitle,
+          metaDescription: updated.metaDescription,
+          publishedUrl: updated.publishedUrl,
+        },
+        user,
+      );
     }
 
     const normalized = normalizeStatus(updated);

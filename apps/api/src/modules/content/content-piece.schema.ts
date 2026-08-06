@@ -68,6 +68,12 @@ export class ContentPiece {
   @Prop() targetUrl?: string;
   @Prop() briefUrl?: string;
   @Prop() publishedUrl?: string;
+  /** SEO meta title captured at publish time — used by the auto
+   *  publication task's description so the Google Doc archive
+   *  includes it. */
+  @Prop() metaTitle?: string;
+  /** SEO meta description captured at publish time. */
+  @Prop() metaDescription?: string;
   @Prop() publishedAt?: Date;
   @Prop() assignedTo?: string;
   @Prop() wordCount?: number;

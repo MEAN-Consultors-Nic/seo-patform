@@ -20,6 +20,8 @@ export class UpsertContentDto {
   @IsOptional() @IsString() targetUrl?: string;
   @IsOptional() @IsString() briefUrl?: string;
   @IsOptional() @IsString() publishedUrl?: string;
+  @IsOptional() @IsString() metaTitle?: string;
+  @IsOptional() @IsString() metaDescription?: string;
   @IsOptional() @IsString() assignedTo?: string;
   @IsOptional() @IsNumber() wordCount?: number;
   @IsOptional() @IsString() notes?: string;

@@ -1114,6 +1114,14 @@ export interface ContentPiece {
   targetUrl?: string;
   briefUrl?: string;
   publishedUrl?: string;
+  /**
+   * SEO meta title captured at publish time. Included in the
+   * publication task's description so the Google Doc mirror can
+   * archive it alongside the URL and focused keyword.
+   */
+  metaTitle?: string;
+  /** SEO meta description captured at publish time. Same use as above. */
+  metaDescription?: string;
   publishedAt?: Date;
   assignedTo?: string;
   wordCount?: number;

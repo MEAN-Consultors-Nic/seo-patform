@@ -18,23 +18,21 @@ import {
   ContentPiece,
   ContentPieceType,
   ContentStatus,
-  Task,
 } from '@seo/shared';
 import { CloudinaryService } from '../../../core/cloudinary.service';
 import { ContentService } from '../../../core/content.service';
-import { TasksService } from '../../../core/tasks.service';
 import { FileDropDirective } from '../../../shared/file-drop.directive';
 
 /**
- * Shape of the `_taskAutoComplete` blob the API attaches to the update
- * response when publishing a content piece drives its linked task
- * through the standard completion flow. Mirrors the backend union:
- * 'completed' (task ran through completion), 'blocked' (task exists
- * but couldn't be auto-completed, e.g. pending subtasks), or 'none'
- * (no linked task).
+ * Shape of the `_taskAutoComplete` blob the API attaches to the
+ * update response when publishing a piece spawns the completed
+ * publication task and fires the Google Doc mirror off it.
+ * 'completed' — task persisted, mirror ran (docSync.ok tells you
+ * whether it landed). 'blocked' — task couldn't be created; reason
+ * carries the upstream error.
  */
 interface TaskAutoCompleteResult {
-  status: 'completed' | 'none' | 'blocked';
+  status: 'completed' | 'blocked';
   taskId?: string;
   reason?: string;
   docSync?: { ok: boolean; message?: string };
@@ -320,17 +318,36 @@ interface TaskAutoCompleteResult {
             }
           </div>
 
-          <div>
-            <label class="label">Published URL</label>
-            <input class="input"
-                   [(ngModel)]="publishUrlInput"
-                   placeholder="https://example.com/blog/my-piece"
-                   (keyup.enter)="savePublishUrl()"
-                   #urlInput
-                   autofocus />
-            <p class="text-[11px] text-ink-400 mt-1">
-              Used in client-facing reports to link to the live page.
-            </p>
+          <div class="space-y-3">
+            <div>
+              <label class="label">Published URL</label>
+              <input class="input"
+                     [(ngModel)]="publishUrlInput"
+                     placeholder="https://example.com/blog/my-piece"
+                     #urlInput
+                     autofocus />
+              <p class="text-[11px] text-ink-400 mt-1">
+                Used in client-facing reports and included in the
+                auto-generated publication task's Google Doc entry.
+              </p>
+            </div>
+            <div>
+              <label class="label">Meta title</label>
+              <input class="input"
+                     [(ngModel)]="publishMetaTitleInput"
+                     placeholder="SEO title tag as it appears on the SERP" />
+            </div>
+            <div>
+              <label class="label">Meta description</label>
+              <textarea class="input min-h-[70px] resize-y"
+                        [(ngModel)]="publishMetaDescriptionInput"
+                        placeholder="SEO description shown under the title on the SERP"></textarea>
+              <p class="text-[11px] text-ink-400 mt-1">
+                Along with the focused keyword + URL, these fields
+                go into the description of the Publication task the
+                platform auto-completes on publish.
+              </p>
+            </div>
           </div>
 
           @if (publishError()) {
@@ -343,7 +360,7 @@ interface TaskAutoCompleteResult {
             </button>
             <button class="btn-primary" (click)="savePublishUrl()"
                     [disabled]="publishSaving() || !publishUrlInput.trim()">
-              {{ publishSaving() ? 'Saving…' : 'Save URL' }}
+              {{ publishSaving() ? 'Saving…' : 'Save & publish' }}
             </button>
           </div>
         </div>
@@ -525,7 +542,6 @@ export class ClientContentTab implements OnChanges {
   @Input({ required: true }) clientId!: string;
   @ViewChild('fileInput') fileInput?: ElementRef<HTMLInputElement>;
   private svc = inject(ContentService);
-  private tasksSvc = inject(TasksService);
   protected cloudinary = inject(CloudinaryService);
 
   pieces = signal<ContentPiece[]>([]);
@@ -559,6 +575,10 @@ export class ClientContentTab implements OnChanges {
   // Published URL modal state
   publishModalPiece = signal<ContentPiece | null>(null);
   publishUrlInput = '';
+  // Captured alongside the URL so the auto-completed publication
+  // task carries the full SEO context into the Google Doc mirror.
+  publishMetaTitleInput = '';
+  publishMetaDescriptionInput = '';
   publishSaving = signal(false);
   publishError = signal<string | null>(null);
 
@@ -671,7 +691,7 @@ export class ClientContentTab implements OnChanges {
   }
 
   primaryActionLabel(p: ContentPiece): string {
-    if (this.creatingTaskFor() === p._id) return 'Creating…';
+    if (this.creatingTaskFor() === p._id) return 'Moving…';
     switch (p.status) {
       case 'idea':
         return 'Write draft';
@@ -824,6 +844,10 @@ export class ClientContentTab implements OnChanges {
 
   openPublishModal(p: ContentPiece) {
     this.publishUrlInput = p.publishedUrl ?? '';
+    // Prefill meta fields if the piece already carries them from a
+    // previous publish, so a re-publish doesn't blank them out.
+    this.publishMetaTitleInput = p.metaTitle ?? '';
+    this.publishMetaDescriptionInput = p.metaDescription ?? '';
     this.publishError.set(null);
     this.publishModalPiece.set(p);
   }
@@ -832,6 +856,8 @@ export class ClientContentTab implements OnChanges {
     if (this.publishSaving()) return;
     this.publishModalPiece.set(null);
     this.publishUrlInput = '';
+    this.publishMetaTitleInput = '';
+    this.publishMetaDescriptionInput = '';
     this.publishError.set(null);
   }
 
@@ -843,12 +869,19 @@ export class ClientContentTab implements OnChanges {
     this.publishSaving.set(true);
     this.publishError.set(null);
     this.svc
-      .update(piece._id, { status: 'published', publishedUrl: url })
+      .update(piece._id, {
+        status: 'published',
+        publishedUrl: url,
+        metaTitle: this.publishMetaTitleInput.trim() || undefined,
+        metaDescription: this.publishMetaDescriptionInput.trim() || undefined,
+      })
       .subscribe({
         next: (resp) => {
           this.publishSaving.set(false);
           this.publishModalPiece.set(null);
           this.publishUrlInput = '';
+          this.publishMetaTitleInput = '';
+          this.publishMetaDescriptionInput = '';
           this.reportTaskAutoComplete(resp);
           this.load();
         },
@@ -866,11 +899,19 @@ export class ClientContentTab implements OnChanges {
     const piece = this.publishModalPiece();
     if (!piece?._id) return;
     this.publishSaving.set(true);
-    this.svc.update(piece._id, { status: 'published' }).subscribe({
+    this.svc
+      .update(piece._id, {
+        status: 'published',
+        metaTitle: this.publishMetaTitleInput.trim() || undefined,
+        metaDescription: this.publishMetaDescriptionInput.trim() || undefined,
+      })
+      .subscribe({
       next: (resp) => {
         this.publishSaving.set(false);
         this.publishModalPiece.set(null);
         this.publishUrlInput = '';
+        this.publishMetaTitleInput = '';
+        this.publishMetaDescriptionInput = '';
         this.reportTaskAutoComplete(resp);
         this.load();
       },
@@ -885,10 +926,12 @@ export class ClientContentTab implements OnChanges {
   }
 
   /**
-   * The backend embeds a `_taskAutoComplete` blob on the response when
-   * publishing a piece transitions its linked content task through the
-   * standard completion flow. Toast the outcome so the user knows the
-   * two states stayed in sync — or what went wrong when they didn't.
+   * The backend embeds a `_taskAutoComplete` blob on the response
+   * when publishing a piece spawns the completed publication task
+   * (focused keyword / meta title / meta description / URL baked
+   * into its description) and fires the Google Doc mirror off it.
+   * Toast the outcome so the reader knows the deliverable landed
+   * in the doc — or exactly what went wrong when it didn't.
    */
   private reportTaskAutoComplete(resp: ContentPiece | unknown) {
     const meta = (resp as { _taskAutoComplete?: TaskAutoCompleteResult })
@@ -899,19 +942,18 @@ export class ClientContentTab implements OnChanges {
         meta.docSync && meta.docSync.ok === false
           ? ` (Google Doc sync failed: ${meta.docSync.message ?? 'unknown'})`
           : meta.docSync?.message
-            ? ` (${meta.docSync.message})`
+            ? ` — ${meta.docSync.message}`
             : '';
       this.flashToast(
         'success',
-        `Piece published and its draft task was auto-completed.${docNote}`,
+        `Piece published. Publication task created and completed${docNote}.`,
       );
     } else if (meta.status === 'blocked') {
       this.flashToast(
         'error',
-        `Piece published but the linked task couldn't auto-complete: ${meta.reason ?? 'unknown'}. Finish it manually from the Tasks tab.`,
+        `Piece published but the publication task could not be created: ${meta.reason ?? 'unknown'}. Add it manually from the Tasks tab.`,
       );
     }
-    // status === 'none' → no linked task; nothing to say.
   }
 
   remove(p: ContentPiece) {
@@ -954,48 +996,22 @@ export class ClientContentTab implements OnChanges {
   }
 
   /**
-   * Creates an in-progress content task in the active cycle and moves
-   * the piece into 'draft'. The two writes are sequential — task first,
-   * then status flip — so if the task POST fails we don't strand the
-   * piece in 'draft' without a backing task.
+   * Moves the piece from Idea to Draft. Previously this also spawned
+   * an in-progress task, but that task carried no useful info and
+   * just cluttered the Tasks tab. The real deliverable task is now
+   * created at publish time (already-completed, with the full SEO
+   * metadata baked in — see the Publish modal + TasksService
+   * .completeForContentPiece).
    */
   createTaskForPiece(p: ContentPiece) {
     if (!p._id) return;
     this.creatingTaskFor.set(p._id);
-    const taskPayload: Partial<Task> = {
-      clientId: this.clientId,
-      category: 'content',
-      title: `Draft content: ${p.title}`,
-      description: p.targetKeyword ? `Target keyword: ${p.targetKeyword}` : '',
-      status: 'in_progress',
-      priority: 'medium',
-      estimatedHours: 1,
-      // Link back so publishing the piece can auto-complete this task
-      // through the standard completion flow (Google Doc mirror etc).
-      contentPieceId: p._id,
-    };
-    this.tasksSvc.create(taskPayload).subscribe({
+    this.svc.update(p._id, { status: 'draft' }).subscribe({
       next: () => {
-        // Task created — now move the piece to 'draft'. We don't need
-        // the task back; the Tasks tab will pick it up on next load.
-        this.svc.update(p._id!, { status: 'draft' }).subscribe({
-          next: () => {
-            this.creatingTaskFor.set(null);
-            this.menuOpenId.set(null);
-            this.flashToast('success', `Task created. "${p.title}" moved to Draft.`);
-            this.load();
-          },
-          error: (err) => {
-            this.creatingTaskFor.set(null);
-            this.menuOpenId.set(null);
-            const m = err?.error?.message;
-            this.flashToast(
-              'error',
-              `Task created but moving to Draft failed: ${Array.isArray(m) ? m.join(', ') : m || 'unknown error'}`,
-            );
-            this.load();
-          },
-        });
+        this.creatingTaskFor.set(null);
+        this.menuOpenId.set(null);
+        this.flashToast('success', `"${p.title}" moved to Draft.`);
+        this.load();
       },
       error: (err) => {
         this.creatingTaskFor.set(null);
@@ -1003,7 +1019,7 @@ export class ClientContentTab implements OnChanges {
         const m = err?.error?.message;
         this.flashToast(
           'error',
-          `Could not create task: ${Array.isArray(m) ? m.join(', ') : m || 'unknown error'}`,
+          `Could not move to Draft: ${Array.isArray(m) ? m.join(', ') : m || 'unknown error'}`,
         );
       },
     });
