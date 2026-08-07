@@ -119,6 +119,85 @@ interface PdfContext {
   };
 }
 
+/**
+ * Code points above U+00FF that the PDF standard-14 fonts (Helvetica &
+ * friends) can actually draw — the WinAnsiEncoding high slots 0x80–0x9F.
+ * Every other non-Latin-1 code point resolves to .notdef, which pdfkit
+ * measures at advance width 0: the glyph disappears AND the next
+ * character is painted on top of the previous one. That is how
+ * "hi-quality" came out as "hiquality" with the q sitting on the i.
+ */
+const WINANSI_ABOVE_LATIN1 = new Set([
+  0x20ac, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6,
+  0x2030, 0x0160, 0x2039, 0x0152, 0x017d, 0x2018, 0x2019, 0x201c,
+  0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a,
+  0x0153, 0x017e, 0x0178,
+]);
+
+/**
+ * ASCII stand-ins for the unrenderable characters that realistically turn
+ * up in pasted report copy — dashes, primes, arrows, math comparators and
+ * check marks. Anything not listed here and not in WINANSI_ABOVE_LATIN1
+ * is dropped rather than left to collide with its neighbour.
+ */
+const PDF_TRANSLITERATIONS: Record<string, string> = {
+  '‐': '-', '‑': '-', '‒': '-', '―': '-',
+  '′': "'", '″': '"',
+  '←': '<-', '→': '->', '↔': '<->', '⇒': '=>',
+  '↑': '^', '↓': 'v',
+  '≤': '<=', '≥': '>=', '≠': '!=', '≈': '~',
+  // Check / cross marks read as list glyphs in practice; map to the
+  // bullet (renderable) and a plain x rather than dropping them.
+  '✓': '•', '✔': '•',
+  '✗': 'x', '✘': 'x', '✕': 'x', '✖': 'x',
+  '●': '•', '▪': '•', '▶': '>',
+};
+
+/**
+ * Rewrites a single string so every character survives the standard-14
+ * fonts. Beyond the non-Latin-1 sweep it also flattens U+00A0 to a plain
+ * space: WinAnsiEncoding does map 0xA0 to `space`, but sloppy viewers
+ * treat it as .notdef and it reaches the doc on the paths that never see
+ * sanitizeText (client names, table cells, chart labels).
+ *
+ * Nothing else in ASCII is touched, so hex colours, data URLs, font names
+ * and style keys pass through byte-identical and this is safe to run over
+ * an entire doc definition.
+ */
+function toPdfSafe(text: string): string {
+  const flat = text.includes('\u00A0') ? text.replace(/\u00A0/g, ' ') : text;
+  if (!/[\u{100}-\u{10FFFF}]/u.test(flat)) return flat;
+  return flat.replace(/[\u{100}-\u{10FFFF}]/gu, (ch) =>
+    WINANSI_ABOVE_LATIN1.has(ch.codePointAt(0) as number)
+      ? ch
+      : PDF_TRANSLITERATIONS[ch] ?? '',
+  );
+}
+
+/**
+ * Walks a pdfmake doc definition and runs every string through
+ * toPdfSafe. Applied once at the end of generate() so the guarantee holds
+ * for every text path — narrative HTML, client names, table cells, chart
+ * labels — instead of only the handful that remember to call a helper.
+ * Header/footer are functions, so they're wrapped to sanitize whatever
+ * they return per page.
+ */
+function makeDocPdfSafe<T>(node: T): T {
+  if (typeof node === 'string') return toPdfSafe(node) as unknown as T;
+  if (Array.isArray(node)) return node.map(makeDocPdfSafe) as unknown as T;
+  if (typeof node === 'function') {
+    const fn = node as (...a: unknown[]) => unknown;
+    return ((...a: unknown[]) => makeDocPdfSafe(fn(...a))) as unknown as T;
+  }
+  if (node && typeof node === 'object') {
+    if (node instanceof Date || Buffer.isBuffer(node)) return node;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(node)) out[k] = makeDocPdfSafe(v);
+    return out as unknown as T;
+  }
+  return node;
+}
+
 @Injectable()
 export class PdfService {
   private readonly logger = new Logger(PdfService.name);
@@ -205,7 +284,7 @@ export class PdfService {
       ),
     };
 
-    const pdfDoc = pdfmake.createPdf(docDefinition);
+    const pdfDoc = pdfmake.createPdf(makeDocPdfSafe(docDefinition));
     return pdfDoc.getBuffer();
   }
 
@@ -865,16 +944,20 @@ export class PdfService {
 
   // --- Executive summary -----------------------------------------------------
 
-  /** Non-breaking hyphen — visually identical to "-" but keeps words intact. */
-  private static readonly NON_BREAKING_HYPHEN = '\u2011';
-
   /**
    * Strips HTML tags and decodes entities for plain-text rendering inside
    * pdfmake. Runs the shared sanitizeText pipeline first so every flavour
    * of invisible / Unicode-space contamination is normalized before tags
-   * are stripped, then converts intra-word hyphens to non-breaking hyphens
-   * so compound words ("high-priority", "structured-data") don't split
-   * across PDF lines.
+   * are stripped.
+   *
+   * Intra-word hyphens are deliberately left as plain U+002D. An earlier
+   * version swapped them for U+2011 (non-breaking hyphen) to stop
+   * "high-priority" wrapping mid-word, but the standard-14 fonts carry no
+   * glyph for U+2011 and pdfkit measures the miss at width 0 — the hyphen
+   * vanished and the next letter was drawn on top of the previous one
+   * ("hi-quality" -> "hiquality"). Breaking after a hyphen is ordinary
+   * typography; a collapsed word is data corruption. See toPdfSafe for
+   * the general guard.
    */
   private htmlToText(html: string | undefined | null): string {
     if (!html) return '';
@@ -888,7 +971,6 @@ export class PdfService {
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
-      .replace(/(\w)-(\w)/g, `$1${PdfService.NON_BREAKING_HYPHEN}$2`)
       .replace(/[ \t]{2,}/g, ' ')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
