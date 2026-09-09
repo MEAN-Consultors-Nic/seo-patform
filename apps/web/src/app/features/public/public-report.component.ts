@@ -11,10 +11,8 @@ import { NgApexchartsModule } from 'ng-apexcharts';
 import type { ApexOptions } from 'ng-apexcharts';
 import {
   DEFAULT_REPORT_LAYOUT,
-  DELIVERABLE_FREQUENCY_LABELS,
   ReportSectionKey,
   UNNUMBERED_REPORT_SECTIONS,
-  targetForWindow,
 } from '@seo/shared';
 import { ReportsService } from '../../core/reports.service';
 import { SanitizerService } from '../../core/sanitizer.service';
@@ -50,23 +48,6 @@ interface PublicPayload {
     url: string;
     logoUrl?: string;
     industry?: string;
-    packageId?: string;
-    package?: {
-      _id?: string;
-      name: string;
-      color: string;
-      description?: string;
-      hoursPerPeriod?: number;
-      deliverables: Array<{
-        key: string;
-        label: string;
-        quantity: number;
-        unit: string;
-        frequency: 'per_period' | 'weekly' | 'biweekly' | 'monthly';
-        matchTaskCategory?: string;
-        notes?: string;
-      }>;
-    };
   };
   cycle: { label: string; startDate: string; endDate: string };
   tasks: Array<{
@@ -137,7 +118,6 @@ interface PublicPayload {
     publishedUrl?: string;
     publishedAt?: string;
   }>;
-  packageProgress?: Array<{ key: string; completed: number }>;
 }
 
 @Component({
@@ -242,9 +222,9 @@ interface PublicPayload {
             <!-- Top bar -->
             <div class="flex items-center justify-between mb-12">
               <div class="flex items-center gap-3">
-                <div class="w-9 h-9 rounded-md bg-brand-500 flex items-center justify-center font-bold">IT</div>
+                <div class="w-9 h-9 rounded-md bg-brand-500 flex items-center justify-center font-bold">MS</div>
                 <div>
-                  <div class="text-sm font-bold">Internal Tools</div>
+                  <div class="text-sm font-bold">Media Spearhead</div>
                   <div class="text-[10px] uppercase tracking-wider text-white/60">Media Spearhead</div>
                 </div>
               </div>
@@ -337,9 +317,6 @@ interface PublicPayload {
               }
               @case ('serp-preview') {
                 <ng-container [ngTemplateOutlet]="serpPreviewTpl"></ng-container>
-              }
-              @case ('package-deliverables') {
-                <ng-container [ngTemplateOutlet]="packageDeliverablesTpl"></ng-container>
               }
               @case ('actions-taken') {
                 <ng-container [ngTemplateOutlet]="actionsTpl"></ng-container>
@@ -981,56 +958,6 @@ interface PublicPayload {
           </section>
         </ng-template>
 
-        <ng-template #packageDeliverablesTpl>
-          <!-- Package deliverables snapshot for this report window.
-               Renders the client's package name + description, then a
-               list of deliverables with per-item progress (completed
-               tasks in the matching category / target for the window). -->
-          @if (deliverableRows(); as rows) {
-            @if (rows.length > 0) {
-              <section>
-                <div class="mb-4">
-                  <span class="text-xs font-bold uppercase tracking-[0.2em] text-brand-500">{{ sectionNumber('package-deliverables') }} · Package</span>
-                  <h2 class="text-3xl font-bold text-ink-900 mt-1">{{ packageName() }} — deliverables</h2>
-                  @if (packageDescription()) {
-                    <p class="text-sm text-ink-500 mt-1 max-w-3xl">{{ packageDescription() }}</p>
-                  }
-                </div>
-
-                <div class="bg-white rounded-xl border border-ink-200 shadow-card divide-y divide-ink-100">
-                  @for (r of rows; track r.key) {
-                    <div class="p-4 flex items-center gap-4">
-                      <div class="flex-1 min-w-0">
-                        <div class="font-semibold text-ink-900 text-sm">{{ r.label }}</div>
-                        <div class="text-xs text-ink-500 truncate">
-                          Target: {{ r.target }} {{ r.unit }}
-                          <span class="text-ink-400">· {{ r.frequencyLabel }}</span>
-                          @if (r.notes) { <span class="text-ink-400">· {{ r.notes }}</span> }
-                        </div>
-                      </div>
-                      <div class="w-40 flex-shrink-0">
-                        <div class="flex items-center justify-between text-[11px] font-semibold mb-1">
-                          <span class="text-ink-700">{{ r.completed }} / {{ r.target }}</span>
-                          <span [class.text-positive-500]="r.pct >= 100"
-                                [class.text-ink-500]="r.pct < 100">
-                            {{ r.pct }}%
-                          </span>
-                        </div>
-                        <div class="h-2 rounded-full bg-ink-100 overflow-hidden">
-                          <div class="h-2 rounded-full transition-all"
-                               [class.bg-positive-500]="r.pct >= 100"
-                               [class.bg-sky-500]="r.pct < 100 && r.pct >= 50"
-                               [class.bg-amber-500]="r.pct < 50"
-                               [style.width.%]="r.pctClamped"></div>
-                        </div>
-                      </div>
-                    </div>
-                  }
-                </div>
-              </section>
-            }
-          }
-        </ng-template>
 
         <ng-template #actionsTpl>
           <!-- Actions taken -->
@@ -2228,59 +2155,9 @@ export class PublicReportComponent implements OnInit {
     return (name.trim()[0] || '?').toUpperCase();
   }
 
-  /** Convenience: is a Package assigned to the client on this report? */
-  private assignedPackage() {
-    return this.data()?.client?.package;
-  }
 
-  packageName(): string {
-    return this.assignedPackage()?.name || '';
-  }
 
-  packageDescription(): string {
-    return this.assignedPackage()?.description || '';
-  }
 
-  /**
-   * Renders each deliverable with its window-adjusted target, its
-   * completed count from the payload, and precomputed % display values.
-   * Empty array (not null) when the client has no package or the
-   * package has no deliverables — the template hides the section.
-   */
-  deliverableRows(): Array<{
-    key: string;
-    label: string;
-    unit: string;
-    target: number;
-    completed: number;
-    pct: number;
-    pctClamped: number;
-    frequencyLabel: string;
-    notes?: string;
-  }> {
-    const d = this.data();
-    const pkg = this.assignedPackage();
-    if (!d || !pkg?.deliverables?.length) return [];
-    const windowDays = this.reportWindowDays();
-    const progress = new Map<string, number>();
-    for (const p of d.packageProgress ?? []) progress.set(p.key, p.completed);
-    return pkg.deliverables.map((del) => {
-      const target = targetForWindow(del, windowDays);
-      const completed = progress.get(del.key) ?? 0;
-      const pct = target > 0 ? Math.round((completed / target) * 100) : 0;
-      return {
-        key: del.key,
-        label: del.label,
-        unit: del.unit,
-        target,
-        completed,
-        pct,
-        pctClamped: Math.min(100, Math.max(0, pct)),
-        frequencyLabel: DELIVERABLE_FREQUENCY_LABELS[del.frequency],
-        notes: del.notes,
-      };
-    });
-  }
 
   private reportWindowDays(): number {
     const d = this.data();

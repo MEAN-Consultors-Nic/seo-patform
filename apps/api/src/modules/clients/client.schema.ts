@@ -25,9 +25,9 @@ export type ClientDocument = HydratedDocument<Client>;
  */
 @Schema({ _id: true, timestamps: true })
 class SubscriptionSubSchema {
-  @Prop({ type: Types.ObjectId, ref: 'Service', required: true })
+  @Prop({ type: Types.ObjectId, required: true })
   serviceId!: Types.ObjectId;
-  @Prop({ type: Types.ObjectId, ref: 'Package' })
+  @Prop({ type: Types.ObjectId })
   packageId?: Types.ObjectId;
   @Prop({ type: Number }) hoursPerCycle?: number;
   @Prop() startDate?: Date;
@@ -232,7 +232,7 @@ export class Client {
    * window; new clients created after the migration always have this
    * set via the create DTO.
    */
-  @Prop({ type: Types.ObjectId, ref: 'Package', index: true })
+  @Prop({ type: Types.ObjectId, index: true })
   packageId?: Types.ObjectId;
 
   @Prop({ required: true })

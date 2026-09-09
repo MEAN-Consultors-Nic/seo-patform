@@ -27,9 +27,6 @@ import { AppSettingsService } from '../../core/app-settings.service';
           <a routerLink="/settings/report-layout" routerLinkActive="tab-active" class="tab">
             Report layout
           </a>
-          <a routerLink="/settings/onboarding" routerLinkActive="tab-active" class="tab">
-            Onboarding
-          </a>
           <a routerLink="/settings/activity-log" routerLinkActive="tab-active" class="tab">Activity Log</a>
         </div>
       </nav>

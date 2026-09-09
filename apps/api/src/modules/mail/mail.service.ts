@@ -112,7 +112,7 @@ export class MailService implements OnModuleInit {
         'Email service is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD in the API .env file.',
       );
     }
-    const subject = `You're invited to Media Spearhead · Internal Tools`;
+    const subject = `You're invited to Media Spearhead · SEO Platform`;
     const { html, text } = renderInviteEmail(input);
     const result = await this.transporter.sendMail({
       from: this.from,

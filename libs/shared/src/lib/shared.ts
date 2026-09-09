@@ -1,5 +1,5 @@
 /**
- * Platform role hierarchy (Internal Tools Phase 1 · Slice 1.1).
+ * Platform role hierarchy.
  *
  *   root       — system superadmin (dev/system owner). Can do anything
  *                including irreversible platform ops. 1–2 users max.
@@ -121,471 +121,6 @@ export const HOURS_PER_TIER: Record<ClientTier, number> = {
   A: 9,
   B: 5.5,
   C: 3.5,
-};
-
-/**
- * Cadence at which a deliverable's quantity applies. Powers progress
- * calculations (deliverable-completed ÷ target-in-window) in the report.
- */
-export type DeliverableFrequency =
-  | 'per_period'
-  | 'weekly'
-  | 'biweekly'
-  | 'monthly';
-
-export const DELIVERABLE_FREQUENCY_LABELS: Record<DeliverableFrequency, string> = {
-  per_period: 'per report period',
-  weekly: 'per week',
-  biweekly: 'every 2 weeks',
-  monthly: 'per month',
-};
-
-/**
- * Returns the effective target quantity for a deliverable given the
- * report window's length in days. Weekly/monthly frequencies get
- * scaled to the window (so a 30-day report on a "4 posts / week"
- * deliverable expects ~17 posts). per_period returns quantity as-is.
- */
-export function targetForWindow(
-  deliverable: Pick<Deliverable, 'quantity' | 'frequency'>,
-  windowDays: number,
-): number {
-  if (windowDays <= 0) return deliverable.quantity;
-  switch (deliverable.frequency) {
-    case 'per_period':
-      return deliverable.quantity;
-    case 'weekly':
-      return Math.round((deliverable.quantity * windowDays) / 7);
-    case 'biweekly':
-      return Math.round((deliverable.quantity * windowDays) / 14);
-    case 'monthly':
-      return Math.round((deliverable.quantity * windowDays) / 30);
-  }
-}
-
-/**
- * A single line item inside a Package. Structured so the report can
- * automatically show "X of Y completed this period" when the deliverable
- * declares which TaskCategory it maps to.
- */
-export interface Deliverable {
-  /** Stable identifier within the package. Used by report progress. */
-  key: string;
-  /** Human-readable label shown in the report and the package editor. */
-  label: string;
-  /** Target quantity per period (see frequency). */
-  quantity: number;
-  /** Unit noun for display, e.g., "posts", "pages", "citations". */
-  unit: string;
-  /** How often the target quantity applies. */
-  frequency: DeliverableFrequency;
-  /**
-   * Optional link to a task category — when set, completed tasks in this
-   * category within the reporting window count toward the deliverable.
-   */
-  matchTaskCategory?: TaskCategory;
-  notes?: string;
-}
-
-/**
- * A grouping of deliverables and metadata that replaces the old ClientTier
- * enum. Packages are org-wide and CRUD-managed via Settings → Packages.
- * Each package is scoped to a single Service (SEO / PPC / Website /
- * Tracking / …) so the client subscription flow can filter package
- * options by the service being subscribed to.
- */
-export interface Package {
-  _id?: string;
-  name: string;
-  description?: string;
-  /**
-   * Tailwind palette family used for the package badge in lists and
-   * cards. Stored as a semantic name so the UI can look it up in
-   * PACKAGE_COLOR_PALETTE without shipping arbitrary CSS.
-   */
-  color: PackageColor;
-  deliverables: Deliverable[];
-  /** Estimated hours per report period for scheduling defaults. */
-  hoursPerPeriod?: number;
-  /** Service this package belongs to. Required for new packages after
-   *  the multi-service migration. Backfilled to the SEO service on
-   *  boot for pre-existing packages. */
-  serviceId?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
-
-/**
- * Admin-managed service catalog. Each Service is a top-level product
- * line the agency sells (SEO, PPC, Website Design, Tracking Setup,
- * Analytics, Email Marketing, …). Packages hang off a service; client
- * subscriptions pair a service with the specific package the client
- * bought.
- */
-export interface Service {
-  _id?: string;
-  name: string;
-  /** URL-safe key. Also used as the migration-time bridge from the
-   *  retired ClientServiceLine enum ('seo' / 'ppc' / 'website' /
-   *  'other'). */
-  slug: string;
-  description?: string;
-  color: PackageColor;
-  /** Optional emoji or short label shown on chips. */
-  icon?: string;
-  /** Order in which services appear in pickers + sidebars. */
-  order: number;
-  active: boolean;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
-
-/**
- * One service the agency delivers to a specific client, paired with the
- * package that governs its deliverables + hours. Clients can hold
- * many subscriptions at once — e.g. SEO on Package A, PPC on Gold,
- * Website on package 3.
- */
-export interface ClientSubscription {
-  /** Stable id per subscription — assigned by Mongo when embedded. */
-  _id?: string;
-  serviceId: string;
-  packageId?: string;
-  /** Hours-per-cycle budgeted for this service. Falls back to the
-   *  package's hoursPerPeriod when unset. */
-  hoursPerCycle?: number;
-  startDate?: Date | string;
-  endingDate?: Date | string;
-  active: boolean;
-  notes?: string;
-  createdAt?: Date | string;
-  updatedAt?: Date | string;
-}
-
-// --- Sales pipeline --------------------------------------------------------
-
-export type LeadStage =
-  | 'new'
-  | 'no_show'
-  | 'proposal_sent'
-  | 'closed_won'
-  | 'closed_lost';
-
-export const LEAD_STAGE_LABELS: Record<LeadStage, string> = {
-  new: 'New',
-  no_show: 'No show',
-  proposal_sent: 'Proposal sent',
-  closed_won: 'Closed · won',
-  closed_lost: 'Closed · lost',
-};
-
-export const LEAD_STAGE_ORDER: LeadStage[] = [
-  'new',
-  'no_show',
-  'proposal_sent',
-  'closed_won',
-  'closed_lost',
-];
-
-export type LeadSource =
-  | 'referral'
-  | 'website'
-  | 'cold-outreach'
-  | 'ads'
-  | 'social'
-  | 'event'
-  | 'other';
-
-export const LEAD_SOURCES: LeadSource[] = [
-  'referral',
-  'website',
-  'cold-outreach',
-  'ads',
-  'social',
-  'event',
-  'other',
-];
-
-export type LeadService = 'seo' | 'ppc' | 'website' | 'combo' | 'other';
-
-export interface LeadActivity {
-  at: Date | string;
-  kind: 'note' | 'email' | 'call' | 'stage-change';
-  authorUserId?: string;
-  authorName?: string;
-  text?: string;
-  fromStage?: LeadStage;
-  toStage?: LeadStage;
-}
-
-export interface Lead {
-  _id?: string;
-  businessName: string;
-  contactName?: string;
-  email?: string;
-  phone?: string;
-  website?: string;
-  source?: LeadSource;
-  services?: LeadService[];
-  /** Monthly recurring revenue if the deal closes (USD). */
-  monthlyDealValue?: number;
-  /** One-time setup/build fee if applicable (USD). */
-  oneTimeDealValue?: number;
-  stage: LeadStage;
-  /** Assigned strategist / manager who owns the lead. */
-  ownerId?: string | { _id: string; name: string; email: string };
-  notes?: string;
-  /** Free-form activity log — notes, emails, calls, stage changes. */
-  activity?: LeadActivity[];
-  closedAt?: Date | string;
-  closedReason?: string;
-  /** When the lead was moved to closed_won, we can link the created Client. */
-  clientId?: string;
-  createdAt?: Date | string;
-  updatedAt?: Date | string;
-}
-
-export interface PipelineStats {
-  pipelineMrr: number;
-  activeMrr: number;
-  wonThisMonth: number;
-  wonThisMonthMrr: number;
-  openLeads: number;
-  perStage: Record<LeadStage, number>;
-}
-
-// --- Proposals -------------------------------------------------------------
-
-export type ProposalStatus =
-  | 'draft'
-  | 'sent'
-  | 'viewed'
-  | 'signed'
-  | 'declined'
-  | 'expired';
-
-export const PROPOSAL_STATUS_LABELS: Record<ProposalStatus, string> = {
-  draft: 'Draft',
-  sent: 'Sent',
-  viewed: 'Viewed',
-  signed: 'Signed',
-  declined: 'Declined',
-  expired: 'Expired',
-};
-
-export type ProposalCadence = 'one-time' | 'monthly' | 'annual';
-
-export interface ProposalItem {
-  name: string;
-  description?: string;
-  cadence: ProposalCadence;
-  quantity: number;
-  unitPrice: number;
-  paymentLinkUrl?: string;
-}
-
-export interface Proposal {
-  _id?: string;
-  title: string;
-  leadId?: string;
-  clientId?: string;
-  businessName: string;
-  contactName?: string;
-  email?: string;
-  phone?: string;
-  website?: string;
-  items: ProposalItem[];
-  intro?: string;
-  terms?: string;
-  notes?: string;
-  senderUserId?: string;
-  status: ProposalStatus;
-  shareToken?: string;
-  sharePin?: string;
-  sentAt?: Date | string;
-  viewedAt?: Date | string;
-  signedAt?: Date | string;
-  declinedAt?: Date | string;
-  expiresAt?: Date | string;
-  createdAt?: Date | string;
-  updatedAt?: Date | string;
-}
-
-export interface ProposalTotals {
-  oneTime: number;
-  monthly: number;
-  annual: number;
-}
-
-export function computeProposalTotals(items: ProposalItem[]): ProposalTotals {
-  const t: ProposalTotals = { oneTime: 0, monthly: 0, annual: 0 };
-  for (const it of items) {
-    const sub = it.quantity * it.unitPrice;
-    if (it.cadence === 'one-time') t.oneTime += sub;
-    else if (it.cadence === 'monthly') t.monthly += sub;
-    else if (it.cadence === 'annual') t.annual += sub;
-  }
-  return t;
-}
-
-// --- Questionnaires (client-facing intake forms) ---------------------------
-
-export type QuestionnaireKind = 'seo' | 'ppc' | 'website' | 'combo';
-
-export const QUESTIONNAIRE_KIND_LABELS: Record<QuestionnaireKind, string> = {
-  seo: 'SEO onboarding',
-  ppc: 'PPC onboarding',
-  website: 'Website onboarding',
-  combo: 'SEO + PPC combined',
-};
-
-export interface Questionnaire {
-  _id?: string;
-  kind: QuestionnaireKind;
-  /** Business name pre-fill (so the client sees their own name). */
-  businessName: string;
-  /** Contact email invited to fill the form. */
-  invitedEmail?: string;
-  leadId?: string;
-  clientId?: string;
-  shareToken?: string;
-  status: 'pending' | 'submitted';
-  /** Structured answers keyed by question id. */
-  answers?: Record<string, unknown>;
-  submittedAt?: Date | string;
-  invitedByUserId?: string;
-  createdAt?: Date | string;
-  updatedAt?: Date | string;
-}
-
-// --- Onboarding ------------------------------------------------------------
-
-export type OnboardingSection =
-  | 'accounts-access'
-  | 'local-listings'
-  | 'social'
-  | 'research-strategy'
-  | 'technical'
-  | 'content'
-  | 'other';
-
-export const ONBOARDING_SECTION_LABELS: Record<OnboardingSection, string> = {
-  'accounts-access': 'Accounts & Access',
-  'local-listings': 'Local & Listings',
-  'social': 'Social',
-  'research-strategy': 'Research & Strategy',
-  'technical': 'Technical',
-  'content': 'Content',
-  'other': 'Other',
-};
-
-export type OnboardingItemPriority = 'critical' | 'important' | 'nice-to-have';
-
-/**
- * Automatic check hints. When an item has one of these set, the server
- * evaluates the corresponding client state and pre-fills the item's
- * "done" flag without the operator having to tick it manually. Item
- * state persisted by the user still takes precedence over the auto
- * check (so the operator can force-mark done or N/A regardless).
- */
-export type OnboardingAutoCheck =
-  | 'gsc-configured'
-  | 'ga4-configured'
-  | 'gbp-configured'
-  | 'shopify-connected'
-  | 'wordpress-connected'
-  | 'google-doc-linked'
-  | 'website-set'
-  | 'logo-set';
-
-/**
- * Template row that defines one onboarding checkpoint. Org-wide CRUD
- * from Settings → Onboarding. `key` is a stable identifier that gets
- * saved on each client's progress list so renaming labels doesn't lose
- * previously-checked state.
- */
-export interface OnboardingItem {
-  _id?: string;
-  key: string;
-  label: string;
-  section: OnboardingSection;
-  priority: OnboardingItemPriority;
-  autoCheck?: OnboardingAutoCheck;
-  helpText?: string;
-  /** Sort order within a section (lower first). */
-  order: number;
-  active: boolean;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
-
-export type OnboardingItemState = 'pending' | 'done' | 'na';
-
-/**
- * Per-client state for a single onboarding item. Only items the user
- * has touched need to appear — anything not present is treated as
- * `pending` unless the item has an autoCheck that resolves to done.
- */
-export interface OnboardingProgressItem {
-  key: string;
-  state: OnboardingItemState;
-  completedAt?: Date;
-  completedBy?: string;
-  notes?: string;
-}
-
-export interface OnboardingProgress {
-  _id?: string;
-  clientId: string;
-  items: OnboardingProgressItem[];
-  createdAt?: Date;
-  updatedAt?: Date;
-}
-
-/**
- * Combined snapshot the client detail page consumes: item definitions,
- * their computed state (persisted + auto-check merged), the summary
- * counts, and the flag that says whether the onboarding window has
- * closed with critical items still unset.
- */
-export interface OnboardingSnapshot {
-  items: Array<
-    OnboardingItem & {
-      state: OnboardingItemState;
-      autoResolved?: boolean;
-      completedAt?: Date;
-    }
-  >;
-  totalRequired: number;
-  doneCount: number;
-  pendingCount: number;
-  naCount: number;
-  criticalPendingKeys: string[];
-  windowDays: number;
-  daysSinceCreated: number;
-  pastWindow: boolean;
-}
-
-export type PackageColor =
-  | 'ink'
-  | 'sky'
-  | 'brand'
-  | 'positive'
-  | 'amber'
-  | 'purple'
-  | 'rose';
-
-export const PACKAGE_COLOR_PALETTE: Record<
-  PackageColor,
-  { bg: string; text: string; label: string }
-> = {
-  ink: { bg: 'bg-ink-900', text: 'text-white', label: 'Ink (dark)' },
-  sky: { bg: 'bg-sky-500', text: 'text-white', label: 'Sky (blue)' },
-  brand: { bg: 'bg-brand-500', text: 'text-white', label: 'Brand (coral)' },
-  positive: { bg: 'bg-positive-500', text: 'text-white', label: 'Positive (green)' },
-  amber: { bg: 'bg-amber-500', text: 'text-white', label: 'Amber' },
-  purple: { bg: 'bg-purple-500', text: 'text-white', label: 'Purple' },
-  rose: { bg: 'bg-rose-500', text: 'text-white', label: 'Rose' },
 };
 
 export type TaskCategory =
@@ -751,10 +286,6 @@ export interface Client {
    * until every consumer moves over.
    */
   tier?: ClientTier;
-  /** ObjectId reference to Package. Assigned during migration + creation. */
-  packageId?: string;
-  /** Populated Package doc when the API expands the reference. */
-  package?: Package;
   url: string;
   logoUrl?: string;
   industry?: string;
@@ -812,14 +343,6 @@ export interface Client {
   socialLinks?: string[];
   reviewsUrl?: string;
   photosUrl?: string;
-  /**
-   * Multi-service subscriptions. Each entry pairs a Service (SEO,
-   * PPC, Website Design, Tracking, …) with the Package the client
-   * bought for that service, plus its own hours/dates. Preferred over
-   * the legacy `packageId` + `hoursPerCycle` scalar fields after the
-   * migration.
-   */
-  subscriptions?: ClientSubscription[];
   /**
    * Files attached at the client level — contracts, brand kits,
    * reference material — that don't belong to any specific task or
@@ -1327,43 +850,9 @@ export const DEFAULT_WORKING_HOURS: Omit<WorkingHoursConfig, 'userId'> = {
   daysOff: [],
 };
 
-export type TimeBlockStatus = 'planned' | 'in_progress' | 'completed' | 'skipped';
-
-export type TimeBlockKind = 'client' | 'reporting';
-
-export interface TimeBlock {
-  _id?: string;
-  userId: string;
-  cycleId: string;
-  date: string; // YYYY-MM-DD
-  startTime: string; // HH:mm
-  endTime: string; // HH:mm
-  durationMinutes: number;
-  clientId?:
-    | string
-    | {
-        _id: string;
-        name: string;
-        tier?: ClientTier;
-        packageId?: string;
-        package?: Package;
-        logoUrl?: string;
-      };
-  taskId?: string | { _id: string; title: string; category: TaskCategory; status: TaskStatus };
-  status: TimeBlockStatus;
-  /** Reporting blocks (cycle-end "send client reports" slot) have no client. */
-  kind?: TimeBlockKind;
-  startedAt?: Date;
-  completedAt?: Date;
-  actualMinutes?: number;
-  notes?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
-
 export interface PublicReportPayload {
   report: Report;
-  client: Pick<Client, 'name' | 'tier' | 'url' | 'logoUrl' | 'industry' | 'packageId' | 'package'>;
+  client: Pick<Client, 'name' | 'tier' | 'url' | 'logoUrl' | 'industry'>;
   cycle: Pick<Cycle, 'label' | 'startDate' | 'endDate'>;
   tasks: Array<{
     title: string;
@@ -1463,7 +952,6 @@ export type ReportSectionKey =
   | 'top-performing-pages'
   | 'ranking-movement'
   | 'serp-preview'
-  | 'package-deliverables'
   | 'actions-taken'
   | 'next-period-plan'
   | 'backlinks-profile'
@@ -1493,7 +981,6 @@ export const DEFAULT_REPORT_LAYOUT: ReportSectionConfig[] = [
   { key: 'top-performing-pages', visible: true },
   { key: 'ranking-movement', visible: true },
   { key: 'serp-preview', visible: true },
-  { key: 'package-deliverables', visible: true },
   { key: 'actions-taken', visible: true },
   { key: 'next-period-plan', visible: true },
   { key: 'backlinks-profile', visible: true },
@@ -1536,10 +1023,6 @@ export const REPORT_SECTION_META: Record<
   'serp-preview': {
     label: 'SERP Preview',
     description: 'Google-style mock of how the client appears for their top query.',
-  },
-  'package-deliverables': {
-    label: 'Package Deliverables',
-    description: 'Renders the assigned Package deliverables with progress vs target for this reporting period.',
   },
   'actions-taken': {
     label: 'Actions Taken',
@@ -1585,7 +1068,6 @@ export interface AppSettings {
   digestFrequency?: 'weekly' | 'biweekly' | 'monthly';
 }
 
-export const DEFAULT_ONBOARDING_WINDOW_DAYS = 14;
 export const DEFAULT_ORG_NAME = 'Media Spearhead';
 export const DEFAULT_ORG_COLOR = '#FF7A59';
 

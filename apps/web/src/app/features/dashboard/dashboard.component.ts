@@ -1,17 +1,15 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { PipelineStats } from '@seo/shared';
 import { AuthService } from '../../core/auth.service';
 import { ClientsService } from '../../core/clients.service';
-import { PipelineService } from '../../core/pipeline.service';
 
 /**
- * Agency ops dashboard — the front door of the platform. This is
- * intentionally broader than SEO now: it surfaces client counts across
- * SEO / PPC / Websites and links out to Pipeline. Older widgets
- * (priority queue, task rollup, today's plan) were removed on purpose
- * — they belong on their own pages, not on the home screen.
+ * Strategist dashboard — the front door of the platform. Surfaces the
+ * active client count and the accounts that need a touch today, then
+ * gets out of the way. Older widgets (priority queue, task rollup,
+ * today's plan) were removed on purpose — they belong on their own
+ * pages, not on the home screen.
  */
 @Component({
   selector: 'app-dashboard',
@@ -62,7 +60,7 @@ import { PipelineService } from '../../core/pipeline.service';
               <span class="bg-gradient-to-r from-sky-500 to-sky-600 bg-clip-text text-transparent">spearhead-sharp</span>.
             </h1>
             <p class="mt-1.5 text-sm text-ink-500">
-              Here's where everything lives. Pulse and Pipeline are one tap away.
+              Here's where everything lives. Your clients and reports are one tap away.
             </p>
           </div>
           <div class="inline-flex items-center gap-2 self-start sm:self-auto rounded-full bg-white border border-ink-200 px-3.5 py-1.5 text-xs font-semibold text-ink-700 shadow-sm">
@@ -142,37 +140,13 @@ import { PipelineService } from '../../core/pipeline.service';
           </div>
         </div>
 
-        <!-- WORK THE BOOK section -->
+        <!-- TODAY section -->
         <div class="flex items-center gap-2 mb-3">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-brand-500"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-          <span class="text-[11px] uppercase tracking-[0.14em] font-bold text-ink-500">Work the book</span>
+          <span class="text-[11px] uppercase tracking-[0.14em] font-bold text-ink-500">Today</span>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
-          <!-- Pipeline card -->
-          <a routerLink="/pipeline"
-             class="group rounded-2xl bg-white border border-ink-200 shadow-sm hover:shadow-md transition p-5 sm:p-6 flex flex-col">
-            <div class="flex items-start justify-between mb-4">
-              <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center text-white shadow-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
-              </div>
-              <span class="text-ink-400 group-hover:text-ink-700 transition">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
-              </span>
-            </div>
-            <h3 class="text-lg font-bold text-ink-900">Pipeline</h3>
-            <p class="mt-1 text-sm text-ink-500">Your live sales pipeline, deal by deal.</p>
-            <div class="mt-5 grid grid-cols-2 gap-3">
-              <div class="rounded-xl bg-ink-50 border border-ink-100 p-3">
-                <div class="text-2xl font-bold text-ink-900 leading-none">{{ openDealsDisplay() }}</div>
-                <div class="mt-1 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Open deals</div>
-              </div>
-              <div class="rounded-xl bg-ink-50 border border-ink-100 p-3">
-                <div class="text-2xl font-bold text-ink-900 leading-none">{{ pipelineMrrDisplay() }}</div>
-                <div class="mt-1 text-[11px] font-semibold uppercase tracking-wider text-ink-500">In play (MRR)</div>
-              </div>
-            </div>
-          </a>
+        <div class="grid grid-cols-1 gap-4 mb-8">
 
           <div class="flex flex-col gap-4">
             <!-- Needs attention -->
@@ -259,11 +233,9 @@ import { PipelineService } from '../../core/pipeline.service';
 })
 export class DashboardComponent implements OnInit {
   private clientsSvc = inject(ClientsService);
-  private pipelineSvc = inject(PipelineService);
   private auth = inject(AuthService);
 
   activeClientCount = signal<number | null>(null);
-  pipelineStats = signal<PipelineStats | null>(null);
 
   // Placeholder — future ops-digests module (e.g. flagged accounts,
   // overdue reports, silent PPC accounts) will populate this signal.
@@ -300,17 +272,6 @@ export class DashboardComponent implements OnInit {
     return n === null ? '—' : String(n);
   });
 
-  openDealsDisplay = computed(() => {
-    const s = this.pipelineStats();
-    return s ? String(s.openLeads) : '—';
-  });
-
-  pipelineMrrDisplay = computed(() => {
-    const s = this.pipelineStats();
-    if (!s) return '—';
-    return this.formatCurrency(s.pipelineMrr);
-  });
-
   comingSoonCards = [
     {
       title: 'Client report scheduler',
@@ -339,13 +300,6 @@ export class DashboardComponent implements OnInit {
     this.clientsSvc.list({ active: true }).subscribe({
       next: (clients) => this.activeClientCount.set(clients.length),
       error: () => this.activeClientCount.set(0),
-    });
-
-    this.pipelineSvc.stats().subscribe({
-      next: (s) => this.pipelineStats.set(s),
-      // Pipeline endpoint may be forbidden for some roles — fail
-      // gracefully and leave the display as an em-dash placeholder.
-      error: () => this.pipelineStats.set(null),
     });
   }
 

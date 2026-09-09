@@ -25,8 +25,6 @@ type FormMode = 'create' | 'edit' | 'reset' | null;
 
       <nav class="tab-bar mb-6">
         <div class="tab-bar-scroll flex-1 min-w-0">
-          <a routerLink="/core/services" routerLinkActive="tab-active" class="tab">Services</a>
-          <a routerLink="/core/packages" routerLinkActive="tab-active" class="tab">Packages</a>
           <a routerLink="/core/users" routerLinkActive="tab-active" class="tab">Users</a>
         </div>
       </nav>

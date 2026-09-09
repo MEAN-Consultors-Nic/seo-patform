@@ -34,7 +34,7 @@ export function renderInviteEmail(input: Input): { html: string; text: string } 
   <tr><td align="center">
     <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
       <tr><td style="padding:32px 32px 0 32px;">
-        <div style="font-size:11px;font-weight:700;color:${BRAND};letter-spacing:0.08em;text-transform:uppercase;">Media Spearhead · Internal Tools</div>
+        <div style="font-size:11px;font-weight:700;color:${BRAND};letter-spacing:0.08em;text-transform:uppercase;">Media Spearhead · SEO Platform</div>
         <h1 style="font-size:22px;margin:8px 0 4px 0;color:${INK_900};">You're invited</h1>
         <p style="font-size:14px;color:${INK_700};line-height:1.55;margin:0;">
           Hi ${name},<br>${invitedBy} has added you to the platform${role}. Set your password to activate your account.
@@ -62,7 +62,7 @@ export function renderInviteEmail(input: Input): { html: string; text: string } 
 </table>
 </body></html>`;
 
-  const text = `You're invited to Media Spearhead · Internal Tools
+  const text = `You're invited to Media Spearhead · SEO Platform
 
 Hi ${input.recipientName || 'there'},
 ${input.invitedBy || 'Your team'} has added you to the platform${input.role ? ` as ${input.role}` : ''}. Set your password to activate your account:

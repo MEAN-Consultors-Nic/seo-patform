@@ -14,12 +14,11 @@ import { RolesGuard } from '../modules/auth/roles.guard';
 // barrel is either legacy (SeedModule) or awaits its own phase (Reports).
 
 import { CoreModule } from '../modules/core/core.module';
-import { ClientsDomainModule } from '../modules/clients-domain/clients-domain.module';
+import { ClientsModule } from '../modules/clients/clients.module';
 import { SeoModule } from '../modules/seo/seo.module';
 import { WorkModule } from '../modules/work/work.module';
 import { IntegrationsModule } from '../modules/integrations/integrations.module';
 import { ToolsModule } from '../modules/tools/tools.module';
-import { SalesModule } from '../modules/sales/sales.module';
 
 // --- Feature modules not yet under a barrel ------------------------------
 import { ReportsModule } from '../modules/reports/reports.module';
@@ -37,9 +36,8 @@ import { SeedModule } from '../seed/seed.module';
     // supervisor multi-PIN vault.
     CoreModule,
 
-    // Clients + everything scoped to the client: package/tier, and
-    // onboarding checklist state.
-    ClientsDomainModule,
+    // Clients + everything scoped to the client.
+    ClientsModule,
 
     // SEO domain — keywords, competitors, backlinks, content pipeline,
     // cannibalization, indexing.
@@ -56,10 +54,6 @@ import { SeedModule } from '../seed/seed.module';
     // Standalone utility tools — domain lookup, schema modeller.
     ToolsModule,
 
-    // Sales — pipeline (leads Kanban) + proposals + follow-ups +
-    // reactivation + client-facing questionnaires. Wires the sub-
-    // modules as they land; only Pipeline is live in the first slice.
-    SalesModule,
 
     // Reports (multi-format + PDF/Word/share). Kept out of a barrel
     // for now because its own restructure is a follow-up slice.

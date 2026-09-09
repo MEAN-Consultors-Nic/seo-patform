@@ -18,16 +18,11 @@ import {
 import { Client, ClientDocument } from './client.schema';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
-import {
-  CreateSubscriptionDto,
-  UpdateSubscriptionDto,
-} from './dto/subscription.dto';
 import { Keyword, KeywordDocument } from '../keywords/keyword.schema';
 import { Task, TaskDocument } from '../tasks/task.schema';
 import { Cycle, CycleDocument } from '../cycles/cycle.schema';
 import { Backlink, BacklinkDocument } from '../backlinks/backlink.schema';
 import { User, UserDocument } from '../auth/user.schema';
-import { SentEmail } from '../comms/sent-email.schema';
 import {
   AuthenticatedUser,
   canManageTeam,
@@ -35,10 +30,9 @@ import {
   isManagerOrAbove,
 } from '../auth/roles.guard';
 import { ActivityLogService } from '../activity-log/activity-log.service';
-import { ServicesService } from '../services/services.service';
 
 @Injectable()
-export class ClientsService implements OnModuleInit {
+export class ClientsService {
   private readonly logger = new Logger(ClientsService.name);
 
   constructor(
@@ -48,62 +42,9 @@ export class ClientsService implements OnModuleInit {
     @InjectModel(Cycle.name) private readonly cycleModel: Model<CycleDocument>,
     @InjectModel(Backlink.name) private readonly backlinkModel: Model<BacklinkDocument>,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
-    @InjectModel(SentEmail.name)
-    private readonly sentEmailModel: Model<SentEmail & { createdAt: Date }>,
     private readonly audit: ActivityLogService,
-    private readonly services: ServicesService,
   ) {}
 
-  async onModuleInit(): Promise<void> {
-    try {
-      await this.backfillSubscriptions();
-    } catch (e) {
-      this.logger.error(
-        `Client subscription backfill failed: ${(e as Error).message}`,
-        (e as Error).stack,
-      );
-    }
-  }
-
-  /**
-   * For every client that predates the multi-service migration —
-   * identified by having no subscriptions[] but a legacy packageId —
-   * create a single SEO subscription synthesized from packageId +
-   * hoursPerCycle + endingDate. Idempotent: runs once per client.
-   */
-  private async backfillSubscriptions(): Promise<void> {
-    const seo = await this.services.findBySlug('seo');
-    if (!seo?._id) return;
-    let migrated = 0;
-    const cursor = this.model
-      .find({
-        $or: [
-          { subscriptions: { $exists: false } },
-          { subscriptions: { $size: 0 } },
-        ],
-        packageId: { $exists: true, $ne: null },
-      })
-      .cursor();
-    for await (const client of cursor) {
-      const sub = {
-        serviceId: seo._id as Types.ObjectId,
-        packageId: client.packageId,
-        hoursPerCycle: client.hoursPerCycle || undefined,
-        endingDate: client.endingDate,
-        active: client.active !== false,
-      };
-      await this.model.updateOne(
-        { _id: client._id },
-        { $set: { subscriptions: [sub] } },
-      );
-      migrated++;
-    }
-    if (migrated > 0) {
-      this.logger.log(
-        `Synthesized SEO subscription on ${migrated} legacy client(s).`,
-      );
-    }
-  }
 
   /**
    * Builds the Mongo filter that restricts a query to the clients a
@@ -144,7 +85,6 @@ export class ClientsService implements OnModuleInit {
     return this.model
       .find(q)
       .populate('ownerId', 'name email')
-      .populate('packageId', 'name color description deliverables hoursPerPeriod')
       .sort({ name: 1 })
       .lean()
       .exec();
@@ -154,7 +94,6 @@ export class ClientsService implements OnModuleInit {
     const client = await this.model
       .findById(id)
       .populate('ownerId', 'name email')
-      .populate('packageId', 'name color description deliverables hoursPerPeriod')
       .lean()
       .exec();
     if (!client) throw new NotFoundException(`Client ${id} not found`);
@@ -264,7 +203,6 @@ export class ClientsService implements OnModuleInit {
     const updated = await this.model
       .findByIdAndUpdate(id, patch, { new: true })
       .populate('ownerId', 'name email')
-      .populate('packageId', 'name color description deliverables hoursPerPeriod')
       .lean()
       .exec();
     if (!updated) throw new NotFoundException(`Client ${id} not found`);
@@ -333,14 +271,13 @@ export class ClientsService implements OnModuleInit {
     const clients = await this.model
       .find(q)
       .populate('ownerId', 'name email')
-      .populate('packageId', 'name color description deliverables hoursPerPeriod')
       .sort({ tier: 1, name: 1 })
       .lean()
       .exec();
 
     return Promise.all(
       clients.map(async (c) => {
-        const [keywords, tasks, liveBacklinks, lastEmail] = await Promise.all([
+        const [keywords, tasks, liveBacklinks] = await Promise.all([
           this.keywordModel.find({ clientId: c._id }).lean().exec(),
           currentCycle
             ? this.taskModel
@@ -352,12 +289,6 @@ export class ClientsService implements OnModuleInit {
             clientId: c._id,
             status: 'live',
           }),
-          this.sentEmailModel
-            .findOne({ clientId: c._id, ok: true })
-            .sort({ createdAt: -1 })
-            .select({ createdAt: 1, kind: 1 })
-            .lean()
-            .exec(),
         ]);
 
         const rankedKeywords = keywords.filter(
@@ -396,18 +327,24 @@ export class ClientsService implements OnModuleInit {
           0,
         );
 
-        // Roster health (MVP): penalize days-since-last-email + open
+        // Roster health: penalize days-since-last-delivered-work + open
         // tasks. Score 0-100, buckets: healthy >=70, watch 50-69,
-        // at-risk <50. Sent-email lookup limits to ok:true so a failed
-        // send doesn't count as "touched".
-        const lastEmailAt = (lastEmail as { createdAt?: Date } | null)
-          ?.createdAt;
-        const daysSinceLastEmail = lastEmailAt
-          ? Math.floor((Date.now() - new Date(lastEmailAt).getTime()) / 86400000)
+        // at-risk <50. Derived from the tasks we already loaded, so this
+        // costs no extra query.
+        const completedAts = tasks
+          .map((t) => (t as { completedAt?: Date | string }).completedAt)
+          .filter((d): d is Date | string => !!d)
+          .map((d) => new Date(d).getTime())
+          .filter((n) => Number.isFinite(n));
+        const lastActivityAt = completedAts.length
+          ? new Date(Math.max(...completedAts))
+          : undefined;
+        const daysSinceLastActivity = lastActivityAt
+          ? Math.floor((Date.now() - lastActivityAt.getTime()) / 86400000)
           : null;
         const openTasks = tasks.length - completedTasks;
         const healthScore = this.computeHealthScore(
-          daysSinceLastEmail,
+          daysSinceLastActivity,
           openTasks,
         );
         const healthStatus: ClientHealthStatus =
@@ -442,8 +379,8 @@ export class ClientsService implements OnModuleInit {
                   : 0,
             },
             backlinks: liveBacklinks,
-            lastEmailAt,
-            daysSinceLastEmail,
+            lastActivityAt,
+            daysSinceLastActivity,
             healthScore,
             healthStatus,
           },
@@ -453,22 +390,22 @@ export class ClientsService implements OnModuleInit {
   }
 
   /**
-   * MVP roster-health formula.
+   * Roster-health formula.
    *  Base: 100
-   *  Penalty: 1 pt per day since last outbound email (max 60).
+   *  Penalty: 1 pt per day since the last completed task (max 60).
    *  Penalty: 5 pt per open task on the current cycle.
-   *  Clients that have never been emailed start at 60 (neither healthy
+   *  Clients with nothing completed yet start at 60 (neither healthy
    *  nor at-risk) so a brand-new client doesn't false-flag on day 1.
    */
   private computeHealthScore(
-    daysSinceLastEmail: number | null,
+    daysSinceLastActivity: number | null,
     openTasks: number,
   ): number {
     let score = 100;
-    if (daysSinceLastEmail === null) {
+    if (daysSinceLastActivity === null) {
       score = 60;
     } else {
-      score -= Math.min(60, daysSinceLastEmail);
+      score -= Math.min(60, daysSinceLastActivity);
     }
     score -= Math.min(50, Math.max(0, openTasks) * 5);
     return Math.max(0, Math.min(100, Math.round(score)));
@@ -523,123 +460,6 @@ export class ClientsService implements OnModuleInit {
       canceled: inactive.length,
       perService,
     };
-  }
-
-  // --- Subscriptions -----------------------------------------------------
-
-  /**
-   * Adds a new subscription (service + package) to a client. Refuses a
-   * duplicate — one active subscription per service is enough, editing
-   * the existing one is the right path if the client changes package.
-   */
-  async addSubscription(
-    clientId: string,
-    dto: CreateSubscriptionDto,
-    user?: AuthenticatedUser,
-  ) {
-    if (user) await this.assertAccess(clientId, user);
-    const client = await this.model.findById(clientId).exec();
-    if (!client) throw new NotFoundException(`Client ${clientId} not found`);
-    const duplicate = (client.subscriptions ?? []).some(
-      (s) => s.serviceId?.toString() === dto.serviceId,
-    );
-    if (duplicate) {
-      throw new BadRequestException(
-        'That service is already on the client. Edit the existing subscription instead.',
-      );
-    }
-    const subscription = {
-      serviceId: new Types.ObjectId(dto.serviceId),
-      packageId: dto.packageId ? new Types.ObjectId(dto.packageId) : undefined,
-      hoursPerCycle: dto.hoursPerCycle,
-      startDate: dto.startDate ? new Date(dto.startDate) : undefined,
-      endingDate: dto.endingDate ? new Date(dto.endingDate) : undefined,
-      active: dto.active ?? true,
-      notes: dto.notes,
-    };
-    client.subscriptions = [...(client.subscriptions ?? []), subscription];
-    await client.save();
-    await this.audit.log({
-      userId: user?.userId,
-      userEmail: user?.email,
-      action: 'client.subscription.added',
-      targetType: 'Client',
-      targetId: clientId,
-      details: { serviceId: dto.serviceId, packageId: dto.packageId },
-    });
-    return this.model
-      .findById(clientId)
-      .populate('subscriptions.serviceId', 'name slug color icon')
-      .populate('subscriptions.packageId', 'name color hoursPerPeriod')
-      .lean()
-      .exec();
-  }
-
-  async updateSubscription(
-    clientId: string,
-    subId: string,
-    dto: UpdateSubscriptionDto,
-    user?: AuthenticatedUser,
-  ) {
-    if (user) await this.assertAccess(clientId, user);
-    const client = await this.model.findById(clientId).exec();
-    if (!client) throw new NotFoundException(`Client ${clientId} not found`);
-    const sub = (client.subscriptions ?? []).find(
-      (s) => s._id?.toString() === subId,
-    );
-    if (!sub) throw new NotFoundException(`Subscription ${subId} not found`);
-    if (dto.serviceId !== undefined) sub.serviceId = new Types.ObjectId(dto.serviceId);
-    if (dto.packageId !== undefined)
-      sub.packageId = dto.packageId ? new Types.ObjectId(dto.packageId) : undefined;
-    if (dto.hoursPerCycle !== undefined) sub.hoursPerCycle = dto.hoursPerCycle;
-    if (dto.startDate !== undefined)
-      sub.startDate = dto.startDate ? new Date(dto.startDate) : undefined;
-    if (dto.endingDate !== undefined)
-      sub.endingDate = dto.endingDate ? new Date(dto.endingDate) : undefined;
-    if (dto.active !== undefined) sub.active = dto.active;
-    if (dto.notes !== undefined) sub.notes = dto.notes;
-    await client.save();
-    await this.audit.log({
-      userId: user?.userId,
-      userEmail: user?.email,
-      action: 'client.subscription.updated',
-      targetType: 'Client',
-      targetId: clientId,
-      details: { subId, fields: Object.keys(dto) },
-    });
-    return this.model
-      .findById(clientId)
-      .populate('subscriptions.serviceId', 'name slug color icon')
-      .populate('subscriptions.packageId', 'name color hoursPerPeriod')
-      .lean()
-      .exec();
-  }
-
-  async removeSubscription(
-    clientId: string,
-    subId: string,
-    user?: AuthenticatedUser,
-  ) {
-    if (user) await this.assertAccess(clientId, user);
-    const client = await this.model.findById(clientId).exec();
-    if (!client) throw new NotFoundException(`Client ${clientId} not found`);
-    const before = (client.subscriptions ?? []).length;
-    client.subscriptions = (client.subscriptions ?? []).filter(
-      (s) => s._id?.toString() !== subId,
-    );
-    if (client.subscriptions.length === before) {
-      throw new NotFoundException(`Subscription ${subId} not found`);
-    }
-    await client.save();
-    await this.audit.log({
-      userId: user?.userId,
-      userEmail: user?.email,
-      action: 'client.subscription.removed',
-      targetType: 'Client',
-      targetId: clientId,
-      details: { subId },
-    });
-    return { deleted: true };
   }
 
   // --- Client-level attachments ------------------------------------------

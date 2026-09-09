@@ -1,8 +1,14 @@
-# Internal Tools — Media Spearhead
+# SEO Platform — Media Spearhead
 
-Agency operations platform for Media Spearhead. Started as an SEO-only toolset; being progressively modularized into a broader internal-tools suite (SEO, Clients, Reports, Tasks, Integrations — with Sales, Communications, PPC, and Ops digests planned).
+Specialized workbench for an SEO strategist: clients, keywords, positions,
+competitors, backlinks, content pipeline, cannibalization, indexing, link
+graph, GSC/GA4/GBP insights, tasks, and client-facing reports.
 
-Renamed from `seo-platform` on 2026-07-07. GitHub repo rename + custom domain change tracked as Phase 0 ops actions.
+Briefly renamed to "Internal Tools" in July 2026 while an agency-ops layer
+(sales pipeline, proposals, questionnaires, bulk email, packages) was built
+on top. That layer was removed on 2026-09-08 — the team runs those workflows
+on a dedicated platform — and the tool is back to its original single
+purpose.
 
 ## Stack
 
@@ -12,10 +18,10 @@ Renamed from `seo-platform` on 2026-07-07. GitHub repo rename + custom domain ch
 - **Database:** MongoDB 7
 - **Email:** nodemailer + SMTP
 - **PDF:** pdfmake
-- **Shared types:** `libs/shared` (importable as `@seo/shared` — the alias will migrate to `@internal-tools/shared` in the module-restructure phase)
+- **Shared types:** `libs/shared` (importable as `@seo/shared`)
 
 ```
-internal-tools/
+seo-platform/
 ├── apps/
 │   ├── api/         NestJS backend
 │   └── web/         Angular frontend
@@ -62,7 +68,7 @@ pnpm typecheck    # type-check every project
 
 ```bash
 # Once per project
-heroku create internal-tools-api --buildpack heroku/nodejs
+heroku create seo-platform-api --buildpack heroku/nodejs
 
 # Environment (minimum)
 heroku config:set \
@@ -76,7 +82,7 @@ heroku config:set \
   SMTP_SECURE=false \
   SMTP_USER=seo@notifications.mediaspearhead.com \
   SMTP_PASS='YOUR_PASSWORD_HERE' \
-  SMTP_FROM_NAME="Media Spearhead — Internal Tools" \
+  SMTP_FROM_NAME="Media Spearhead — SEO Platform" \
   SMTP_FROM_EMAIL=seo@notifications.mediaspearhead.com
 
 # Deploy
@@ -121,24 +127,25 @@ See `.env.example`. Production keys:
 - **seo-manager** — sees/edits every client; can't manage users.
 - **seo-strategist** — sees/edits only clients where they are `ownerId`.
 
-Expansion to `root · owner · admin · manager · strategist · client` is planned as **Phase 1 · Slice 1.1** of the roadmap (see `internal-tools_modularization-roadmap.pdf`).
+The live hierarchy is `root · owner · admin · manager · strategist`, with
+`manager` scoped to their own strategists' clients and `strategist` scoped to
+clients they own. A `supervisor` role still exists on the user model for
+historical task comments.
 
-## Ongoing modularization
+## Module layout
 
-The codebase is being reorganized into a module-per-domain layout. Progress:
+Backend modules are grouped into domain barrels so `AppModule` imports six
+things instead of twenty-five:
 
-| Module | Status |
+| Barrel | Contents |
 |---|---|
-| `core/` — users, auth, roles, per-user OAuth, audit, app-settings | Phase 1 (in progress) |
-| `seo/` — keywords, positions, competitors, backlinks, content, cannibalization, indexing, GSC insights | Phase 2 |
-| `clients/` — client CRUD, packages, onboarding, contacts, credentials, service areas | Phase 2 |
-| `reports/` — report editor, PDF/Word/share | Phase 2 |
-| `tasks/` — task list, templates, subtasks | Phase 2 |
-| `integrations/` — OAuth flows + per-provider services | Phase 2 |
-| `comms/` — Gmail send + AI writers + Email Studio | Phase 3 |
-| `sales/` — Pipeline, Proposals, Follow-ups, Reactivation, Questionnaires | Phase 4 |
-| `ops/` — Site Health, Delivery Risk, Client Health, Hosting, Credentials Watchdog | Phase 5 |
-| Other (`ppc/`, `revenue/`, `pulse/`, `ai/`, `portal/`) | Phase 6+ |
+| `core/` | auth, users, roles, app-settings, activity log |
+| `clients/` | client CRUD, contacts, credentials, service areas, files, notes |
+| `seo/` | keywords, competitors, backlinks, content, cannibalization, indexing, link graph |
+| `work/` | tasks, task templates, cycles (legacy compat), priority queue |
+| `integrations/` | Google (GSC/GA4/GBP/Docs/Drive), Shopify, WordPress, SMTP |
+| `tools/` | domain lookup, schema modeller |
+| `reports/` | report editor, PDF / Word / public share |
 
 ## Handy commands
 
@@ -151,5 +158,5 @@ docker compose logs -f web
 docker compose down -v
 
 # Mongo shell
-docker compose exec mongo mongosh internal-tools
+docker compose exec mongo mongosh seo-platform
 ```

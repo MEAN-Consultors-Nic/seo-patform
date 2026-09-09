@@ -36,10 +36,10 @@ import {
         </div>
         <div class="card p-4">
           <div class="text-[10px] font-semibold uppercase tracking-wider text-ink-500">
-            Package · cycle
+            Tier · hours / cycle
           </div>
           <div class="text-lg font-bold text-ink-900 mt-1">
-            {{ client.package?.name || client.tier || '—' }}
+            {{ client.tier ? 'Tier ' + client.tier : '—' }}
           </div>
           <div class="text-xs text-ink-500 mt-1">
             {{ client.hoursPerCycle || 0 }} h / cycle

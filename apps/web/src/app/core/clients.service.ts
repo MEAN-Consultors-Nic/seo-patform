@@ -7,19 +7,9 @@ import {
   ClientHealthStatus,
   ClientNoteAttachment,
   ClientRosterStats,
-  ClientSubscription,
   ClientTier,
 } from '@seo/shared';
 import { API_BASE_URL } from './api.config';
-
-export type CreateSubscriptionPayload = Omit<
-  ClientSubscription,
-  '_id' | 'createdAt' | 'updatedAt'
-> & {
-  serviceId: string;
-};
-
-export type UpdateSubscriptionPayload = Partial<CreateSubscriptionPayload>;
 
 @Injectable({ providedIn: 'root' })
 export class ClientsService {
@@ -69,29 +59,8 @@ export class ClientsService {
     return this.http.get<ClientRosterStats>(`${this.base}/clients/roster-stats`);
   }
 
-  addSubscription(clientId: string, payload: CreateSubscriptionPayload): Observable<Client> {
-    return this.http.post<Client>(
-      `${this.base}/clients/${clientId}/subscriptions`,
-      payload,
-    );
-  }
 
-  updateSubscription(
-    clientId: string,
-    subId: string,
-    payload: UpdateSubscriptionPayload,
-  ): Observable<Client> {
-    return this.http.patch<Client>(
-      `${this.base}/clients/${clientId}/subscriptions/${subId}`,
-      payload,
-    );
-  }
 
-  removeSubscription(clientId: string, subId: string) {
-    return this.http.delete<{ deleted: true }>(
-      `${this.base}/clients/${clientId}/subscriptions/${subId}`,
-    );
-  }
 
   addAttachment(clientId: string, attachment: Partial<ClientAttachment>): Observable<Client> {
     return this.http.post<Client>(
@@ -178,10 +147,10 @@ export interface ClientWithStats extends Client {
       pct: number;
     };
     backlinks: number;
-    /** ISO date or null when the client has never received an outbound. */
-    lastEmailAt?: string | Date | null;
-    /** Whole days since the last outbound email; null when never. */
-    daysSinceLastEmail?: number | null;
+    /** ISO date of the most recent completed task; null when none yet. */
+    lastActivityAt?: string | Date | null;
+    /** Whole days since the last completed task; null when none yet. */
+    daysSinceLastActivity?: number | null;
     /** 0-100 rollup used to bucket the health status. */
     healthScore?: number;
     /** Bucketed rollup used by the Clients page badges + filters. */

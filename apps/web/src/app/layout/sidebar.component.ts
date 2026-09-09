@@ -72,7 +72,7 @@ interface NavSection {
           </div>
           @if (!collapsed) {
             <div class="leading-tight min-w-0">
-              <div class="text-sm font-bold text-ink-900 truncate">Internal Tools</div>
+              <div class="text-sm font-bold text-ink-900 truncate">SEO Platform</div>
               <div
                 class="text-[9px] text-ink-500 mt-0.5 uppercase tracking-wider truncate"
               >
@@ -327,31 +327,16 @@ export class SidebarComponent {
       ],
     },
     {
-      label: 'WORK THE BOOK',
+      label: 'CLIENT WORK',
       items: [
         { route: '/clients', label: 'Clients', icon: 'users' },
-        { route: '/pipeline', label: 'Pipeline', icon: 'kanban' },
-      ],
-    },
-    {
-      label: 'REPORTING & DELIVERY',
-      items: [
         { route: '/reports', label: 'Reports', icon: 'chart-bar' },
-        { route: '/proposals', label: 'Proposals', icon: 'document-check' },
-      ],
-    },
-    {
-      label: 'CLIENT OUTREACH',
-      items: [
-        { route: '/bulk-send', label: 'Bulk send', icon: 'megaphone' },
-        { route: '/intake-hub', label: 'Intake Hub', icon: 'inbox' },
       ],
     },
     {
       label: 'SETTINGS',
       items: [
         { route: '/settings/report-layout', label: 'Report layout', icon: 'layout' },
-        { route: '/settings/onboarding', label: 'Onboarding', icon: 'check-list' },
         {
           route: '/settings/activity-log',
           label: 'Activity Log',
@@ -361,13 +346,11 @@ export class SidebarComponent {
       ],
     },
     {
-      // Org-wide administrative catalogs — deliberately kept separate
-      // from operational Settings. Only admins can touch these.
+      // Org-wide administrative catalog — deliberately kept separate
+      // from operational Settings. Only admins can touch this.
       label: 'CORE',
       roles: ['root', 'owner', 'admin'],
       items: [
-        { route: '/core/services', label: 'Services', icon: 'kanban' },
-        { route: '/core/packages', label: 'Packages', icon: 'box' },
         { route: '/core/users', label: 'Users', icon: 'user-circle' },
       ],
     },

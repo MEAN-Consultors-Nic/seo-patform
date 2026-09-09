@@ -537,13 +537,15 @@ export class ClientsListComponent implements OnInit {
 
   /**
    * Small caption under the health badge. Prefers a real
-   * days-since-last-email number; falls back to a "no opt yet" note
-   * so brand-new clients read as intentional rather than broken.
+   * days-since-last-completed-task number; falls back to a "no work
+   * logged" note so brand-new clients read as intentional rather
+   * than broken.
    */
   activityLine(c: ClientWithStats): string {
-    const days = c.stats?.daysSinceLastEmail;
-    if (days === null || days === undefined) return 'No opt yet';
+    const days = c.stats?.daysSinceLastActivity;
+    if (days === null || days === undefined) return 'No work logged';
     if (days >= 60) return `Stale (${days}d)`;
-    return `Opt ${days}d ago`;
+    if (days === 0) return 'Worked today';
+    return `${days}d since last task`;
   }
 }

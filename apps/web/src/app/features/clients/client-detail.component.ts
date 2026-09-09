@@ -6,12 +6,8 @@ import {
   CLIENT_SERVICE_LABELS,
   Client,
   ClientServiceLine,
-  PACKAGE_COLOR_PALETTE,
-  Package,
-  PackageColor,
 } from '@seo/shared';
 import { ClientsService } from '../../core/clients.service';
-import { PackagesService } from '../../core/packages.service';
 import { ClientKeywordsTab } from './tabs/keywords-tab.component';
 import { ClientKpiHistoryTab } from './tabs/kpi-history-tab.component';
 import { ClientKnowledgeTab } from './tabs/knowledge-tab.component';
@@ -33,8 +29,6 @@ import { ClientAccessTab } from './tabs/access-tab.component';
 import { ClientEcommerceTab } from './tabs/ecommerce-tab.component';
 import { ClientShopifyTab } from './tabs/shopify-tab.component';
 import { ClientWordpressTab } from './tabs/wordpress-tab.component';
-import { ClientOnboardingTabComponent } from './tabs/onboarding-tab.component';
-import { ClientEmailsTabComponent } from './tabs/emails-tab.component';
 import { ClientOverviewTabComponent } from './tabs/overview-tab.component';
 import {
   ClientPpcCampaignsTabComponent,
@@ -50,10 +44,8 @@ type TabKey =
   | 'contacts'
   | 'knowledge'
   | 'files'
-  | 'onboarding'
   | 'tasks'
   | 'content'
-  | 'emails'
   | 'keywords'
   | 'positions'
   | 'competitors'
@@ -128,8 +120,6 @@ const GROUPS: GroupDef[] = [
     ClientEcommerceTab,
     ClientShopifyTab,
     ClientWordpressTab,
-    ClientOnboardingTabComponent,
-    ClientEmailsTabComponent,
     ClientOverviewTabComponent,
     ClientPpcCampaignsTabComponent,
     ClientWebOpsTabComponent,
@@ -156,11 +146,7 @@ const GROUPS: GroupDef[] = [
             <div class="min-w-0">
               <h1 class="text-xl sm:text-2xl font-bold text-ink-900 truncate">{{ c.name }}</h1>
               <div class="flex items-center gap-2 mt-1 flex-wrap">
-                @if (packageForClient(c); as pkg) {
-                  <span [class]="packageBadgeClass(pkg.color) + ' text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded'">
-                    {{ pkg.name }}
-                  </span>
-                } @else if (c.tier) {
+                @if (c.tier) {
                   <span [class]="'tier-' + c.tier">{{ c.tier }}</span>
                 }
                 <span class="text-xs text-ink-500">{{ c.hoursPerCycle }} h / cycle</span>
@@ -311,17 +297,11 @@ const GROUPS: GroupDef[] = [
           @case ('files') {
             <app-client-files-tab [clientId]="c._id!" [attachments]="(c.attachments ?? [])" />
           }
-          @case ('onboarding') {
-            <app-client-onboarding-tab [clientId]="c._id!" [client]="c" />
-          }
           @case ('tasks') {
             <app-client-tasks-tab [clientId]="c._id!" />
           }
           @case ('content') {
             <app-client-content-tab [clientId]="c._id!" />
-          }
-          @case ('emails') {
-            <app-client-emails-tab [clientId]="c._id!" [client]="c" />
           }
           @case ('keywords') {
             <app-client-keywords-tab [clientId]="c._id!" />
@@ -376,9 +356,7 @@ const GROUPS: GroupDef[] = [
 export class ClientDetailComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private svc = inject(ClientsService);
-  private packagesSvc = inject(PackagesService);
 
-  packages = signal<Package[]>([]);
   client = signal<Client | null>(null);
   activeTab = signal<TabKey>('overview');
   /**
@@ -420,10 +398,8 @@ export class ClientDetailComponent implements OnInit {
       // regardless of which service group is active.
       { key: 'notes', label: 'Notes', group: 'overview' },
 
-      { key: 'onboarding', label: 'Onboarding', group: 'work' },
       { key: 'tasks', label: 'Tasks', group: 'work' },
       { key: 'content', label: 'Content', group: 'work' },
-      { key: 'emails', label: 'Emails', group: 'work' },
 
       // SEO tabs ordered by day-to-day priority: performance insights
       // first, then health checks, then keyword strategy, then the
@@ -575,35 +551,16 @@ export class ClientDetailComponent implements OnInit {
 
   ngOnInit() {
     this.reload();
-    this.packagesSvc.list().subscribe({
-      next: (list) => this.packages.set(list),
-      error: () => this.packages.set([]),
-    });
-    // Deep-link support: ?tab=emails from the Bulk Send page lands
-    // the user on the Emails tab directly. Only honors a known tab
-    // key so a stale link can't send us to an undefined case.
+    // Deep-link support: ?tab=<key> lands the user straight on a tab.
+    // Only honors a known tab key so a stale link can't send us to an
+    // undefined case.
     const requested = this.route.snapshot.queryParamMap.get('tab');
     if (requested && this.allTabs().some((t) => t.key === requested)) {
       this.activeTab.set(requested as TabKey);
     }
   }
 
-  /**
-   * Resolves the client's package from either the populated `package`
-   * field the API sends, or by looking up packageId in the loaded list.
-   * Returns null when the client has neither (pre-migration data).
-   */
-  packageForClient(c: Client): Package | null {
-    if (c.package) return c.package;
-    if (!c.packageId) return null;
-    return this.packages().find((p) => p._id === c.packageId) ?? null;
-  }
 
-  packageBadgeClass(color: PackageColor | undefined): string {
-    const c = color || 'sky';
-    const palette = PACKAGE_COLOR_PALETTE[c];
-    return `${palette.bg} ${palette.text}`;
-  }
 
   /** "alias1, alias2, alias3" representation for the comma-separated input. */
   reload() {

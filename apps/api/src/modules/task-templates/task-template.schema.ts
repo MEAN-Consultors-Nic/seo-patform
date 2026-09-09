@@ -50,7 +50,7 @@ export class TaskTemplate {
    * PackagesService.onModuleInit; new templates created after the
    * migration set this directly.
    */
-  @Prop({ type: [Types.ObjectId], ref: 'Package', default: [] })
+  @Prop({ type: [Types.ObjectId], default: [] })
   applicablePackageIds!: Types.ObjectId[];
 
   @Prop({ default: true })
