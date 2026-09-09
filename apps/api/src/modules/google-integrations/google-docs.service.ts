@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { google } from 'googleapis';
+import { docs_v1, google } from 'googleapis';
 import { GoogleOAuthService } from './google-oauth.service';
+import {
+  DocsContent,
+  groupListBlocks,
+  htmlToDocsContent,
+} from './html-to-docs';
 
 /**
  * Mirrors task completions into a client's Google Doc.
@@ -319,7 +324,7 @@ export class GoogleDocsService {
       const separator =
         '────────────────────────────────────────────────────────';
       const title = task.title;
-      const description = this.stripHtml(task.description || '').trim();
+      const description = htmlToDocsContent(task.description);
 
       // Find the current end-of-body so every insert lands at the
       // tail. includeTabsContent MUST be true for the response to
@@ -350,19 +355,14 @@ export class GoogleDocsService {
       // room between consecutive entries without needing an extra
       // empty paragraph.
       //
-      // When the description is empty we skip the description line
-      // entirely instead of inserting a placeholder '\n' — the
-      // latter created a visible empty paragraph between the HR
-      // and the images / footer.
-      const intro =
-        `${title}\n${separator}\n` +
-        (description ? `${description}\n` : '');
+      // The description is inserted as its own request so its index
+      // math stays independent of the title block — it can span many
+      // paragraphs now that headings, lists and links survive.
+      const intro = `${title}\n${separator}\n`;
       const titleStart = cursor;
       const titleEnd = titleStart + title.length;
       const introSepStart = titleEnd + 1;
       const introSepEnd = introSepStart + separator.length;
-      const descStart = introSepEnd + 1;
-      const descEnd = descStart + description.length;
 
       requests.push({
         insertText: { location: { index: cursor, tabId }, text: intro },
@@ -410,16 +410,24 @@ export class GoogleDocsService {
           fields: 'fontSize,foregroundColor',
         },
       });
-      if (description) {
-        requests.push({
-          updateParagraphStyle: {
-            range: { startIndex: descStart, endIndex: descEnd, tabId },
-            paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
-            fields: 'namedStyleType',
-          },
-        });
-      }
       cursor += intro.length;
+
+      // 2) Description. Rendered with real Docs structure — headings,
+      //    bullet/numbered lists, bold/italic/underline/strikethrough,
+      //    hyperlinks, blockquotes and code — so the entry reads the
+      //    same in the doc as it did in the editor, and survives a
+      //    "Download as .docx" into Word.
+      if (description.text) {
+        const descBase = cursor;
+        const descText = `${description.text}\n`;
+        requests.push({
+          insertText: { location: { index: cursor, tabId }, text: descText },
+        });
+        requests.push(
+          ...this.descriptionStyleRequests(description, descBase, tabId),
+        );
+        cursor += descText.length;
+      }
 
       // Split attachments by kind: images get inlined as thumbnails
       // (capped at 2 so the row fits inside the 468pt LETTER content
@@ -512,7 +520,7 @@ export class GoogleDocsService {
         cursor += lineText.length;
       });
 
-      // 3) Footer: separator rule + metadata signature line. Single
+      // 4) Footer: separator rule + metadata signature line. Single
       //    trailing newline (NOT \n\n) so no empty paragraph lingers
       //    after each entry — Google was rendering that empty
       //    paragraph as visible whitespace between the metadata and
@@ -577,6 +585,172 @@ export class GoogleDocsService {
   }
 
   /**
+   * Turns the converter's block/run ranges into Docs API requests.
+   *
+   * Request ORDER matters and is deliberate:
+   *   1. paragraph styles   — headings, quote indent, code font
+   *   2. nested-list indent — must land BEFORE bullets, because Docs
+   *                           derives a bullet's nesting level (and so
+   *                           its glyph: disc -> circle -> square) from
+   *                           the paragraph's indentation at the moment
+   *                           createParagraphBullets runs
+   *   3. bullets            — one request per run of same-type items so
+   *                           numbering doesn't restart every line
+   *   4. inline styles      — last, and each with a narrow `fields`
+   *                           mask so it merges with the paragraph-level
+   *                           styling above instead of replacing it
+   *
+   * None of these insert or remove characters, so every index stays
+   * valid for the whole batch.
+   */
+  private descriptionStyleRequests(
+    content: DocsContent,
+    base: number,
+    tabId: string,
+  ): docs_v1.Schema$Request[] {
+    // Typed against the generated schema on purpose: it turns a field
+    // typo (strikeThrough vs strikethrough, say) into a build error
+    // instead of a rejected batch at sync time.
+    const requests: docs_v1.Schema$Request[] = [];
+    const rangeOf = (b: { start: number; end: number }) => ({
+      startIndex: base + b.start,
+      endIndex: base + b.end,
+      tabId,
+    });
+
+    // 1) Paragraph-level styling.
+    for (const b of content.blocks) {
+      const range = rangeOf(b);
+      if (b.type === 'heading2' || b.type === 'heading3') {
+        // The entry title already owns HEADING_2, so description
+        // headings start one level down to keep the doc outline sane.
+        requests.push({
+          updateParagraphStyle: {
+            range,
+            paragraphStyle: {
+              namedStyleType:
+                b.type === 'heading2' ? 'HEADING_3' : 'HEADING_4',
+            },
+            fields: 'namedStyleType',
+          },
+        });
+        continue;
+      }
+
+      requests.push({
+        updateParagraphStyle: {
+          range,
+          paragraphStyle:
+            b.type === 'quote'
+              ? {
+                  namedStyleType: 'NORMAL_TEXT',
+                  indentStart: { magnitude: 24, unit: 'PT' },
+                }
+              : { namedStyleType: 'NORMAL_TEXT' },
+          fields:
+            b.type === 'quote' ? 'namedStyleType,indentStart' : 'namedStyleType',
+        },
+      });
+
+      if (b.type === 'quote') {
+        requests.push({
+          updateTextStyle: {
+            range,
+            textStyle: {
+              italic: true,
+              foregroundColor: {
+                color: { rgbColor: { red: 0.42, green: 0.45, blue: 0.5 } },
+              },
+            },
+            fields: 'italic,foregroundColor',
+          },
+        });
+      } else if (b.type === 'code') {
+        requests.push({
+          updateTextStyle: {
+            range,
+            textStyle: {
+              weightedFontFamily: { fontFamily: 'Courier New' },
+              fontSize: { magnitude: 9.5, unit: 'PT' },
+            },
+            fields: 'weightedFontFamily,fontSize',
+          },
+        });
+      }
+    }
+
+    // 2) Nested list indentation — see the ordering note above.
+    for (const b of content.blocks) {
+      if (b.type !== 'bullet' && b.type !== 'number') continue;
+      if (b.indent <= 0) continue;
+      const magnitude = 18 * (b.indent + 1);
+      requests.push({
+        updateParagraphStyle: {
+          range: rangeOf(b),
+          paragraphStyle: {
+            indentStart: { magnitude, unit: 'PT' },
+            indentFirstLine: { magnitude: magnitude - 18, unit: 'PT' },
+          },
+          fields: 'indentStart,indentFirstLine',
+        },
+      });
+    }
+
+    // 3) Bullets, grouped per contiguous run.
+    for (const group of groupListBlocks(content.blocks)) {
+      requests.push({
+        createParagraphBullets: {
+          range: rangeOf(group),
+          bulletPreset:
+            group.type === 'number'
+              ? 'NUMBERED_DECIMAL_ALPHA_ROMAN'
+              : 'BULLET_DISC_CIRCLE_SQUARE',
+        },
+      });
+    }
+
+    // 4) Inline character styling.
+    for (const r of content.runs) {
+      const textStyle: docs_v1.Schema$TextStyle = {};
+      const fields: string[] = [];
+      if (r.style.bold) {
+        textStyle.bold = true;
+        fields.push('bold');
+      }
+      if (r.style.italic) {
+        textStyle.italic = true;
+        fields.push('italic');
+      }
+      if (r.style.underline) {
+        textStyle.underline = true;
+        fields.push('underline');
+      }
+      if (r.style.strikethrough) {
+        textStyle.strikethrough = true;
+        fields.push('strikethrough');
+      }
+      if (r.style.code) {
+        textStyle.weightedFontFamily = { fontFamily: 'Courier New' };
+        fields.push('weightedFontFamily');
+      }
+      if (r.style.link) {
+        textStyle.link = { url: r.style.link };
+        fields.push('link');
+      }
+      if (fields.length === 0) continue;
+      requests.push({
+        updateTextStyle: {
+          range: rangeOf(r),
+          textStyle,
+          fields: fields.join(','),
+        },
+      });
+    }
+
+    return requests;
+  }
+
+  /**
    * Extract a filename from a Cloudinary URL when the caller didn't
    * pass originalFilename. Takes the last path segment and strips the
    * query string — good enough for a "📎 label" display line.
@@ -607,24 +781,4 @@ export class GoogleDocsService {
     );
   }
 
-  /**
-   * Description in tasks is rich HTML coming out of Quill. The Docs
-   * API only accepts plain-text via insertText, so we flatten to a
-   * single paragraph and rely on sanitizeText elsewhere to have
-   * cleaned out invisibles.
-   */
-  private stripHtml(html: string): string {
-    return html
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
-      .replace(/<[^>]+>/g, '')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-  }
 }
