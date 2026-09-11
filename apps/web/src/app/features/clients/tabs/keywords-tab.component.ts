@@ -10,13 +10,22 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
+  KEYWORD_PRIORITIES,
+  KEYWORD_STATUSES,
+  KEYWORD_STATUS_LABELS,
   Client,
   GscKeywordPullResult,
   Keyword,
   KeywordIntent,
+  KeywordListWithStats,
+  KeywordStatus,
 } from '@seo/shared';
 import { ClientsService } from '../../../core/clients.service';
 import { KeywordsService } from '../../../core/keywords.service';
+import {
+  KeywordListsService,
+  ParsedKeywordRow,
+} from '../../../core/keyword-lists.service';
 import {
   SearchFromLocation,
   UsearchfromButtonComponent,
@@ -31,7 +40,8 @@ type KeywordSortKey =
   | 'volume'
   | 'difficulty'
   | 'gscClicks'
-  | 'gscImpressions';
+  | 'gscImpressions'
+  | 'cpc';
 
 function todayIso(): string {
   const d = new Date();
@@ -84,6 +94,17 @@ function daysAgoIso(days: number): string {
           </p>
         </div>
         <div class="flex flex-wrap gap-2">
+          <button class="btn-secondary text-xs" (click)="openPasteModal()"
+                  title="Paste a keyword export from Ubersuggest, Ahrefs or Semrush">
+            📋 Paste keywords
+          </button>
+          <button class="btn-secondary text-xs" (click)="openListsModal()"
+                  title="Create and manage keyword lists">
+            🗂 Lists
+            @if (lists().length > 0) {
+              <span class="ml-1 text-ink-400">({{ lists().length }})</span>
+            }
+          </button>
           <button class="btn-secondary text-xs" (click)="openSyncModal()"
                   [disabled]="syncing()"
                   title="Refresh position, impressions, clicks for every keyword">
@@ -148,6 +169,23 @@ function daysAgoIso(days: number): string {
                  (ngModelChange)="onSearchChange($event)"
                  placeholder="Filter by keyword text…" />
         </div>
+        <div class="min-w-[180px]">
+          <label class="label">List</label>
+          <select class="input input-sm"
+                  [ngModel]="listFilter()"
+                  (ngModelChange)="onListChange($event)">
+            <option value="">All tracked</option>
+            <option value="__all__">All keywords (incl. research)</option>
+            <option value="__untracked__">Research only (untracked)</option>
+            @if (lists().length > 0) {
+              <optgroup label="Lists">
+                @for (l of lists(); track l._id) {
+                  <option [value]="l._id">{{ l.name }} ({{ l.keywordCount }})</option>
+                }
+              </optgroup>
+            }
+          </select>
+        </div>
         <div class="min-w-[160px]">
           <label class="label">Cluster</label>
           <select class="input input-sm"
@@ -174,6 +212,7 @@ function daysAgoIso(days: number): string {
             <option value="difficulty">Difficulty</option>
             <option value="gscClicks">GSC clicks</option>
             <option value="gscImpressions">GSC impressions</option>
+            <option value="cpc">CPC</option>
           </select>
         </div>
         <button class="btn-secondary text-xs flex-shrink-0"
@@ -193,7 +232,7 @@ function daysAgoIso(days: number): string {
             <option [ngValue]="9999">All</option>
           </select>
         </div>
-        @if (searchTerm() || clusterFilter()) {
+        @if (searchTerm() || clusterFilter() || listFilter()) {
           <button class="btn-ghost text-xs text-ink-500"
                   (click)="clearFilters()">
             Clear
@@ -219,6 +258,7 @@ function daysAgoIso(days: number): string {
               <th class="px-4 py-2 text-left">Cluster</th>
               <th class="px-4 py-2 text-right">Vol.</th>
               <th class="px-4 py-2 text-right">KD</th>
+              <th class="px-4 py-2 text-right">CPC</th>
               <th class="px-4 py-2 text-right">Current pos.</th>
               <th class="px-4 py-2 text-right">Previous</th>
               <th class="px-4 py-2 text-right">Δ</th>
@@ -244,10 +284,39 @@ function daysAgoIso(days: number): string {
                   @if (k.targetUrl) {
                     <div class="text-xs text-slate-400">{{ k.targetUrl }}</div>
                   }
+                  @if (k.intent || k.priority || k.status || k.tracked === false) {
+                    <div class="flex items-center gap-1 flex-wrap mt-1">
+                      @if (k.tracked === false) {
+                        <span class="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-ink-100 text-ink-500"
+                              title="Research keyword — excluded from position tracking and the GSC sync">
+                          Research
+                        </span>
+                      }
+                      @if (k.intent) {
+                        <span class="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-sky-50 text-sky-600">
+                          {{ k.intent }}
+                        </span>
+                      }
+                      @if (k.priority) {
+                        <span class="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded"
+                              [class]="priorityClass(k.priority)">
+                          {{ k.priority }}
+                        </span>
+                      }
+                      @if (k.status && k.status !== 'idea') {
+                        <span class="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-positive-100 text-positive-600">
+                          {{ statusLabel(k.status) }}
+                        </span>
+                      }
+                    </div>
+                  }
                 </td>
                 <td class="px-4 py-2 text-xs text-slate-500">{{ k.group || '—' }}</td>
                 <td class="px-4 py-2 text-right">{{ k.volume ?? '—' }}</td>
                 <td class="px-4 py-2 text-right">{{ k.difficulty ?? '—' }}</td>
+                <td class="px-4 py-2 text-right text-xs">
+                  {{ k.cpc !== undefined ? '$' + k.cpc.toFixed(2) : '—' }}
+                </td>
                 <td class="px-4 py-2 text-right font-semibold">
                   <span [ngClass]="positionClass(k.currentPosition)">
                     {{ k.currentPosition !== undefined ? (k.currentPosition | number: '1.0-1') : '—' }}
@@ -406,6 +475,57 @@ function daysAgoIso(days: number): string {
                 <input class="input" [(ngModel)]="editForm.group" placeholder="e.g. local-services" />
               </div>
             </div>
+            <div class="grid grid-cols-3 gap-3">
+              <div>
+                <label class="label">CPC</label>
+                <input type="number" min="0" step="0.01" class="input" [(ngModel)]="editForm.cpc" />
+              </div>
+              <div>
+                <label class="label">Priority</label>
+                <select class="input" [(ngModel)]="editForm.priority">
+                  <option [ngValue]="undefined">—</option>
+                  @for (pr of priorities; track pr) {
+                    <option [ngValue]="pr">{{ pr }}</option>
+                  }
+                </select>
+              </div>
+              <div>
+                <label class="label">Status</label>
+                <select class="input" [(ngModel)]="editForm.status">
+                  <option [ngValue]="undefined">—</option>
+                  @for (st of statuses; track st) {
+                    <option [ngValue]="st">{{ statusLabel(st) }}</option>
+                  }
+                </select>
+              </div>
+            </div>
+
+            <label class="inline-flex items-center gap-2 text-sm text-ink-700 cursor-pointer select-none">
+              <input type="checkbox" [(ngModel)]="editForm.tracked" />
+              <span>Track this keyword's position</span>
+            </label>
+            <p class="text-[11px] text-ink-400 -mt-2">
+              Untracked keywords stay out of the nightly position snapshot and
+              the GSC sync. Useful for research you haven't committed to yet.
+            </p>
+
+            @if (lists().length > 0) {
+              <div>
+                <label class="label">Lists</label>
+                <div class="flex flex-wrap gap-2">
+                  @for (l of lists(); track l._id) {
+                    <label class="inline-flex items-center gap-1.5 text-xs text-ink-700 border border-ink-200 rounded-md px-2 py-1 cursor-pointer"
+                           [class.bg-brand-50]="editListIds().includes(l._id!)"
+                           [class.border-brand-300]="editListIds().includes(l._id!)">
+                      <input type="checkbox"
+                             [checked]="editListIds().includes(l._id!)"
+                             (change)="toggleEditList(l._id!)" />
+                      {{ l.name }}
+                    </label>
+                  }
+                </div>
+              </div>
+            }
 
             @if (editError()) {
               <div class="text-xs text-danger-500">{{ editError() }}</div>
@@ -573,6 +693,174 @@ function daysAgoIso(days: number): string {
         </div>
       </div>
     }
+
+    <!-- Keyword lists manager -->
+    @if (listsModal()) {
+      <div class="fixed inset-0 bg-ink-900/60 z-50 flex items-center justify-center p-4"
+           (click)="listsModal.set(false)">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto"
+             (click)="$event.stopPropagation()">
+          <h2 class="text-lg font-bold text-ink-900 mb-1">Keyword lists</h2>
+          <p class="text-xs text-ink-500 mb-4">
+            Named buckets over this client's keywords — by cluster, by core
+            term, by campaign. A keyword can sit in several.
+          </p>
+
+          <div class="space-y-2">
+            @for (l of lists(); track l._id) {
+              <div class="flex items-center gap-2 border border-ink-200 rounded-lg px-3 py-2">
+                <div class="flex-1 min-w-0">
+                  <div class="font-semibold text-sm text-ink-900 truncate">{{ l.name }}</div>
+                  <div class="text-[11px] text-ink-500">
+                    {{ l.keywordCount }} keyword(s) · {{ l.totalVolume }} vol
+                    @if (l.trackedCount > 0) { · {{ l.trackedCount }} tracked }
+                  </div>
+                </div>
+                <button class="btn-ghost text-xs" (click)="startRenameList(l)">Rename</button>
+                <button class="btn-ghost text-xs text-danger-500" (click)="deleteList(l)">Delete</button>
+              </div>
+            }
+            @if (lists().length === 0) {
+              <p class="text-sm text-ink-500 text-center py-4">No lists yet.</p>
+            }
+          </div>
+
+          <div class="mt-4 pt-4 border-t border-ink-100">
+            <label class="label">{{ renamingList() ? 'Rename list' : 'New list' }}</label>
+            <div class="flex gap-2">
+              <input class="input flex-1" [(ngModel)]="listName"
+                     placeholder="e.g. Core — storage units" />
+              <button class="btn-primary" (click)="saveListName()"
+                      [disabled]="listSaving() || !listName.trim()">
+                {{ listSaving() ? 'Saving…' : renamingList() ? 'Rename' : 'Create' }}
+              </button>
+              @if (renamingList()) {
+                <button class="btn-secondary" (click)="cancelRename()">Cancel</button>
+              }
+            </div>
+            @if (listError()) {
+              <div class="text-xs text-danger-500 mt-2">{{ listError() }}</div>
+            }
+          </div>
+
+          <div class="flex justify-end mt-6">
+            <button class="btn-secondary" (click)="listsModal.set(false)">Close</button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Bulk paste import -->
+    @if (pasteModal()) {
+      <div class="fixed inset-0 bg-ink-900/60 z-50 flex items-start justify-center p-4 overflow-y-auto"
+           (click)="pasteModal.set(false)">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl p-6 my-8"
+             (click)="$event.stopPropagation()">
+          <h2 class="text-lg font-bold text-ink-900 mb-1">Paste keywords</h2>
+          <p class="text-xs text-ink-500 mb-4">
+            Paste straight from Ubersuggest, Ahrefs, Semrush or a spreadsheet.
+            Headers are detected automatically; without them the columns read as
+            keyword, volume, difficulty, CPC.
+          </p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+            <div>
+              <label class="label">Add to list</label>
+              <select class="input" [(ngModel)]="pasteListId">
+                <option value="">— No list —</option>
+                @for (l of lists(); track l._id) {
+                  <option [value]="l._id">{{ l.name }}</option>
+                }
+              </select>
+              @if (lists().length === 0) {
+                <p class="text-[11px] text-ink-400 mt-1">
+                  Create a list first if you want these grouped.
+                </p>
+              }
+            </div>
+            <div>
+              <label class="label">Tracking</label>
+              <select class="input" [(ngModel)]="pasteTracked">
+                <option [ngValue]="false">Research — don't track positions</option>
+                <option [ngValue]="true">Track positions right away</option>
+              </select>
+            </div>
+          </div>
+
+          <textarea class="input font-mono text-xs" rows="9"
+                    [ngModel]="pasteText()"
+                    (ngModelChange)="onPasteChange($event)"
+                    placeholder="Keyword	Search Volume	SEO Difficulty	CPC
+storage units near me	12,100	42	$3.40"></textarea>
+
+          @if (parsing()) {
+            <div class="text-xs text-ink-500 mt-2">Reading…</div>
+          }
+          @for (w of parseWarnings(); track w) {
+            <div class="text-xs text-warning-500 mt-2">⚠ {{ w }}</div>
+          }
+
+          @if (parsedRows().length > 0) {
+            <div class="mt-3">
+              <div class="text-xs font-semibold text-ink-700 mb-1">
+                {{ parsedRows().length }} keyword(s) detected — preview
+              </div>
+              <div class="border border-ink-200 rounded-lg overflow-hidden max-h-52 overflow-y-auto">
+                <table class="w-full text-xs">
+                  <thead class="bg-ink-50 text-ink-500 sticky top-0">
+                    <tr>
+                      <th class="px-2 py-1 text-left">Keyword</th>
+                      <th class="px-2 py-1 text-right">Vol.</th>
+                      <th class="px-2 py-1 text-right">KD</th>
+                      <th class="px-2 py-1 text-right">CPC</th>
+                      <th class="px-2 py-1 text-left">Cluster</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-ink-100">
+                    @for (r of parsedPreview(); track $index) {
+                      <tr>
+                        <td class="px-2 py-1">{{ r.text }}</td>
+                        <td class="px-2 py-1 text-right">{{ r.volume ?? '—' }}</td>
+                        <td class="px-2 py-1 text-right">{{ r.difficulty ?? '—' }}</td>
+                        <td class="px-2 py-1 text-right">{{ r.cpc ?? '—' }}</td>
+                        <td class="px-2 py-1">{{ r.group || '—' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              @if (parsedRows().length > parsedPreview().length) {
+                <div class="text-[11px] text-ink-400 mt-1">
+                  …and {{ parsedRows().length - parsedPreview().length }} more
+                </div>
+              }
+              <label class="inline-flex items-center gap-2 text-xs text-ink-700 mt-3 cursor-pointer">
+                <input type="checkbox" [(ngModel)]="pasteOverwrite" />
+                Overwrite values that already exist on a keyword
+              </label>
+            </div>
+          }
+
+          @if (pasteError()) {
+            <div class="text-xs text-danger-500 mt-3">{{ pasteError() }}</div>
+          }
+          @if (pasteResult(); as res) {
+            <div class="text-xs text-positive-500 mt-3">
+              ✓ {{ res.created }} created, {{ res.updated }} updated
+              @if (res.skipped > 0) { , {{ res.skipped }} skipped }
+            </div>
+          }
+
+          <div class="flex justify-end gap-2 mt-6">
+            <button class="btn-secondary" (click)="pasteModal.set(false)">Close</button>
+            <button class="btn-primary" (click)="commitPaste()"
+                    [disabled]="pasteSaving() || parsedRows().length === 0">
+              {{ pasteSaving() ? 'Importing…' : 'Import ' + parsedRows().length + ' keyword(s)' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class ClientKeywordsTab implements OnChanges {
@@ -627,7 +915,17 @@ export class ClientKeywordsTab implements OnChanges {
   filteredKeywords = computed(() => {
     const q = this.searchTerm().trim().toLowerCase();
     const cluster = this.clusterFilter();
+    const list = this.listFilter();
     return this.keywords().filter((k) => {
+      // Default view is the tracking table. Research keywords only show
+      // when explicitly asked for, or when browsing a list.
+      if (list === '') {
+        if (k.tracked === false) return false;
+      } else if (list === '__untracked__') {
+        if (k.tracked !== false) return false;
+      } else if (list !== '__all__') {
+        if (!(k.listIds ?? []).includes(list)) return false;
+      }
       if (q) {
         const hay = `${k.text} ${k.targetUrl ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -654,6 +952,9 @@ export class ClientKeywordsTab implements OnChanges {
         case 'cluster':
           cmp = str(a.group).localeCompare(str(b.group));
           if (cmp === 0) cmp = str(a.text).localeCompare(str(b.text));
+          break;
+        case 'cpc':
+          cmp = num(a.cpc) - num(b.cpc);
           break;
         case 'text':
           cmp = str(a.text).localeCompare(str(b.text));
@@ -754,7 +1055,169 @@ export class ClientKeywordsTab implements OnChanges {
   clearFilters() {
     this.searchTerm.set('');
     this.clusterFilter.set('');
+    this.listFilter.set('');
     this.currentPage.set(1);
+  }
+
+  onListChange(v: string) {
+    this.listFilter.set(v);
+    this.currentPage.set(1);
+  }
+
+  // --- list management ----------------------------------------------------
+
+  loadLists() {
+    this.listsSvc.byClient(this.clientId).subscribe({
+      next: (l) => this.lists.set(l),
+      error: () => this.lists.set([]),
+    });
+  }
+
+  openListsModal() {
+    this.listName = '';
+    this.renamingList.set(null);
+    this.listError.set(null);
+    this.listsModal.set(true);
+  }
+
+  startRenameList(l: KeywordListWithStats) {
+    this.renamingList.set(l);
+    this.listName = l.name;
+    this.listError.set(null);
+  }
+
+  cancelRename() {
+    this.renamingList.set(null);
+    this.listName = '';
+  }
+
+  saveListName() {
+    const name = this.listName.trim();
+    if (!name) return;
+    this.listSaving.set(true);
+    this.listError.set(null);
+    const done = () => {
+      this.listSaving.set(false);
+      this.listName = '';
+      this.renamingList.set(null);
+      this.loadLists();
+    };
+    const fail = (err: { error?: { message?: string } }) => {
+      this.listSaving.set(false);
+      this.listError.set(err?.error?.message || 'Could not save the list.');
+    };
+    const renaming = this.renamingList();
+    if (renaming?._id) {
+      this.listsSvc.update(renaming._id, { name }).subscribe({ next: done, error: fail });
+    } else {
+      this.listsSvc
+        .create({ clientId: this.clientId, name })
+        .subscribe({ next: done, error: fail });
+    }
+  }
+
+  deleteList(l: KeywordListWithStats) {
+    if (!l._id) return;
+    const ok = confirm(
+      `Delete "${l.name}"?\n\nThe ${l.keywordCount} keyword(s) in it are kept — they're only removed from this list.`,
+    );
+    if (!ok) return;
+    this.listsSvc.remove(l._id).subscribe({
+      next: () => {
+        if (this.listFilter() === l._id) this.listFilter.set('');
+        this.loadLists();
+      },
+    });
+  }
+
+  toggleEditList(listId: string) {
+    this.editListIds.update((ids) =>
+      ids.includes(listId) ? ids.filter((i) => i !== listId) : [...ids, listId],
+    );
+  }
+
+  // --- bulk paste ---------------------------------------------------------
+
+  openPasteModal() {
+    this.pasteText.set('');
+    this.parsedRows.set([]);
+    this.parseWarnings.set([]);
+    this.pasteListId = this.listFilter().startsWith('__') ? '' : this.listFilter();
+    this.pasteTracked = false;
+    this.pasteOverwrite = false;
+    this.pasteError.set(null);
+    this.pasteResult.set(null);
+    this.pasteModal.set(true);
+  }
+
+  /**
+   * Debounced, and parsed server-side so the column mapping has exactly
+   * one implementation instead of a second copy in the browser.
+   */
+  onPasteChange(text: string) {
+    this.pasteText.set(text);
+    this.pasteResult.set(null);
+    if (this.parseTimer) clearTimeout(this.parseTimer);
+    if (!text.trim()) {
+      this.parsedRows.set([]);
+      this.parseWarnings.set([]);
+      return;
+    }
+    this.parsing.set(true);
+    this.parseTimer = setTimeout(() => {
+      this.listsSvc.parse(text).subscribe({
+        next: (res) => {
+          this.parsedRows.set(res.rows);
+          this.parseWarnings.set(res.warnings);
+          this.parsing.set(false);
+        },
+        error: () => {
+          this.parsedRows.set([]);
+          this.parsing.set(false);
+        },
+      });
+    }, 350);
+  }
+
+  commitPaste() {
+    const rows = this.parsedRows();
+    if (rows.length === 0) return;
+    this.pasteSaving.set(true);
+    this.pasteError.set(null);
+    this.listsSvc
+      .importToClient(this.clientId, rows, {
+        listId: this.pasteListId || undefined,
+        tracked: this.pasteTracked,
+        overwrite: this.pasteOverwrite,
+      })
+      .subscribe({
+        next: (res) => {
+          this.pasteSaving.set(false);
+          this.pasteResult.set(res);
+          this.pasteText.set('');
+          this.parsedRows.set([]);
+          this.load();
+          this.loadLists();
+        },
+        error: (err) => {
+          this.pasteSaving.set(false);
+          this.pasteError.set(
+            err?.error?.message || 'Could not import those keywords.',
+          );
+        },
+      });
+  }
+
+  // --- display helpers ----------------------------------------------------
+
+  statusLabel(s: KeywordStatus): string {
+    return KEYWORD_STATUS_LABELS[s];
+  }
+
+  priorityClass(p: string): string {
+    if (p === 'high') return 'bg-danger-100 text-danger-500';
+    if (p === 'medium') return 'bg-amber-100 text-amber-700';
+    return 'bg-ink-100 text-ink-500';
   }
 
   // Per-row contextual menu state. Same pattern as the tasks / content
@@ -778,8 +1241,44 @@ export class ClientKeywordsTab implements OnChanges {
   // Edit-keyword modal state
   editingKeyword = signal<Keyword | null>(null);
   editForm: Partial<Keyword> = {};
+  editListIds = signal<string[]>([]);
   savingEdit = signal(false);
   editError = signal<string | null>(null);
+
+  // --- Keyword lists ------------------------------------------------------
+  // Lists are a filter over the same keywords, not a separate screen: the
+  // rows, columns and actions are identical either way, so splitting them
+  // across two tabs only duplicated the table.
+  private listsSvc = inject(KeywordListsService);
+  readonly priorities = KEYWORD_PRIORITIES;
+  readonly statuses = KEYWORD_STATUSES;
+
+  lists = signal<KeywordListWithStats[]>([]);
+  listFilter = signal<string>('');
+
+  listsModal = signal(false);
+  listName = '';
+  renamingList = signal<KeywordListWithStats | null>(null);
+  listSaving = signal(false);
+  listError = signal<string | null>(null);
+
+  // Bulk paste import
+  pasteModal = signal(false);
+  pasteText = signal('');
+  pasteListId = '';
+  pasteTracked = false;
+  pasteOverwrite = false;
+  parsedRows = signal<ParsedKeywordRow[]>([]);
+  parseWarnings = signal<string[]>([]);
+  parsing = signal(false);
+  pasteSaving = signal(false);
+  pasteError = signal<string | null>(null);
+  pasteResult = signal<{ created: number; updated: number; skipped: number } | null>(
+    null,
+  );
+  private parseTimer: ReturnType<typeof setTimeout> | null = null;
+
+  parsedPreview = computed(() => this.parsedRows().slice(0, 25));
 
   // GSC pull state
   pullModal = signal(false);
@@ -811,10 +1310,15 @@ export class ClientKeywordsTab implements OnChanges {
 
   ngOnChanges() {
     this.load();
+    this.loadLists();
   }
 
   load() {
-    this.svc.byClient(this.clientId).subscribe((k) => this.keywords.set(k));
+    // includeUntracked so the list filter and the research view have
+    // the rows they need; the default view filters them back out.
+    this.svc
+      .byClient(this.clientId, true)
+      .subscribe((k) => this.keywords.set(k));
     this.svc.summary(this.clientId).subscribe((s) => this.summary.set(s));
     this.clientsSvc
       .get(this.clientId)
@@ -849,7 +1353,14 @@ export class ClientKeywordsTab implements OnChanges {
       difficulty: k.difficulty,
       intent: k.intent,
       group: k.group ?? '',
+      cpc: k.cpc,
+      priority: k.priority,
+      status: k.status,
+      // Undefined means tracked — see the schema note on why reads use
+      // `$ne: false` rather than `=== true`.
+      tracked: k.tracked !== false,
     };
+    this.editListIds.set([...(k.listIds ?? [])]);
     this.editError.set(null);
   }
 
@@ -877,6 +1388,11 @@ export class ClientKeywordsTab implements OnChanges {
           : undefined,
       intent: this.editForm.intent || undefined,
       group: this.editForm.group?.trim() || undefined,
+      cpc: typeof this.editForm.cpc === 'number' ? this.editForm.cpc : undefined,
+      priority: this.editForm.priority || undefined,
+      status: this.editForm.status || undefined,
+      tracked: this.editForm.tracked !== false,
+      listIds: this.editListIds(),
     };
     this.savingEdit.set(true);
     this.editError.set(null);
@@ -885,6 +1401,7 @@ export class ClientKeywordsTab implements OnChanges {
         this.savingEdit.set(false);
         this.editingKeyword.set(null);
         this.load();
+        this.loadLists();
       },
       error: (err) => {
         this.savingEdit.set(false);

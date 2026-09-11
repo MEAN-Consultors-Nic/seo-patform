@@ -22,7 +22,8 @@ export interface ParsedKeywordRow {
   difficulty?: number;
   cpc?: number;
   intent?: KeywordIntent;
-  parentTopic?: string;
+  /** Maps to the Keyword's existing `group` (Cluster) field. */
+  group?: string;
   targetUrl?: string;
   notes?: string;
 }
@@ -83,11 +84,16 @@ const HEADER_ALIASES: Record<string, keyof ParsedKeywordRow> = {
   intent: 'intent',
   'search intent': 'intent',
   'keyword intent': 'intent',
-  'parent topic': 'parentTopic',
-  'parent keyword': 'parentTopic',
-  topic: 'parentTopic',
-  core: 'parentTopic',
-  'keyword core': 'parentTopic',
+  // Ahrefs' "Parent Topic" and Ubersuggest's "core" are the same idea as
+  // our existing Cluster field, so they import straight into it rather
+  // than creating a second grouping concept.
+  'parent topic': 'group',
+  'parent keyword': 'group',
+  topic: 'group',
+  core: 'group',
+  'keyword core': 'group',
+  cluster: 'group',
+  group: 'group',
   url: 'targetUrl',
   'target url': 'targetUrl',
   'landing page': 'targetUrl',
@@ -287,12 +293,18 @@ export class KeywordListsService {
    * research export must never quietly untrack a keyword.
    */
   async importRows(
-    listId: string,
+    clientId: string,
     rows: ParsedKeywordRow[],
-    opts: { tracked?: boolean; overwrite?: boolean } = {},
+    opts: { listId?: string; tracked?: boolean; overwrite?: boolean } = {},
     user?: AuthenticatedUser,
   ): Promise<BulkImportResult> {
-    const list = await this.assertList(listId, user);
+    // The list is optional: a paste can land straight in the client's
+    // keyword pool without being filed anywhere.
+    const list = opts.listId
+      ? await this.assertList(opts.listId, user)
+      : null;
+    if (!list && user) await this.clients.assertAccess(clientId, user);
+    const clientObjId = list ? list.clientId : new Types.ObjectId(clientId);
     const warnings: string[] = [];
     let created = 0;
     let updated = 0;
@@ -314,21 +326,21 @@ export class KeywordListsService {
 
     for (const row of merged.values()) {
       const existing = await this.keywordModel
-        .findOne({ clientId: list.clientId, text: row.text })
+        .findOne({ clientId: clientObjId, text: row.text })
         .exec();
 
       if (!existing) {
         await this.keywordModel.create({
-          clientId: list.clientId,
+          clientId: clientObjId,
           text: row.text,
           volume: row.volume,
           difficulty: row.difficulty,
           cpc: row.cpc,
           intent: row.intent,
-          parentTopic: row.parentTopic,
+          group: row.group,
           targetUrl: row.targetUrl,
           notes: row.notes,
-          listIds: [list._id],
+          listIds: list ? [list._id] : [],
           // Imported research defaults to untracked so it doesn't land
           // in the position cron or the tracking table uninvited.
           tracked: opts.tracked === true,
@@ -345,7 +357,7 @@ export class KeywordListsService {
         'difficulty',
         'cpc',
         'intent',
-        'parentTopic',
+        'group',
         'targetUrl',
         'notes',
       ] as const) {
@@ -359,10 +371,9 @@ export class KeywordListsService {
       await this.keywordModel
         .updateOne(
           { _id: existing._id },
-          {
-            $set: patch,
-            $addToSet: { listIds: list._id },
-          },
+          list
+            ? { $set: patch, $addToSet: { listIds: list._id } }
+            : { $set: patch },
         )
         .exec();
       updated++;

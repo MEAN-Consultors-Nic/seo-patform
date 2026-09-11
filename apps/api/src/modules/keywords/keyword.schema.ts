@@ -54,10 +54,6 @@ export class Keyword {
   @Prop()
   cpc?: number;
 
-  /** Parent topic / keyword core this one hangs off. */
-  @Prop()
-  parentTopic?: string;
-
   @Prop({ type: String, enum: ['high', 'medium', 'low'] })
   priority?: KeywordPriority;
 

@@ -11,7 +11,8 @@ export interface ParsedKeywordRow {
   difficulty?: number;
   cpc?: number;
   intent?: KeywordIntent;
-  parentTopic?: string;
+  /** Maps to the Keyword's Cluster field. */
+  group?: string;
   targetUrl?: string;
   notes?: string;
 }
@@ -80,14 +81,18 @@ export class KeywordListsService {
     });
   }
 
-  import(
-    id: string,
+  /**
+   * Imports parsed rows into the client's keyword pool. `listId` is
+   * optional — a paste can land without being filed into a list.
+   */
+  importToClient(
+    clientId: string,
     rows: ParsedKeywordRow[],
-    opts: { tracked?: boolean; overwrite?: boolean } = {},
+    opts: { listId?: string; tracked?: boolean; overwrite?: boolean } = {},
   ): Observable<BulkImportResult> {
     return this.http.post<BulkImportResult>(
-      `${this.base}/keyword-lists/${id}/import`,
-      { rows, ...opts },
+      `${this.base}/keyword-lists/import`,
+      { clientId, rows, ...opts },
     );
   }
 

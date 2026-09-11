@@ -179,6 +179,12 @@ export class KeywordsService {
     if (dto.clientId && user) await this.clients.assertAccess(dto.clientId, user);
     const patch: Record<string, unknown> = { ...dto };
     if (dto.clientId) patch.clientId = new Types.ObjectId(dto.clientId);
+    // List membership arrives as string ids from the browser.
+    if (dto.listIds) {
+      patch.listIds = dto.listIds
+        .filter((l) => Types.ObjectId.isValid(l))
+        .map((l) => new Types.ObjectId(l));
+    }
     const updated = await this.keywordModel
       .findByIdAndUpdate(id, patch, { new: true })
       .lean()

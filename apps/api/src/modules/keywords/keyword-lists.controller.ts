@@ -35,6 +35,35 @@ export class KeywordListsController {
     return this.lists.create(dto.clientId, dto, user);
   }
 
+  /**
+   * Commits parsed rows into the client's keyword pool, optionally
+   * filing them into a list. Declared before the ':id' routes so
+   * 'import' isn't swallowed as a list id.
+   */
+  @Post('import')
+  import(
+    @Body()
+    dto: {
+      clientId: string;
+      listId?: string;
+      rows: ParsedKeywordRow[];
+      tracked?: boolean;
+      overwrite?: boolean;
+    },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.lists.importRows(
+      dto?.clientId,
+      dto?.rows ?? [],
+      {
+        listId: dto?.listId,
+        tracked: dto?.tracked,
+        overwrite: dto?.overwrite,
+      },
+      user,
+    );
+  }
+
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -62,22 +91,6 @@ export class KeywordListsController {
   @Post('parse')
   parse(@Body() dto: { text: string }) {
     return this.lists.parseBlock(dto?.text ?? '');
-  }
-
-  /** Commits parsed rows into the list. */
-  @Post(':id/import')
-  import(
-    @Param('id') id: string,
-    @Body()
-    dto: { rows: ParsedKeywordRow[]; tracked?: boolean; overwrite?: boolean },
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.lists.importRows(
-      id,
-      dto?.rows ?? [],
-      { tracked: dto?.tracked, overwrite: dto?.overwrite },
-      user,
-    );
   }
 
   /** Adds keywords that already exist in the client's pool. */

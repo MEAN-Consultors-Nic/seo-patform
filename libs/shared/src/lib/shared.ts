@@ -515,8 +515,6 @@ export interface Keyword {
   tracked?: boolean;
   /** Cost per click, when the source export carries it. */
   cpc?: number;
-  /** Parent topic / keyword core this one hangs off. */
-  parentTopic?: string;
   priority?: KeywordPriority;
   status?: KeywordStatus;
   notes?: string;

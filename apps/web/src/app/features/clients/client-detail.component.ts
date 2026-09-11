@@ -3,13 +3,11 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import {
-  CLIENT_SERVICE_LABELS,
   Client,
   ClientServiceLine,
 } from '@seo/shared';
 import { ClientsService } from '../../core/clients.service';
 import { ClientKeywordsTab } from './tabs/keywords-tab.component';
-import { ClientKeywordListsTabComponent } from './tabs/keyword-lists-tab.component';
 import { ClientKpiHistoryTab } from './tabs/kpi-history-tab.component';
 import { ClientKnowledgeTab } from './tabs/knowledge-tab.component';
 import { ClientFilesTabComponent } from './tabs/files-tab.component';
@@ -48,7 +46,6 @@ type TabKey =
   | 'tasks'
   | 'content'
   | 'keywords'
-  | 'keyword-lists'
   | 'positions'
   | 'competitors'
   | 'backlinks'
@@ -102,7 +99,6 @@ const GROUPS: GroupDef[] = [
     FormsModule,
     RouterLink,
     ClientKeywordsTab,
-    ClientKeywordListsTabComponent,
     ClientKpiHistoryTab,
     ClientKnowledgeTab,
     ClientFilesTabComponent,
@@ -309,9 +305,6 @@ const GROUPS: GroupDef[] = [
           @case ('keywords') {
             <app-client-keywords-tab [clientId]="c._id!" />
           }
-          @case ('keyword-lists') {
-            <app-client-keyword-lists-tab [clientId]="c._id!" />
-          }
           @case ('positions') {
             <app-client-position-tracker-tab [clientId]="c._id!" [client]="c" (changed)="reload()" />
           }
@@ -417,7 +410,6 @@ export class ClientDetailComponent implements OnInit {
       { key: 'cannibalization', label: 'Cannibalization', group: 'seo' },
       { key: 'link-graph', label: 'Link Graph', group: 'seo' },
       { key: 'keywords', label: 'Keywords', group: 'seo' },
-      { key: 'keyword-lists', label: 'Keyword Lists', group: 'seo' },
       { key: 'positions', label: 'Position Tracker', group: 'seo' },
       { key: 'competitors', label: 'Competitors', group: 'seo' },
       { key: 'backlinks', label: 'Backlinks', group: 'seo' },

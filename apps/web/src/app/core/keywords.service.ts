@@ -14,8 +14,15 @@ export class KeywordsService {
   private http = inject(HttpClient);
   private base = inject(API_BASE_URL);
 
-  byClient(clientId: string): Observable<Keyword[]> {
-    return this.http.get<Keyword[]>(`${this.base}/keywords?clientId=${clientId}`);
+  /**
+   * Tracked keywords by default. `includeUntracked` also returns
+   * research keywords, which the keyword-list filters need.
+   */
+  byClient(clientId: string, includeUntracked = false): Observable<Keyword[]> {
+    const qs = includeUntracked ? '&includeUntracked=true' : '';
+    return this.http.get<Keyword[]>(
+      `${this.base}/keywords?clientId=${clientId}${qs}`,
+    );
   }
 
   findOne(id: string): Observable<Keyword> {
