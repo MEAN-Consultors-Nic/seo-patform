@@ -1,6 +1,7 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Keyword, KeywordSchema } from './keyword.schema';
+import { KeywordList, KeywordListSchema } from './keyword-list.schema';
 import {
   KeywordRanking,
   KeywordRankingSchema,
@@ -8,6 +9,8 @@ import {
 import { Client, ClientSchema } from '../clients/client.schema';
 import { KeywordsService } from './keywords.service';
 import { KeywordsController } from './keywords.controller';
+import { KeywordListsService } from './keyword-lists.service';
+import { KeywordListsController } from './keyword-lists.controller';
 import { ClientsModule } from '../clients/clients.module';
 import { GoogleIntegrationsModule } from '../google-integrations/google-integrations.module';
 
@@ -16,6 +19,7 @@ import { GoogleIntegrationsModule } from '../google-integrations/google-integrat
     MongooseModule.forFeature([
       { name: Keyword.name, schema: KeywordSchema },
       { name: KeywordRanking.name, schema: KeywordRankingSchema },
+      { name: KeywordList.name, schema: KeywordListSchema },
       // Client model registered locally so the daily-snapshot cron can
       // enumerate clients without depending on ClientsService (which is
       // forwardRef'd and not fully constructed during module bootstrap).
@@ -24,8 +28,8 @@ import { GoogleIntegrationsModule } from '../google-integrations/google-integrat
     forwardRef(() => ClientsModule),
     GoogleIntegrationsModule,
   ],
-  controllers: [KeywordsController],
-  providers: [KeywordsService],
-  exports: [KeywordsService, MongooseModule],
+  controllers: [KeywordsController, KeywordListsController],
+  providers: [KeywordsService, KeywordListsService],
+  exports: [KeywordsService, KeywordListsService, MongooseModule],
 })
 export class KeywordsModule {}

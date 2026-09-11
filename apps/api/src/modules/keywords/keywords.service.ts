@@ -135,9 +135,24 @@ export class KeywordsService {
     return kw;
   }
 
-  byClient(clientId: string) {
+  /**
+   * Keywords for the tracking table.
+   *
+   * `tracked: { $ne: false }` rather than `tracked: true` — keywords
+   * created before keyword lists existed have no value on the field and
+   * must keep showing up. Research keywords imported into a list are
+   * explicitly `false` and stay out.
+   *
+   * Pass includeUntracked to get the client's whole pool (the keyword
+   * list picker needs it).
+   */
+  byClient(clientId: string, includeUntracked = false) {
+    const filter: Record<string, unknown> = {
+      clientId: new Types.ObjectId(clientId),
+    };
+    if (!includeUntracked) filter.tracked = { $ne: false };
     return this.keywordModel
-      .find({ clientId: new Types.ObjectId(clientId) })
+      .find(filter)
       .sort({ group: 1, text: 1 })
       .lean()
       .exec();
@@ -484,7 +499,7 @@ export class KeywordsService {
     const tokenUserId = resolveOwnerUserId(client, user);
     const clientObjId = new Types.ObjectId(clientId);
     const keywords = await this.keywordModel
-      .find({ clientId: clientObjId })
+      .find({ clientId: clientObjId, tracked: { $ne: false } })
       .exec();
 
     // Client-configured geo filter, normalized to alpha-3 lowercase.
@@ -740,7 +755,10 @@ export class KeywordsService {
     await this.clients.assertAccess(clientId, user);
     const clientObjId = new Types.ObjectId(clientId);
     const keywords = await this.keywordModel
-      .find({ clientId: clientObjId }, { _id: 1, text: 1 })
+      .find(
+        { clientId: clientObjId, tracked: { $ne: false } },
+        { _id: 1, text: 1 },
+      )
       .lean()
       .exec();
     if (keywords.length === 0) {

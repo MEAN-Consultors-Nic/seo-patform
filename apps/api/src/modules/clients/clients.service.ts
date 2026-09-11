@@ -278,7 +278,10 @@ export class ClientsService {
     return Promise.all(
       clients.map(async (c) => {
         const [keywords, tasks, liveBacklinks] = await Promise.all([
-          this.keywordModel.find({ clientId: c._id }).lean().exec(),
+          this.keywordModel
+            .find({ clientId: c._id, tracked: { $ne: false } })
+            .lean()
+            .exec(),
           currentCycle
             ? this.taskModel
                 .find({ clientId: c._id, cycleId: currentCycle._id })

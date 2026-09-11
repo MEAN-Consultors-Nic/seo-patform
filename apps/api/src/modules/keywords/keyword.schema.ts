@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
-import { KeywordIntent } from '@seo/shared';
+import { KeywordIntent, KeywordPriority, KeywordStatus } from '@seo/shared';
 
 export type KeywordDocument = HydratedDocument<Keyword>;
 
@@ -29,6 +29,45 @@ export class Keyword {
 
   @Prop()
   group?: string;
+
+  // --- Keyword-list / research fields -------------------------------------
+
+  /**
+   * Lists this keyword belongs to. Multikey index so "keywords in list
+   * X" is a single indexed lookup.
+   */
+  @Prop({ type: [Types.ObjectId], ref: 'KeywordList', default: [], index: true })
+  listIds?: Types.ObjectId[];
+
+  /**
+   * False for research keywords, which stay out of the position cron,
+   * the GSC sync and the tracking table.
+   *
+   * Reads use `{ tracked: { $ne: false } }` rather than
+   * `{ tracked: true }` on purpose: every keyword written before lists
+   * existed has no value here, and must keep behaving as tracked. That
+   * makes the whole feature a no-op for existing data — no backfill.
+   */
+  @Prop({ type: Boolean, default: true })
+  tracked?: boolean;
+
+  @Prop()
+  cpc?: number;
+
+  /** Parent topic / keyword core this one hangs off. */
+  @Prop()
+  parentTopic?: string;
+
+  @Prop({ type: String, enum: ['high', 'medium', 'low'] })
+  priority?: KeywordPriority;
+
+  @Prop({ type: String, enum: ['idea', 'assigned', 'published'] })
+  status?: KeywordStatus;
+
+  @Prop()
+  notes?: string;
+
+  // --- Tracking -----------------------------------------------------------
 
   @Prop()
   currentPosition?: number;
@@ -76,3 +115,6 @@ export class Keyword {
 
 export const KeywordSchema = SchemaFactory.createForClass(Keyword);
 KeywordSchema.index({ clientId: 1, text: 1 }, { unique: true });
+// Drives the list view and the tracking table's tracked/untracked split.
+KeywordSchema.index({ clientId: 1, listIds: 1 });
+KeywordSchema.index({ clientId: 1, tracked: 1 });

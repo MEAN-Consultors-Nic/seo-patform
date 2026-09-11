@@ -430,6 +430,69 @@ export type RankingDevice = 'desktop' | 'mobile';
 
 export type KeywordSource = 'manual' | 'gsc';
 
+/** Planning priority for a keyword sitting in a research list. */
+export type KeywordPriority = 'high' | 'medium' | 'low';
+
+export const KEYWORD_PRIORITIES: KeywordPriority[] = ['high', 'medium', 'low'];
+
+/**
+ * Where a keyword sits in the work pipeline. Deliberately coarse — the
+ * detailed state lives on the Task / ContentPiece the keyword feeds.
+ */
+export type KeywordStatus = 'idea' | 'assigned' | 'published';
+
+export const KEYWORD_STATUSES: KeywordStatus[] = [
+  'idea',
+  'assigned',
+  'published',
+];
+
+export const KEYWORD_STATUS_LABELS: Record<KeywordStatus, string> = {
+  idea: 'Idea',
+  assigned: 'Assigned',
+  published: 'Published',
+};
+
+export const KEYWORD_INTENTS: KeywordIntent[] = [
+  'informational',
+  'commercial',
+  'transactional',
+  'navigational',
+];
+
+export const KEYWORD_INTENT_LABELS: Record<KeywordIntent, string> = {
+  informational: 'Informational',
+  commercial: 'Commercial',
+  transactional: 'Transactional',
+  navigational: 'Navigational',
+};
+
+/**
+ * A named bucket of keywords for one client — "Core: storage units",
+ * "Q4 content gaps", "Competitor overlap".
+ *
+ * Membership lives on the Keyword (`listIds`), not here, so one keyword
+ * can belong to several lists while still being a single record per
+ * client. That keeps volume / difficulty / position from drifting
+ * between copies, and lets a researched keyword be promoted straight to
+ * tracking without re-entering it.
+ */
+export interface KeywordList {
+  _id?: string;
+  clientId: string;
+  name: string;
+  description?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+/** KeywordList plus the counts the UI shows on the list rail. */
+export interface KeywordListWithStats extends KeywordList {
+  keywordCount: number;
+  trackedCount: number;
+  totalVolume: number;
+}
+
 export interface Keyword {
   _id?: string;
   clientId: string;
@@ -439,6 +502,24 @@ export interface Keyword {
   difficulty?: number;
   intent?: KeywordIntent;
   group?: string;
+  /**
+   * Lists this keyword belongs to. A keyword can sit in several.
+   */
+  listIds?: string[];
+  /**
+   * False for research keywords: they stay out of the position cron,
+   * the GSC sync and the Keywords tracking table. Undefined counts as
+   * tracked so every keyword that predates keyword lists keeps its
+   * current behaviour — no backfill needed.
+   */
+  tracked?: boolean;
+  /** Cost per click, when the source export carries it. */
+  cpc?: number;
+  /** Parent topic / keyword core this one hangs off. */
+  parentTopic?: string;
+  priority?: KeywordPriority;
+  status?: KeywordStatus;
+  notes?: string;
   currentPosition?: number;
   previousPosition?: number;
   currentRankingUrl?: string;

@@ -25,9 +25,12 @@ export class KeywordsController {
   async byClient(
     @Query('clientId') clientId: string,
     @CurrentUser() user: AuthenticatedUser,
+    // The keyword-list picker needs the client's whole pool, research
+    // keywords included; the tracking table does not.
+    @Query('includeUntracked') includeUntracked?: string,
   ) {
     await this.clients.assertAccess(clientId, user);
-    return this.keywords.byClient(clientId);
+    return this.keywords.byClient(clientId, includeUntracked === 'true');
   }
 
   @Get('summary')
