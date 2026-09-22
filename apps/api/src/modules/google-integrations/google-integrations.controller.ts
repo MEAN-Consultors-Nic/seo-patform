@@ -92,19 +92,6 @@ export class GoogleIntegrationsController {
     return this.ga4.metadata(user.userId, propertyId);
   }
 
-  @Get('clients/:clientId/kpis')
-  async clientKpis(
-    @CurrentUser() user: AuthenticatedUser,
-    @Query('clientId') _qsClientId: string,
-    @Query('from') from: string,
-    @Query('to') to: string,
-  ) {
-    // NestJS automatically wires the param from the URL pattern, but we read
-    // it from the request body or query if needed. For now, the only place
-    // calling this passes clientId as part of the path, so we use req.params.
-    throw new BadRequestException('Use /google/kpis instead.');
-  }
-
   @Get('kpis')
   async kpis(
     @CurrentUser() user: AuthenticatedUser,

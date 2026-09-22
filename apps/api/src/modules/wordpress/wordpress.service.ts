@@ -560,7 +560,8 @@ export class WordpressService {
   // --- CSV preview + apply ------------------------------------------------
 
   parseCsv(csvText: string): WordpressSeoCsvRow[] {
-    const text = csvText.replace(/﻿/g, '');
+    // Excel and Sheets both prefix a UTF-8 BOM on CSV export.
+    const text = csvText.replace(/\uFEFF/g, '');
     const lines = this.splitCsvLines(text);
     if (!lines.length) return [];
     const header = this.splitCsvRow(lines[0]).map((c) =>

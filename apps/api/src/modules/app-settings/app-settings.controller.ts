@@ -1,14 +1,11 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
-  Param,
   Patch,
-  Post,
   Put,
 } from '@nestjs/common';
-import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 import { ReportSectionConfig } from '@seo/shared';
 import { AppSettingsService } from './app-settings.service';
 import { Roles } from '../auth/roles.guard';

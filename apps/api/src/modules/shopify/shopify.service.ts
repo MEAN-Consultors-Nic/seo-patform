@@ -690,7 +690,8 @@ export class ShopifyService {
   // --- CSV preview + apply -----------------------------------------------
 
   parseCsv(csvText: string): ShopifySeoCsvRow[] {
-    const text = csvText.replace(/﻿/g, '');
+    // Excel and Sheets both prefix a UTF-8 BOM on CSV export.
+    const text = csvText.replace(/\uFEFF/g, '');
     const lines = this.splitCsvLines(text);
     if (lines.length === 0) return [];
     const header = this.splitCsvRow(lines[0]).map((c) =>

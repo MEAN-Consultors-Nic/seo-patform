@@ -174,10 +174,10 @@ export class GoogleIntegrationsService {
       );
     }
     const [topPages, byDevice, byCountry, sitemapHealth] = await Promise.all([
-      this.gsc.topPages(user.userId, client.gscSiteUrl, from, to, 25),
-      this.gsc.byDevice(user.userId, client.gscSiteUrl, from, to),
-      this.gsc.byCountry(user.userId, client.gscSiteUrl, from, to, 15),
-      this.gsc.sitemapHealth(user.userId, client.gscSiteUrl),
+      this.gsc.topPages(tokenUserId, client.gscSiteUrl, from, to, 25),
+      this.gsc.byDevice(tokenUserId, client.gscSiteUrl, from, to),
+      this.gsc.byCountry(tokenUserId, client.gscSiteUrl, from, to, 15),
+      this.gsc.sitemapHealth(tokenUserId, client.gscSiteUrl),
     ]);
     return { topPages, byDevice, byCountry, sitemapHealth, range: { from, to } };
   }
@@ -315,7 +315,7 @@ export class GoogleIntegrationsService {
       );
     }
     return this.ga4.ecommerceMetrics(
-      user.userId,
+      tokenUserId,
       client.ga4PropertyId,
       from,
       to,

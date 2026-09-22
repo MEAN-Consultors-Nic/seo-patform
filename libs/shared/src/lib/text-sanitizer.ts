@@ -31,39 +31,34 @@
 
 const NBSP_FAMILY = new RegExp(
   '[' +
-    ' ' + // NO-BREAK SPACE
-    ' ' + // OGHAM SPACE MARK
-    '       ' + // EN/EM QUADS + per-em spaces
-    ' ' + // FIGURE SPACE
-    '   ' + // PUNCTUATION / THIN / HAIR SPACE
-    ' ' + // NARROW NO-BREAK SPACE
-    ' ' + // MEDIUM MATHEMATICAL SPACE
-    '　' + // IDEOGRAPHIC SPACE
+    '\\u00A0' + // NO-BREAK SPACE
+    '\\u1680' + // OGHAM SPACE MARK
+    '\\u2000-\\u200A' + // EN/EM QUADS + per-em spaces
+    '\\u202F' + // NARROW NO-BREAK SPACE
+    '\\u205F' + // MEDIUM MATHEMATICAL SPACE
+    '\\u3000' + // IDEOGRAPHIC SPACE
     ']',
   'g',
 );
-
 const INVISIBLE_BREAKERS = new RegExp(
   '[' +
-    '­' + // SOFT HYPHEN
-    '​‌‍' + // ZERO WIDTH SPACE / NON-JOINER / JOINER
-    '‎‏' + // LTR / RTL MARK
-    '‪‫‬‭‮' + // bidi embedding / override
-    '⁠⁡⁢⁣⁤' + // WORD JOINER + invisible math
-    '⁦⁧⁨⁩' + // bidi isolates
-    '﻿' + // BOM / ZERO WIDTH NO-BREAK SPACE
+    '\\u00AD' + // SOFT HYPHEN
+    '\\u200B-\\u200D' + // ZERO WIDTH SPACE / NON-JOINER / JOINER
+    '\\u200E\\u200F' + // LTR / RTL MARK
+    '\\u202A-\\u202E' + // bidi embedding / override
+    '\\u2060-\\u2064' + // WORD JOINER + invisible math
+    '\\u2066-\\u2069' + // bidi isolates
+    '\\uFEFF' + // BOM / ZERO WIDTH NO-BREAK SPACE
     ']',
   'g',
 );
-
 // Variation selectors (modify the rendering of the preceding char — most
 // often emoji presentation). They have no width of their own and pdfmake
 // doesn't honor them, so they're dropped entirely.
 const VARIATION_SELECTORS = new RegExp(
-  '[︀-️᠋-᠍]',
+  '[\\uFE00-\\uFE0F\\u180B-\\u180D]',
   'g',
 );
-
 /**
  * Private-use marker used as a temporary placeholder while sanitizeText
  * decides whether each invisible run should collapse to a space (between

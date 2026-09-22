@@ -15,7 +15,6 @@ const BRAND = '#FF7A59';
 const INK_900 = '#0F172A';
 const INK_700 = '#334155';
 const INK_500 = '#64748B';
-const INK_300 = '#CBD5E1';
 const INK_100 = '#F1F5F9';
 const INK_50 = '#F7F8FA';
 

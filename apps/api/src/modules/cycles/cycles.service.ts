@@ -8,7 +8,6 @@ import {
   format,
   isWithinInterval,
   startOfDay,
-  setDate,
 } from 'date-fns';
 import { Cycle, CycleDocument } from './cycle.schema';
 

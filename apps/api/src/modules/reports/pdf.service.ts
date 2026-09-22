@@ -16,11 +16,9 @@ import {
 
 // --- Brand palette ----------------------------------------------------------
 const BRAND = '#FF7A59';
-const BRAND_DARK = '#E5613D';
 const INK_900 = '#0F172A';
 const INK_700 = '#334155';
 const INK_500 = '#6B7280';
-const INK_300 = '#D1D5DA';
 const INK_200 = '#E4E7EB';
 const INK_100 = '#F0F2F5';
 const INK_50 = '#F7F8FA';

@@ -33,6 +33,14 @@ export default [
               onlyDependOnLibsWithTags: ['scope:api', 'scope:shared'],
             },
             {
+              // The Angular app may only reach shared types — never api
+              // internals. Without this the rule matched nothing and
+              // errored on every @seo/shared import instead of guarding
+              // anything.
+              sourceTag: 'scope:web',
+              onlyDependOnLibsWithTags: ['scope:web', 'scope:shared'],
+            },
+            {
               sourceTag: 'type:data',
               onlyDependOnLibsWithTags: ['type:data'],
             },

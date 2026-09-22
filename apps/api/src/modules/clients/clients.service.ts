@@ -4,7 +4,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -12,7 +11,6 @@ import { startOfDay } from 'date-fns';
 import {
   ClientHealthStatus,
   ClientRosterStats,
-  ClientServiceLine,
   HOURS_PER_TIER,
 } from '@seo/shared';
 import { Client, ClientDocument } from './client.schema';
