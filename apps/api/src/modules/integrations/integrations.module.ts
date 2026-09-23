@@ -3,6 +3,7 @@ import { GoogleIntegrationsModule } from '../google-integrations/google-integrat
 import { ShopifyModule } from '../shopify/shopify.module';
 import { WordpressModule } from '../wordpress/wordpress.module';
 import { MailModule } from '../mail/mail.module';
+import { SpearModule } from '../spear/spear.module';
 
 /**
  * Integrations barrel — every third-party bridge in one place:
@@ -17,12 +18,14 @@ import { MailModule } from '../mail/mail.module';
     ShopifyModule,
     WordpressModule,
     MailModule,
+    SpearModule,
   ],
   exports: [
     GoogleIntegrationsModule,
     ShopifyModule,
     WordpressModule,
     MailModule,
+    SpearModule,
   ],
 })
 export class IntegrationsModule {}

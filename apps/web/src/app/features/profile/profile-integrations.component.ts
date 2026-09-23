@@ -1,9 +1,14 @@
 import { CommonModule, DatePipe } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink, RouterLinkActive } from '@angular/router';
 import { GoogleConnectionStatus } from '@seo/shared';
 import { AuthService } from '../../core/auth.service';
 import { GoogleIntegrationsService } from '../../core/google-integrations.service';
+import {
+  SpearConnectionResult,
+  SpearService,
+} from '../../core/spear.service';
 
 /**
  * Personal integrations page. Lives under /profile/* because each user
@@ -14,7 +19,7 @@ import { GoogleIntegrationsService } from '../../core/google-integrations.servic
 @Component({
   selector: 'app-profile-integrations',
   standalone: true,
-  imports: [CommonModule, RouterLink, RouterLinkActive, DatePipe],
+  imports: [CommonModule, FormsModule, RouterLink, RouterLinkActive, DatePipe],
   template: `
     <div class="page-container max-w-3xl">
       <header class="page-header">
@@ -305,11 +310,111 @@ import { GoogleIntegrationsService } from '../../core/google-integrations.servic
       } @else if (loading()) {
         <div class="card text-center py-10 text-ink-400 italic text-sm">Loading…</div>
       }
+
+      <!-- Spear API — org-level, not a personal connection -->
+      <div class="card mb-4">
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex items-start gap-3">
+            <div class="w-10 h-10 rounded-md bg-brand-50 border border-brand-200 flex items-center justify-center text-lg">🛰️</div>
+            <div>
+              <h2 class="text-base font-semibold text-ink-900">Spear API</h2>
+              <p class="text-xs text-ink-500 mt-0.5 max-w-md">
+                Media Spearhead's internal platform — pipeline, proposals and
+                Google Ads. Unlike the cards above this is a server-wide API
+                key, not your personal account, so the check below reports
+                whether <strong>this server</strong> can reach Spear.
+              </p>
+            </div>
+          </div>
+          @if (spearResult(); as r) {
+            <span class="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider"
+                  [class]="spearBadgeClass(r)">
+              {{ r.ok ? '● Reachable' : '● ' + spearVerdictLabel(r) }}
+            </span>
+          } @else {
+            <span class="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-ink-100 text-ink-500">
+              ○ Untested
+            </span>
+          }
+        </div>
+
+        <div class="mt-4 pt-4 border-t border-ink-100">
+          <div class="flex flex-wrap items-end gap-2">
+            <div class="min-w-[220px]">
+              <label class="label">Demo request</label>
+              <select class="input" [ngModel]="spearProbe()" (ngModelChange)="spearProbe.set($event)">
+                <option value="catalog">GET catalog.php — proposal vocabulary</option>
+                <option value="describe">POST ads-ops.php · describe — live schema</option>
+              </select>
+            </div>
+            <button class="btn-primary" (click)="testSpear()" [disabled]="spearTesting()">
+              {{ spearTesting() ? 'Calling Spear…' : 'Test Spear connection' }}
+            </button>
+            <p class="text-[11px] text-ink-400 basis-full">
+              Both are read-only. One attempt per click, never retried — their
+              WAF scores repeat probes, and a challenge will not clear on a
+              second try.
+            </p>
+          </div>
+
+          @if (spearResult(); as r) {
+            <div class="mt-4 rounded-lg border p-3"
+                 [class.border-positive-500]="r.ok"
+                 [class.bg-positive-100]="r.ok"
+                 [class.border-danger-500]="!r.ok"
+                 [class.bg-danger-100]="!r.ok">
+              <div class="text-sm font-semibold"
+                   [class.text-positive-600]="r.ok"
+                   [class.text-danger-500]="!r.ok">
+                {{ r.ok ? '✓' : '✗' }} {{ r.message }}
+              </div>
+
+              <div class="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                <div>
+                  <div class="text-ink-400 uppercase tracking-wider font-bold">HTTP</div>
+                  <div class="text-ink-900 font-mono">{{ r.httpStatus ?? '—' }}</div>
+                </div>
+                <div>
+                  <div class="text-ink-400 uppercase tracking-wider font-bold">Latency</div>
+                  <div class="text-ink-900 font-mono">{{ r.latencyMs }} ms</div>
+                </div>
+                <div>
+                  <div class="text-ink-400 uppercase tracking-wider font-bold">Type</div>
+                  <div class="text-ink-900 font-mono truncate">{{ r.contentType || '—' }}</div>
+                </div>
+                <div>
+                  <div class="text-ink-400 uppercase tracking-wider font-bold">Verdict</div>
+                  <div class="text-ink-900 font-mono">{{ r.verdict }}</div>
+                </div>
+              </div>
+
+              <div class="text-[11px] text-ink-500 mt-2">{{ r.endpoint }}</div>
+
+              @if (r.detail) {
+                <div class="mt-2 text-xs text-ink-700 bg-white/70 rounded p-2 border border-ink-200">
+                  {{ r.detail }}
+                </div>
+              }
+
+              @if (r.sample) {
+                <div class="mt-2">
+                  <div class="text-[10px] uppercase tracking-wider font-bold text-ink-400 mb-1">
+                    Response from Spear
+                  </div>
+                  <pre class="text-[11px] font-mono bg-white/70 border border-ink-200 rounded p-2 overflow-x-auto whitespace-pre-wrap">{{ spearSampleJson(r) }}</pre>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+
     </div>
   `,
 })
 export class ProfileIntegrationsComponent implements OnInit {
   private svc = inject(GoogleIntegrationsService);
+  private spear = inject(SpearService);
   private route = inject(ActivatedRoute);
   private auth = inject(AuthService);
 
@@ -320,6 +425,66 @@ export class ProfileIntegrationsComponent implements OnInit {
   errorMsg = signal<string | null>(null);
 
   userName = () => this.auth.user()?.name || 'You';
+
+  // --- Spear connectivity probe -------------------------------------------
+  spearProbe = signal<'catalog' | 'describe'>('catalog');
+  spearTesting = signal(false);
+  spearResult = signal<SpearConnectionResult | null>(null);
+
+  testSpear() {
+    this.spearTesting.set(true);
+    this.spearResult.set(null);
+    this.spear.testConnection(this.spearProbe()).subscribe({
+      next: (r) => {
+        this.spearResult.set(r);
+        this.spearTesting.set(false);
+      },
+      // The probe reports failures in its payload rather than throwing, so
+      // landing here means our own API was unreachable — worth saying so
+      // plainly instead of blaming Spear.
+      error: (err) => {
+        this.spearTesting.set(false);
+        this.spearResult.set({
+          ok: false,
+          verdict: 'unreachable',
+          endpoint: 'the platform API',
+          httpStatus: err?.status ?? null,
+          contentType: null,
+          latencyMs: 0,
+          message:
+            err?.status === 403
+              ? 'This check is limited to admins and above.'
+              : 'Could not reach the platform API to run the check.',
+          checkedAt: new Date().toISOString(),
+        });
+      },
+    });
+  }
+
+  spearBadgeClass(r: SpearConnectionResult): string {
+    if (r.ok) return 'bg-positive-100 text-positive-600';
+    if (r.verdict === 'waf_challenge') return 'bg-warning-100 text-warning-500';
+    return 'bg-danger-100 text-danger-500';
+  }
+
+  spearVerdictLabel(r: SpearConnectionResult): string {
+    switch (r.verdict) {
+      case 'waf_challenge':
+        return 'Blocked by WAF';
+      case 'auth_rejected':
+        return 'Key rejected';
+      case 'not_configured':
+        return 'No key set';
+      case 'server_error':
+        return 'Spear error';
+      default:
+        return 'Unreachable';
+    }
+  }
+
+  spearSampleJson(r: SpearConnectionResult): string {
+    return JSON.stringify(r.sample ?? {}, null, 2);
+  }
 
   ngOnInit() {
     const params = this.route.snapshot.queryParamMap;
